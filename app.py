@@ -161,6 +161,10 @@ def track_penggunaan(tool):
 _GUEST_USAGE_PATH = "data/guest_usage.json"
 _GUEST_USAGE_LOCK = threading.Lock()
 KUOTA_TAMU_HARIAN = 10  # per fitur non-AI, khusus tamu; login = unlimited
+GUEST_IP_TOOL_DAILY_CAP = 50  # hitung ganda: plafon gabungan per alamat IP
+# per fitur non-AI untuk SEMUA tamu dari IP itu (lintas identitas browser).
+# Longgar supaya jaringan kampus/kos tidak langsung kena hukuman; cukup
+# menutup akal ganti-ganti browser di satu jaringan.
 
 
 def _is_tamu():
@@ -233,6 +237,8 @@ def kuota_tamu(tool):
         return None
     uid = g.uid
     today = _today_wita()
+    kehabisan = (jsonify({"error": "kuota_tamu_habis",
+                          "pesan": "Jatah harian tamu untuk fitur ini habis (10x/hari). Login gratis biar pakai sepuasnya!"}), 429)
     try:
         with _GUEST_USAGE_LOCK:
             d = dbstore.load_json(_GUEST_USAGE_PATH, {})
@@ -244,10 +250,21 @@ def kuota_tamu(tool):
             t = u.get(name)
             n = int((t or {}).get(today, 0) or 0) if isinstance(t, dict) else 0
             if n >= KUOTA_TAMU_HARIAN:
-                return jsonify({"error": "kuota_tamu_habis",
-                                "pesan": "Jatah harian tamu untuk fitur ini habis (10x/hari). Login gratis biar pakai sepuasnya!"}), 429
+                return kehabisan
+            # Hitung ganda: ember alamat IP dicek dulu (jangan bocorkan
+            # alasannya — payload 429 sama persis seperti kehabisan biasa).
+            ipkey = sai.guest_ip_key(_ip())
+            iu = d.get(ipkey)
+            if not isinstance(iu, dict):
+                iu = {}
+            it = iu.get(name)
+            n2 = int((it or {}).get(today, 0) or 0) if isinstance(it, dict) else 0
+            if n2 >= GUEST_IP_TOOL_DAILY_CAP:
+                return kehabisan
             u[name] = {today: n + 1}
             d[uid] = u
+            iu[name] = {today: n2 + 1}
+            d[ipkey] = iu
             if len(d) > 2000:
                 d = _guest_prune(d, today)
             dbstore.save_json(_GUEST_USAGE_PATH, d)
@@ -852,7 +869,7 @@ def topik():
             log.warning("topik ide gagal: %s", e)
             ide = None
         if not ide:
-            sai.ai_refund(g.uid, pool)
+            _ai_refund_uid(g.uid, pool)
         else:
             sai.track_tool("topik", g.uid)
     else:
@@ -1135,7 +1152,7 @@ def ai():
         log.warning("ai %s error: %s", kind, e)
         hasil = None
     if not hasil:
-        sai.ai_refund(g.uid, pool)
+        _ai_refund_uid(g.uid, pool)
         return _err("AI-nya lagi gangguan, coba lagi bentar ya", 502)
     sai.track_tool("ai", g.uid)
     if g.user:
@@ -1180,7 +1197,7 @@ def tanya():
         log.warning("tanya ai error: %s", e)
         jawaban = None
     if not jawaban:
-        sai.ai_refund(g.uid, pool)
+        _ai_refund_uid(g.uid, pool)
         tanya_mod.log_unanswered(q[:500])
         return _err("belum bisa menjawab sekarang, coba lagi nanti", 502)
     sai.track_tool("tanya", g.uid)
@@ -1496,29 +1513,60 @@ def _is_web_admin():
     return bool(g.user) and is_admin_user(g.user)
 
 
+def _tamu_web_uid(uid):
+    """True bila uid adalah tamu web ("web_*"), bukan member login."""
+    return isinstance(uid, str) and uid.startswith("web_")
+
+
 def _ai_consume_uid(uid):
     """Reservasi 1 jatah AI untuk request web.
 
     Admin web tidak pernah kehabisan: kembalikan "harian" tanpa
     mengurangi apa pun (pool ini dikenali semua call site sebagai sukses).
-    Non-admin memakai jalur normal sai.ai_try_consume apa adanya.
+    Tamu web memakai hitung ganda (ember identitas + ember alamat IP).
+    Member login memakai jalur normal sai.ai_try_consume apa adanya.
     """
     if _is_web_admin():
         return "harian"
+    if _tamu_web_uid(uid):
+        return sai.ai_try_consume_guest(uid, _ip())
     return sai.ai_try_consume(uid)
 
 
+def _ai_refund_uid(uid, pool):
+    """Kembalikan 1 jatah AI yang gagal dipakai.
+
+    Tamu web: kembalikan ke ember identitas DAN ember alamat IP
+    (cerminan hitung ganda di _ai_consume_uid). Member: jalur normal.
+    """
+    if _tamu_web_uid(uid):
+        sai.ai_refund_guest(uid, _ip())
+    else:
+        sai.ai_refund(uid, pool)
+
+
 def _ai_left_uid(uid):
-    """Sisa jatah AI harian; admin web selalu 999 (tanpa batas)."""
+    """Sisa jatah AI harian; admin web selalu 999 (tanpa batas).
+
+    Tamu: min(ember identitas, ember alamat IP) supaya tampilan tidak
+    menjanjikan pemakaian yang akan diblokir plafon IP.
+    """
     if _is_web_admin():
         return 999
+    if _tamu_web_uid(uid):
+        return sai.ai_quota_info_guest(uid, _ip())[0]
     return sai.ai_quota_left(uid)
 
 
 def _ai_info_uid(uid):
-    """(sisa_harian, saldo); admin web selalu (999, saldo)."""
+    """(sisa_harian, saldo); admin web selalu (999, saldo).
+
+    Tamu: sisa_harian = min(identitas, IP) — lihat _ai_left_uid.
+    """
     if _is_web_admin():
         return 999, sai.ai_balance(uid)
+    if _tamu_web_uid(uid):
+        return sai.ai_quota_info_guest(uid, _ip())
     return sai.ai_quota_info(uid)
 
 
