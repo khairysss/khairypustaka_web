@@ -23,6 +23,8 @@ import time
 
 import httpx
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
+
 log = logging.getLogger("jurnalbot")
 
 TOPUP_PRICE = 5000   # Rp per paket dasar (= minimal)
@@ -46,22 +48,12 @@ _PENDING_LOCK = threading.Lock()
 
 
 def _load_pending():
-    try:
-        with open(PENDING_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    d = dbstore.load_json(PENDING_PATH, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save_pending(d):
-    try:
-        os.makedirs("data", exist_ok=True)
-        tmp = PENDING_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, PENDING_PATH)
-    except Exception as e:
-        log.warning("simpan pending gagal: %s", e)
+    dbstore.save_json(PENDING_PATH, d)
 
 
 def pending_add(ref_id, chat_id, username=None, uses=None, amount=None):
