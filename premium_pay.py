@@ -5,7 +5,7 @@ Alur:
 2. _topup_loop() di bot.py mengecek status via check_invoice() tiap 10 detik.
 3. Status paid -> skripsi_ai.ai_topup(chat_id, TOPUP_USES) -> user dinotifikasi.
 
-Paket: Rp5.000 = 50x pakai AI (saldo tidak hangus).
+Paket: Rp5.000 = 25x pakai AI (saldo tidak hangus).
 
 Kredensial: WIJAYAPAY_MERCHANT (code_merchant) + WIJAYAPAY_API_KEY (api_key)
 di environment. Docs: https://docs.wijayapay.com/
@@ -28,9 +28,9 @@ import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 log = logging.getLogger("jurnalbot")
 
 TOPUP_PRICE = 5000   # Rp per paket dasar (= minimal)
-TOPUP_USES = 50      # x pakai AI per paket dasar (tidak hangus)
-TOPUP_MIN_USES = 50       # minimal top-up bebas: 50x pakai AI
-TOPUP_PRICE_PER_USE = 100 # Rp100 per 1x (50x = Rp5.000)
+TOPUP_USES = 25      # x pakai AI per paket dasar (tidak hangus)
+TOPUP_MIN_USES = 25       # minimal top-up bebas: 25x pakai AI
+TOPUP_PRICE_PER_USE = 200 # Rp200 per 1x (25x = Rp5.000)
 PENDING_TTL = 3600     # invoice pending dibuang setelah 1 jam
 PENDING_PATH = "data/premium_pending.json"
 

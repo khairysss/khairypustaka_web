@@ -1112,9 +1112,9 @@ def topup_info():
     harian, saldo = _ai_info_uid(g.uid)
     return jsonify({
         "harga_rp": ppay.TOPUP_PRICE if ppay else 5000,
-        "uses": ppay.TOPUP_USES if ppay else 50,
-        "min_uses": ppay.TOPUP_MIN_USES if ppay else 50,
-        "harga_per_use": ppay.TOPUP_PRICE_PER_USE if ppay else 100,
+        "uses": ppay.TOPUP_USES if ppay else 25,
+        "min_uses": ppay.TOPUP_MIN_USES if ppay else 25,
+        "harga_per_use": ppay.TOPUP_PRICE_PER_USE if ppay else 200,
         "pay_enabled": ppay.pay_enabled() if ppay else False,
         "sisa_harian": harian,
         "saldo": saldo,
@@ -1125,8 +1125,8 @@ def topup_info():
 @app.post("/api/topup/create")
 @with_rl
 def topup_create():
-    """Buat invoice QRIS top-up. Jumlah jatah bebas (minimal 50x),
-    Rp100 per 1x. Frontend polling /api/topup/status/<ref_id>.
+    """Buat invoice QRIS top-up. Jumlah jatah bebas (minimal 25x),
+    Rp200 per 1x. Frontend polling /api/topup/status/<ref_id>.
 
     Wajib login: saldo yang dibeli harus nempel ke akun, bukan sesi tamu.
     """
@@ -1143,7 +1143,7 @@ def topup_create():
     except (TypeError, ValueError):
         uses = 0
     min_uses = ppay.TOPUP_MIN_USES
-    max_uses = 10000  # Rp1 juta; cegah nominal raksasa yang lolos gross-up
+    max_uses = 10000  # Rp2 juta; cegah nominal raksasa yang lolos gross-up
     if uses < min_uses:
         return _err(f"minimal top-up {min_uses}x jatah AI", 400)
     if uses > max_uses:

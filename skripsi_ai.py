@@ -401,7 +401,7 @@ def ai_record(chat_id):
 
 QUOTA_MSG = ("⏳ <b>Jatah AI harianmu habis</b> (10x/hari).\n"
              "Besok reset lagi — atau tambah jatah sekarang:\n"
-             "⚡ <b>Rp5.000 = 50x pakai AI</b> (tidak hangus) — ketik /topup.")
+             "⚡ <b>Rp5.000 = 25x pakai AI</b> (tidak hangus) — ketik /topup.")
 
 
 def track_user(chat_id):
