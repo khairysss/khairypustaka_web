@@ -1,0 +1,43 @@
+# Render Blueprint — KhairyPustaka Web (web-only, bot Telegram DIMATIKAN)
+# Deploy: New > Blueprint dari repo git yang berisi render.yaml ini.
+services:
+  - type: web
+    name: khairypustaka-web
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: waitress-serve --listen=0.0.0.0:$PORT app:app
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.6
+      - key: BASE_URL
+        value: https://khairypustaka-web.onrender.com
+      - key: BOT_DATA_DIR
+        value: /opt/render/project/src/botdata
+      - key: WEB_SECRET
+        sync: false
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: CEREBRAS_MODEL
+        value: gpt-oss-120b
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        value: ""
+      - key: WIJAYAPAY_API_KEY
+        sync: false
+      - key: WIJAYAPAY_MERCHANT
+        sync: false

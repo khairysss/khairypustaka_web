@@ -1,0 +1,12 @@
+# KhairyPustaka Web — backend Flask
+# Instal: pip install -r requirements.txt
+flask>=3.0
+beautifulsoup4
+lxml
+httpx
+python-docx
+citeproc-py
+pypdf
+waitress>=2.1
+qrcode>=7.4
+itsdangerous>=2.1
