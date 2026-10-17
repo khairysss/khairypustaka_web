@@ -151,7 +151,8 @@ async function refreshAuth() {
     const nama = esc(String(AUTH.nama || "Akun").split(" ")[0]);
     area.innerHTML = '<a href="#/akun" class="user-chip">' +
       (AUTH.foto ? '<img src="' + safeUrl(AUTH.foto) + '" alt="foto">' : '<img src="' + avatarURL(AUTH.avatar) + '" alt="foto profil">') +
-      "<span>" + nama + "</span></a>";
+      "<span>" + nama + "</span>" +
+      (AUTH.admin ? '<span class="badge-admin">ADMIN</span>' : "") + "</a>";
   } else {
     area.innerHTML = '<a href="#/masuk" class="btn-login">🔑 Masuk</a>';
   }
@@ -685,6 +686,7 @@ function pageAkun() {
     '<div class="card center">' +
     (u.foto ? '<img src="' + esc(u.foto) + '" alt="foto" class="akun-foto">' : '<img src="' + avatarURL(u.avatar) + '" alt="foto profil" class="akun-foto">') +
     "<h3>" + esc(u.nama || "Pengguna") + "</h3>" +
+    (u.admin ? '<div><span class="badge-admin">ADMIN</span></div>' : "") +
     (isPw
       ? '<p class="pf-akun-info">👤 @' + esc(u.username || "") + "</p>" +
         '<p class="pf-akun-info">📧 ' + esc(u.email || "") + "</p>"
@@ -2102,14 +2104,17 @@ function pageTopup() {
       if (!box) return;
       if (!res.ok) { box.innerHTML = '<div class="warn-box">Jatah AI lagi nggak kebaca. 😅 Coba refresh ya.</div>'; return; }
       const d = res.data || {};
+      const isAdm = d.admin === true;
       const harian = d.sisa_harian != null ? d.sisa_harian : 0;
       const saldo = d.saldo != null ? d.saldo : 0;
       const harga = d.harga_rp || 5000, uses = d.uses || 50;
       const minU = d.min_uses || 50, perU = d.harga_per_use || 100;
       let html = '<div class="card"><h3>Sisa jatahmu</h3>' +
-        '<p>🎁 Gratis hari ini: <b>' + harian + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
+        (isAdm
+          ? '<p>🎁 Akun admin: jatah AI tanpa batas, pakai sepuasnya ♾️</p>'
+          : '<p>🎁 Gratis hari ini: <b>' + harian + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>') +
         '<p>💰 Saldo top-up: <b>' + saldo + 'x</b> <span class="muted tiny">(tidak hangus)</span></p></div>';
-      if (d.pay_enabled) {
+      if (d.pay_enabled && !isAdm) {
         html += '<div class="card"><h3>Tambah jatah ⚡</h3>' +
           '<p class="muted">Rp' + Number(perU).toLocaleString("id-ID") + ' per 1x pakai AI, minimal ' + minU + 'x. Bayar via QRIS, masuk otomatis.</p>' +
           '<label for="topUses">Jumlah jatah (x)</label><input type="number" id="topUses" min="' + minU + '" value="' + minU + '" step="1" inputmode="numeric">' +
