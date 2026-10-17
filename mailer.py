@@ -68,6 +68,12 @@ def _send_via_resend(to_addr, subject, html, r):
         headers={
             "Authorization": "Bearer " + r["api_key"],
             "Content-Type": "application/json",
+            # Wajib: tanpa User-Agent wajar, Cloudflare di depan api.resend.com
+            # menolak urllib (HTTP 403 error code 1010, kejadian 2026-10-18).
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/json",
         },
         method="POST",
     )
