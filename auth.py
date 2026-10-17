@@ -133,6 +133,11 @@ def get_user(uid):
     return _load_users().get(uid)
 
 
+def list_users():
+    """Semua user: {uid: {...}}. Dipakai panel admin (baca saja)."""
+    return _load_users()
+
+
 def find_user(provider, pid):
     pid = str(pid)
     for uid, u in _load_users().items():

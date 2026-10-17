@@ -1250,6 +1250,211 @@ def redeem():
     return jsonify({"ok": True, "uses": res, "saldo": new_bal})
 
 
+# ------------------------------------------------------------------- admin
+# Panel Admin: halaman statistik + generate kode jatah AI + tambah saldo AI
+# member. Pengganti tools admin bot Telegram yang sudah dipensiunkan.
+# Identitas admin = daftar username di env ADMIN_USERNAMES (dipisah koma,
+# tidak peka huruf besar kecil). Kosong/tidak diset -> tidak ada yang admin.
+def _admin_usernames():
+    raw = os.environ.get("ADMIN_USERNAMES", "") or ""
+    return {n.strip().lower() for n in raw.split(",") if n.strip()}
+
+
+def is_admin_user(user):
+    """True bila user cocok dengan salah satu nama di ADMIN_USERNAMES."""
+    if not user:
+        return False
+    allowed = _admin_usernames()
+    if not allowed:
+        return False
+    for cand in (user.get("pid"), user.get("nama"), user.get("email")):
+        if cand and str(cand).strip().lower() in allowed:
+            return True
+    return False
+
+
+def _need_admin():
+    if not g.user or not is_admin_user(g.user):
+        return jsonify({"ok": False, "error": "khusus admin"}), 403
+    return None
+
+
+def _wita_midnight_ts():
+    """Epoch detik awal hari ini (zona WITA)."""
+    try:
+        from zoneinfo import ZoneInfo
+        dt = datetime.now(ZoneInfo("Asia/Makassar")).replace(
+            hour=0, minute=0, second=0, microsecond=0)
+        return dt.timestamp()
+    except Exception:
+        return 0
+
+
+def _agregasi_pakai(store, today):
+    """{tool: {total, days}} -> (per_fitur list, hari_ini, total)."""
+    rows, h, tot = [], 0, 0
+    if isinstance(store, dict):
+        for nama, t in store.items():
+            if not isinstance(t, dict):
+                continue
+            days = t.get("days") or {}
+            th = int(days.get(today, 0) or 0)
+            tt = int(t.get("total", 0) or 0)
+            h += th
+            tot += tt
+            rows.append({"nama": nama, "hari_ini": th, "total": tt})
+    rows.sort(key=lambda r: r["total"], reverse=True)
+    return rows, h, tot
+
+
+@app.get("/api/admin/statistik")
+@with_rl
+def admin_statistik():
+    err = _need_admin()
+    if err:
+        return err
+    today = _today_wita()
+    users = authmod.list_users() or {}
+    per_provider = {}
+    baru_hari_ini = 0
+    midnight = _wita_midnight_ts()
+    for u in users.values():
+        if not isinstance(u, dict):
+            continue
+        prov = u.get("provider") or "lain"
+        per_provider[prov] = per_provider.get(prov, 0) + 1
+        try:
+            if int(u.get("created") or 0) >= midnight > 0:
+                baru_hari_ini += 1
+        except (TypeError, ValueError):
+            pass
+    qd = sai._load() if hasattr(sai, "_load") else {}
+    tools_ai = qd.get("tools") or {}
+    ai_rows, ai_h, ai_t = _agregasi_pakai(tools_ai, today)
+    prem = qd.get("premium") or {}
+    premium_n = sum(1 for exp in (prem.values() if isinstance(prem, dict)
+                                 else []) if isinstance(exp, str) and exp >= today)
+    saldo_total = 0
+    bal = qd.get("ai_balance") or {}
+    if isinstance(bal, dict):
+        for v in bal.values():
+            try:
+                saldo_total += int(v or 0)
+            except (TypeError, ValueError):
+                pass
+    nonai_store = dbstore.load_json(_USAGE_PATH, {})
+    nonai_rows, nonai_h, nonai_t = _agregasi_pakai(nonai_store, today)
+    return jsonify({"ok": True, "hari_ini": today,
+                    "member": {"total": len(users),
+                               "per_provider": per_provider,
+                               "baru_hari_ini": baru_hari_ini,
+                               "premium": premium_n},
+                    "ai": {"hari_ini": ai_h, "total": ai_t,
+                           "per_fitur": ai_rows},
+                    "nonai": {"hari_ini": nonai_h, "total": nonai_t,
+                              "per_fitur": nonai_rows},
+                    "saldo_ai_web_total": saldo_total})
+
+
+@app.post("/api/admin/kode")
+@with_rl
+def admin_kode_generate():
+    err = _need_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    try:
+        jumlah = int(body.get("jumlah") or 0)
+    except (TypeError, ValueError):
+        jumlah = 0
+    try:
+        nominal = int(body.get("nominal") or 0)
+    except (TypeError, ValueError):
+        nominal = 0
+    if not 1 <= jumlah <= redmod.MAX_GEN:
+        return _err("jumlah harus 1 sampai 200", 400)
+    if not 1 <= nominal <= 10000:
+        return _err("nominal harus 1 sampai 10000", 400)
+    try:
+        codes = redmod.generate(nominal, jumlah)
+    except (ValueError, RuntimeError):
+        return _err("gagal generate kode, coba lagi", 500)
+    return jsonify({"ok": True, "kode": codes, "jumlah": len(codes),
+                    "nominal": nominal})
+
+
+@app.get("/api/admin/kode")
+@with_rl
+def admin_kode_list():
+    err = _need_admin()
+    if err:
+        return err
+    out = []
+    for kode, nominal, used_by, used_at, created in reversed(redmod.list_codes()):
+        dipakai_oleh = ""
+        if used_by:
+            u = authmod.get_user(used_by)
+            dipakai_oleh = ((u.get("nama") or u.get("pid")) if u
+                            else used_by) or used_by
+        out.append({"kode": kode, "nominal": nominal,
+                    "status": "sudah dipakai" if used_by else "belum dipakai",
+                    "dipakai_oleh": dipakai_oleh, "dipakai_pada": used_at,
+                    "dibuat_pada": created})
+    return jsonify({"ok": True, "kode": out, "total": len(out)})
+
+
+@app.get("/api/admin/member")
+@with_rl
+def admin_member_cari():
+    err = _need_admin()
+    if err:
+        return err
+    q = (request.args.get("q") or "").strip().lower()
+    users = authmod.list_users() or {}
+    out = []
+    for uid, u in users.items():
+        if not isinstance(u, dict):
+            continue
+        if q and q not in str(u.get("pid") or "").lower() \
+                and q not in str(u.get("nama") or "").lower() \
+                and q not in str(u.get("email") or "").lower():
+            continue
+        out.append({"uid": uid, "username": u.get("pid") or "",
+                    "nama": u.get("nama") or "", "email": u.get("email") or "",
+                    "provider": u.get("provider") or "",
+                    "saldo": sai.ai_balance(uid),
+                    "sisa_harian": sai.ai_quota_left(uid)})
+        if len(out) >= 50:
+            break
+    return jsonify({"ok": True, "member": out, "total": len(out)})
+
+
+@app.post("/api/admin/grant")
+@with_rl
+def admin_grant():
+    err = _need_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    uid = (body.get("uid") or "").strip()
+    try:
+        jumlah = int(body.get("jumlah") or 0)
+    except (TypeError, ValueError):
+        jumlah = 0
+    if not uid:
+        return _err("uid kosong", 400)
+    if not 1 <= jumlah <= 100000:
+        return _err("jumlah harus 1 sampai 100000", 400)
+    u = authmod.get_user(uid)
+    if not u:
+        return jsonify({"ok": False,
+                        "error": "member tidak ditemukan"}), 404
+    new_bal = sai.ai_topup(uid, jumlah)
+    return jsonify({"ok": True, "saldo": new_bal, "jumlah": jumlah,
+                    "username": u.get("pid") or "",
+                    "nama": u.get("nama") or ""})
+
+
 @app.get("/api/kode-referral")
 def kode_referral():
     # Satukan hitungan referral lama ke identitas Telegram (idempoten;
@@ -1293,7 +1498,8 @@ def _auth_status_payload():
                 "username": g.user.get("pid") if prov == "password" else "",
                 "email": g.user.get("email") or "",
                 "avatar": authmod.user_avatar(g.user),
-                "tg_linked": bool(authmod.linked_tg_id(g.user))}
+                "tg_linked": bool(authmod.linked_tg_id(g.user)),
+                "admin": is_admin_user(g.user)}
     return {"login": False}
 
 
