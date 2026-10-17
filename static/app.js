@@ -143,6 +143,7 @@ async function refreshAuth() {
   } catch (e) {}
   // R2: tandai siap + siram antrean pencatatan tamu
   AUTH_SIAP = true;
+  aturMenuAdmin(); // tampilkan/sembunyikan link Panel Admin
   _siramRiwAntre();
   const area = $("#authArea");
   if (!area) return;
@@ -689,6 +690,7 @@ function pageAkun() {
         '<p class="pf-akun-info">📧 ' + esc(u.email || "") + "</p>"
       : (via ? '<p class="muted">' + esc(via) + "</p>" : "")) +
     '<a class="btn btn-primary btn-block" href="#/topup">⚡ Jatah AI</a>' +
+    (u.admin ? '<a class="btn btn-block" href="#/admin">🛡️ Panel Admin</a>' : "") +
     '<button class="btn btn-block" id="btnLogout">🚪 Keluar</button></div>' +
     (!u.foto ?
       '<div class="card"><h3>🎨 Foto Profil</h3><p class="muted">Pilih maskot favoritmu:</p>' +
@@ -2281,8 +2283,253 @@ const ROUTES = {
   "/tanya": pageTanya,
   "/topup": pageTopup,
   "/premium": pageTopup,
-  "/bantuan": pageBantuan
+  "/bantuan": pageBantuan,
+  "/admin": pageAdmin
 };
+
+/* ================= Panel Admin =================
+   Khusus akun admin (flag admin:true dari /api/auth/status).
+   Backend tetap menegakkan semuanya: semua /api/admin/* menjawab 403
+   untuk tamu dan non admin. */
+function aturMenuAdmin() {
+  const nav = $("#mainNav");
+  if (!nav) return;
+  let a = $("#navAdmin");
+  if (AUTH.login && AUTH.admin) {
+    if (!a) {
+      a = document.createElement("a");
+      a.id = "navAdmin";
+      a.href = "#/admin";
+      a.textContent = "🛡️ Panel Admin";
+      nav.appendChild(a);
+    }
+  } else if (a) {
+    a.remove();
+  }
+}
+
+function admKartu(angka, label) {
+  return '<div class="stat-card"><b>' + esc(String(angka == null ? 0 : angka)) +
+    "</b><span>" + esc(label) + "</span></div>";
+}
+
+function admTabel(rows) {
+  if (!rows.length) return '<p class="muted">Belum ada data.</p>';
+  return '<table class="adm-tabel"><tr><th>Fitur</th><th>Hari Ini</th><th>Total</th></tr>' +
+    rows.map(function(r) {
+      return "<tr><td>" + esc(r.nama) + "</td><td>" + esc(String(r.hari_ini)) +
+        "</td><td>" + esc(String(r.total)) + "</td></tr>";
+    }).join("") + "</table>";
+}
+
+async function admMuatStatistik() {
+  const box = $("#admStat");
+  if (!box) return;
+  try {
+    const r = await apiJSON("/admin/statistik");
+    if (!r.ok) throw 0;
+    const d = r.data || {}, m = d.member || {}, a = d.ai || {}, n = d.nonai || {};
+    box.innerHTML =
+      '<div class="admin-grid">' +
+      admKartu(m.total, "Total Member") +
+      admKartu(m.baru_hari_ini, "Member Baru Hari Ini") +
+      admKartu(a.hari_ini, "Pemakaian AI Hari Ini") +
+      admKartu(a.total, "Pemakaian AI Total") +
+      admKartu(n.hari_ini, "Pemakaian Non AI Hari Ini") +
+      admKartu(n.total, "Pemakaian Non AI Total") +
+      admKartu(d.saldo_ai_web_total, "Total Saldo AI Member") +
+      admKartu(m.premium, "Akun Premium") +
+      "</div>" +
+      "<h4>Per Fitur AI</h4>" + admTabel(a.per_fitur || []) +
+      "<h4>Per Fitur Non AI</h4>" + admTabel(n.per_fitur || []);
+  } catch (e) {
+    box.innerHTML = '<p class="pf-msg">Gagal memuat statistik. Muat ulang halamannya ya.</p>';
+  }
+}
+
+function admSalinTeks(t) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(
+      function() { toast("Kode tersalin! 📋"); },
+      function() { admSalinCadangan(t); });
+  } else {
+    admSalinCadangan(t);
+  }
+}
+
+function admSalinCadangan(t) {
+  const ta = document.createElement("textarea");
+  ta.value = t;
+  document.body.appendChild(ta);
+  ta.select();
+  try {
+    document.execCommand("copy");
+    toast("Kode tersalin! 📋");
+  } catch (e) {
+    toast("Salin manual ya: " + t);
+  }
+  ta.remove();
+}
+
+function admBarisKodeBaru(k) {
+  return '<div class="kode-row"><code>' + esc(k) + "</code>" +
+    '<button class="btn" data-salin="' + esc(k) + '">Salin</button></div>';
+}
+
+async function admMuatKode() {
+  const box = $("#admKodeList");
+  if (!box) return;
+  try {
+    const r = await apiJSON("/admin/kode");
+    if (!r.ok) throw 0;
+    const rows = r.data.kode || [];
+    if (!rows.length) {
+      box.innerHTML = '<p class="muted">Belum ada kode yang dibuat.</p>';
+      return;
+    }
+    box.innerHTML = rows.map(function(k) {
+      const bebas = k.status === "belum dipakai";
+      return '<div class="kode-row"><code>' + esc(k.kode) + "</code>" +
+        '<span class="chip-mini ' + (bebas ? "chip-tunggu" : "chip-ok") + '">' + esc(k.status) + "</span>" +
+        (k.dipakai_oleh ? '<span class="muted">' + esc(k.dipakai_oleh) + "</span>" : "") +
+        '<button class="btn" data-salin="' + esc(k.kode) + '">Salin</button></div>';
+    }).join("");
+  } catch (e) {
+    box.innerHTML = '<p class="pf-msg">Gagal memuat daftar kode.</p>';
+  }
+}
+
+async function admCariMember() {
+  const box = $("#admCariHasil"), msg = $("#admGrantMsg");
+  if (!box) return;
+  msg.textContent = "";
+  const q = ($("#admCari").value || "").trim();
+  try {
+    const r = await apiJSON("/admin/member?q=" + encodeURIComponent(q));
+    if (!r.ok) throw 0;
+    const rows = r.data.member || [];
+    if (!rows.length) {
+      box.innerHTML = '<p class="muted">Tidak ketemu. Coba kata kunci lain ya.</p>';
+      return;
+    }
+    box.innerHTML = rows.map(function(m) {
+      const nama = m.nama || m.username || "member";
+      return '<div class="kode-row"><div style="flex:1;min-width:160px"><b>@' + esc(m.username || "?") + "</b>" +
+        '<div class="muted">' + esc(m.nama || "") + (m.email ? " · " + esc(m.email) : "") + "</div>" +
+        '<div class="muted">Saldo AI: <b>' + esc(String(m.saldo)) + "</b> · sisa harian: " + esc(String(m.sisa_harian)) + "</div></div>" +
+        '<input type="number" class="adm-jml" data-uid="' + esc(m.uid) + '" value="25" min="1" max="100000" aria-label="jumlah jatah AI">' +
+        '<button class="btn btn-primary" data-grant="' + esc(m.uid) + '" data-nama="' + esc(nama) + '">Tambah</button></div>';
+    }).join("");
+  } catch (e) {
+    box.innerHTML = '<p class="pf-msg">Pencarian gagal. Coba lagi ya.</p>';
+  }
+}
+
+async function admGrant(uid, nama) {
+  const msg = $("#admGrantMsg");
+  const inp = document.querySelector('.adm-jml[data-uid="' + uid + '"]');
+  const jumlah = parseInt(inp && inp.value, 10) || 0;
+  if (!(jumlah >= 1)) {
+    msg.textContent = "Isi jumlah yang valid dulu ya.";
+    return;
+  }
+  if (!confirm("Tambah " + jumlah + " jatah AI ke " + nama + "?")) return;
+  try {
+    const r = await apiPOST("/admin/grant", { uid: uid, jumlah: jumlah });
+    if (!r.ok) {
+      msg.textContent = (r.data && (r.data.pesan || r.data.error)) || "Gagal menambah saldo.";
+      return;
+    }
+    msg.textContent = "Berhasil! Saldo " + nama + " sekarang " + r.data.saldo + " jatah AI.";
+    admCariMember();
+  } catch (e) {
+    msg.textContent = "Koneksi bermasalah. Coba lagi ya.";
+  }
+}
+
+function admKlikGlobal(e) {
+  const salin = e.target.closest ? e.target.closest("[data-salin]") : null;
+  if (salin) {
+    admSalinTeks(salin.getAttribute("data-salin"));
+    return;
+  }
+  const grant = e.target.closest ? e.target.closest("[data-grant]") : null;
+  if (grant) {
+    admGrant(grant.getAttribute("data-grant"), grant.getAttribute("data-nama"));
+  }
+}
+
+function pageAdmin() {
+  if (!AUTH.login) {
+    view().innerHTML =
+      "<h2>🛡️ Panel Admin</h2>" +
+      '<div class="card center"><p class="muted">Kamu lagi mode tamu. Halaman admin hanya bisa dibuka setelah login.</p>' +
+      '<a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk</a></div>';
+    return;
+  }
+  if (!AUTH.admin) {
+    view().innerHTML =
+      "<h2>🛡️ Panel Admin</h2>" +
+      '<div class="card center"><p class="muted">Halaman ini khusus akun admin. Kalau kamu merasa ini salah, hubungi admin lewat halaman Bantuan ya. 🙂</p>' +
+      '<a class="btn btn-primary btn-block" href="#/beranda">Ke Beranda</a></div>';
+    return;
+  }
+  view().innerHTML =
+    "<h2>🛡️ Panel Admin</h2>" +
+    '<div class="card"><h3>📊 Ringkasan</h3><div id="admStat"><p class="muted">Memuat data...</p></div></div>' +
+    '<div class="card"><h3>🎟️ Kode Jatah AI</h3>' +
+    '<p class="muted">Buat kode redeem buat dibagikan ke member. Satu kode dipakai satu member, sekali pakai.</p>' +
+    '<label class="muted" for="admKodeJml">Jumlah kode</label>' +
+    '<input type="number" id="admKodeJml" value="5" min="1" max="200">' +
+    '<label class="muted" for="admKodeNom">Nominal per kode (jatah AI)</label>' +
+    '<div class="chip-row" id="admNomChips">' +
+    [25, 50, 100].map(function(n) {
+      return '<button class="chip" data-nom="' + n + '">' + n + "</button>";
+    }).join("") +
+    "</div>" +
+    '<input type="number" id="admKodeNom" value="25" min="1" max="10000">' +
+    '<button class="btn btn-primary btn-block" id="admKodeBtn">Generate Kode</button>' +
+    '<p class="pf-msg" id="admKodeMsg"></p>' +
+    '<div id="admKodeBaru"></div></div>' +
+    '<div class="card"><h3>📜 Daftar Kode</h3><div id="admKodeList"><p class="muted">Memuat...</p></div>' +
+    '<button class="btn btn-block" id="admKodeRefresh">Muat Ulang</button></div>' +
+    '<div class="card"><h3>➕ Tambah Jatah AI</h3>' +
+    '<p class="muted">Cari member lalu tambah saldo jatah AI langsung ke akunnya.</p>' +
+    '<input type="text" id="admCari" placeholder="ketik username, nama, atau email" autocomplete="off">' +
+    '<button class="btn btn-block" id="admCariBtn">Cari Member</button>' +
+    '<div id="admCariHasil"></div>' +
+    '<p class="pf-msg" id="admGrantMsg"></p></div>';
+  admMuatStatistik();
+  admMuatKode();
+  $$("#admNomChips .chip").forEach(function(c) {
+    c.addEventListener("click", function() {
+      $("#admKodeNom").value = c.dataset.nom;
+    });
+  });
+  $("#admKodeBtn").addEventListener("click", async function() {
+    const msg = $("#admKodeMsg"), out = $("#admKodeBaru");
+    msg.textContent = "";
+    const jumlah = parseInt($("#admKodeJml").value, 10) || 0;
+    const nominal = parseInt($("#admKodeNom").value, 10) || 0;
+    try {
+      const r = await apiPOST("/admin/kode", { jumlah: jumlah, nominal: nominal });
+      if (!r.ok) {
+        msg.textContent = (r.data && (r.data.pesan || r.data.error)) || "Gagal membuat kode.";
+        return;
+      }
+      const kode = r.data.kode || [];
+      out.innerHTML = '<p class="muted">Kode berhasil dibuat (' + kode.length +
+        " x " + esc(String(r.data.nominal)) +
+        " jatah AI). Simpan baik baik ya, kode hanya ditampilkan sekali di sini.</p>" +
+        kode.map(admBarisKodeBaru).join("");
+      admMuatKode();
+    } catch (e) {
+      msg.textContent = "Koneksi bermasalah. Coba lagi ya.";
+    }
+  });
+  $("#admKodeRefresh").addEventListener("click", admMuatKode);
+  $("#admCariBtn").addEventListener("click", admCariMember);
+}
 
 function page404() {
   view().innerHTML = '<div class="card center"><h2>'+tic("help")+'</h2>' +
@@ -2393,6 +2640,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   if (bk) bk.addEventListener("click", pergiKembali);
   window.addEventListener("hashchange", router);
   initFABRiwayat(); // tombol melayang Riwayat ala live chat (sekali saat boot)
+  document.addEventListener("click", admKlikGlobal); // tombol Salin/Tambah panel admin
 
   $("#modalSitClose").addEventListener("click", tutupModalSit);
   $("#modalSit").addEventListener("click", e => { if (e.target.id === "modalSit") tutupModalSit(); });
