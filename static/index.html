@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>KhairyPustaka 🎓🤖 — Asisten Skripsi & Nugas Web</title>
+<meta name="description" content="KhairyPustaka versi web: cari jurnal, bikin sitasi, matriks literatur, deadline, sampai AI buat tugas & skripsi — gratis!">
+<link rel="stylesheet" href="style.css?v=16">
+<link rel="icon" href="maskot.jpg">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M15.8 15.8 20 20"/></symbol>
+<symbol id="i-doc" viewBox="0 0 24 24"><path d="M7 3.5h6.5L18 8v12.5H7z"/><path d="M13.5 3.5V8H18"/><path d="M9.7 12.2h4.6M9.7 15.4h4.6"/></symbol>
+<symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-building" viewBox="0 0 24 24"><path d="M5 20.5V6.8L12 4.2l7 2.6v13.7"/><path d="M3.5 20.5h17"/><path d="M9.2 20.5v-3.6h5.6v3.6"/><path d="M9 10.2h1.6M13.4 10.2H15M9 13.4h1.6M13.4 13.4H15"/></symbol>
+<symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"/><path d="M5.3 19.6c1.3-3.3 3.7-5 6.7-5s5.4 1.7 6.7 5"/></symbol>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4.5" width="16" height="15" rx="2"/><path d="M4 9.7h16M4 14.8h16M9.6 4.5v15M14.9 4.5v15"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 4l1.7 4.8 4.8 1.7-4.8 1.7L12 17l-1.7-4.8L5.5 10.5l4.8-1.7z"/><path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></symbol>
+<symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2H9l-5 4z"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 10-2.34 6.24"/><path d="M20 5.5V11h-5.5"/></symbol>
+<symbol id="i-bulb" viewBox="0 0 24 24"><path d="M12 3.5a6 6 0 00-3.5 10.9c.8.6 1.2 1.2 1.4 2.1h4.2c.2-.9.6-1.5 1.4-2.1A6 6 0 0012 3.5z"/><path d="M9.5 18.5h5M10.5 21h3"/></symbol>
+<symbol id="i-quote" viewBox="0 0 24 24"><path d="M8.5 16.5c-2.2 0-3.5-1.6-3.5-3.7 0-2.4 1.8-4.4 4.3-4.7l.4 1.3c-1.5.4-2.3 1.3-2.5 2.3.2-.1.6-.2 1-.2 1.2 0 2.1.9 2.1 2 0 1.2-.9 2-1.8 2z"/><path d="M16.5 16.5c-2.2 0-3.5-1.6-3.5-3.7 0-2.4 1.8-4.4 4.3-4.7l.4 1.3c-1.5.4-2.3 1.3-2.5 2.3.2-.1.6-.2 1-.2 1.2 0 2.1.9 2.1 2 0 1.2-.9 2-1.8 2z"/></symbol>
+<symbol id="i-layout" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M4 10h16M9.5 10v9"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7.5 16v-5M12 16V7.5M16.5 16v-3"/></symbol>
+<symbol id="i-books" viewBox="0 0 24 24"><path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 20.5V5.5"/><path d="M8.5 7.5H16"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="M12 3.5l2.7 5.6 6.1.8-4.5 4.2 1.1 6-5.4-3-5.4 3 1.1-6L3.2 10l6.1-.8z"/></symbol>
+<symbol id="i-alarm" viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 9.5V13l2.5 1.8"/><path d="M5.8 3.8L3.5 6M18.2 3.8l2.3 2.2"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 10.5h16M8.5 3.5v4M15.5 3.5v4"/></symbol>
+<symbol id="i-usercard" viewBox="0 0 24 24"><rect x="3.5" y="6" width="17" height="13" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5.5 16.5c.6-1.6 1.7-2.4 3-2.4s2.4.8 3 2.4"/><path d="M14 10.5h5M14 13.5h5"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2.5L4.5 13.5H11l-1 8 8.5-11H12z"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.8 9.5a2.3 2.3 0 014.4.8c0 1.5-2.2 1.9-2.2 3.2"/><path d="M12 17h.01"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M21 3.5L10 14.5"/><path d="M21 3.5L14 21l-4-6.5L3.5 10.5z"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 15.5v-4.7a6 6 0 10-12 0v4.7L4.5 18h15z"/><path d="M10.5 20.5a1.8 1.8 0 003 0"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="12" r="3.5"/><path d="M11 12h9M17 12v3M20 12v2.2"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="2"/><path d="M4.5 7.5l7.5 5.7 7.5-5.7"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.2l2.5 2.5 4.5-5"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M4 11l8-7 8 7"/><path d="M6 9.5V20h12V9.5"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17"/><path d="M12 3.5c2.5 2.3 3.8 5.2 3.8 8.5s-1.3 6.2-3.8 8.5c-2.5-2.3-3.8-5.2-3.8-8.5s1.3-6.2 3.8-8.5z"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+<symbol id="i-clipboard" viewBox="0 0 24 24"><rect x="6" y="5" width="12" height="16" rx="2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9.5 12h5M9.5 15.5h5"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="M10 14a4.2 4.2 0 006 0l2.5-2.5a4.24 4.24 0 00-6-6L11 7"/><path d="M14 10a4.2 4.2 0 00-6 0l-2.5 2.5a4.24 4.24 0 006 6L13 17"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7a2 2 0 012-2h4l2 2.5h7a2 2 0 012 2V17a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/></symbol>
+<symbol id="i-pencil" viewBox="0 0 24 24"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/></symbol>
+<symbol id="i-ig" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4.5"/><circle cx="12" cy="12" r="3.8"/><circle cx="17" cy="7" r="1.3" fill="currentColor" stroke="none"/></symbol>
+</svg>
+
+<header class="topbar">
+  <a class="brand" href="#/beranda"><img src="maskot.jpg" class="maskot-badge" alt="Logo KhairyPustaka"> <span>KhairyPustaka</span></a>
+  <button id="menuBtn" class="menu-btn" aria-label="Buka menu">☰</button>
+  <nav id="mainNav" class="nav">
+    <a href="#/beranda"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-home"></use></svg> Beranda</a>
+    <a href="#/cari"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-search"></use></svg> Cari Jurnal</a>
+    <a href="#/carifile"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-doc"></use></svg> Cari dari Sitasi</a>
+    <a href="#/sitasi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-quote"></use></svg> Buat Sitasi</a>
+    <a href="#/koleksi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-books"></use></svg> Koleksiku</a>
+    <a href="#/riwayat"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-clock"></use></svg> Riwayat</a>
+    <a href="#/ai"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-spark"></use></svg> AI Studio</a>
+    <a href="#/tanya"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-chat"></use></svg> Tanya AI</a>
+    <a href="#/statistik"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-chart"></use></svg> Statistik</a>
+    <a href="#/template"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-pencil"></use></svg> Template</a>
+    <a href="#/deadline"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-alarm"></use></svg> Deadline</a>
+    <a href="#/topik"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-bulb"></use></svg> Ide Topik</a>
+    <a href="#/rekomendasi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-target"></use></svg> Rekomendasi Jurnal</a>
+    <a href="#/publisher"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-building"></use></svg> Publisher</a>
+    <a href="#/penulis"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-person"></use></svg> Info Penulis</a>
+    <a href="#/parafrase"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-refresh"></use></svg> Parafrase</a>
+    <a href="#/jadwal"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-calendar"></use></svg> Jadwal</a>
+    <a href="#/matriks"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-grid"></use></svg> Matriks</a>
+    <a href="#/favorit"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-star"></use></svg> Favorit</a>
+    <a href="#/topup"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-bolt"></use></svg> Jatah AI</a>
+    <a href="#/bantuan"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-help"></use></svg> Bantuan</a>
+    <a href="#/akun"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-person"></use></svg> Akun</a>
+  </nav>
+  <span id="authArea" class="auth-area"></span>
+</header>
+
+<div id="backBar" class="container hidden"><button id="btnBack" class="btn-back" type="button">&larr; Kembali</button></div>
+<main id="view" class="container" aria-live="polite"></main>
+
+<footer class="footer">
+  <img src="maskot.jpg" class="footer-maskot" alt="Maskot KhairyPustaka">
+  <p><strong>KhairyPustaka</strong> — teman seperjuangan nugas & skripsianmu.</p>
+  <p>Ikuti kami buat konten skripsi &amp; nugas tiap hari — video, tips, dan jurnal pilihan 👇</p>
+  <p class="foot-sosmed"><a href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">Instagram</a> · <a href="https://www.threads.com/@khairypustaka" target="_blank" rel="noopener">Threads</a> · <a href="https://x.com/KhairyPustaka" target="_blank" rel="noopener">X</a></p>
+  <p>Ada kendala atau mau tanya-tanya? Hubungi admin langsung:</p>
+  <a class="btn btn-ig" href="https://instagram.com/khairypustaka" target="_blank" rel="noopener"><svg class="tic tic-btn" aria-hidden="true"><use href="#i-ig"></use></svg> Hubungi Admin</a>
+  <p class="tiny">Gratis dipakai. Dibuat dengan ☕ buat para pejuang toga.</p>
+</footer>
+
+<!-- Splash Video Intro (muncul 1x per sesi, bisa di-skip) -->
+<div id="introModal" class="intro-overlay" hidden>
+  <div class="intro-box">
+    <div class="intro-head">
+      <span class="intro-head-spacer" aria-hidden="true"></span>
+      <p class="intro-title">Kenalan dulu sama KhairyPustaka 🎓</p>
+      <button class="intro-close" id="introClose" aria-label="Tutup video intro">✕</button>
+    </div>
+    <video id="introVideo" src="intro.mp4" poster="intro-poster.jpg" controls playsinline muted preload="metadata"></video>
+    <button class="intro-skip" id="introSkip">Lewati — langsung ke beranda →</button>
+  </div>
+</div>
+<script>
+(function () {
+  var KEY = "kp_intro_seen_v1";
+  var ov = document.getElementById("introModal");
+  var vid = document.getElementById("introVideo");
+  if (!ov || !vid) return;
+  function sudahLihat() {
+    try { if (localStorage.getItem(KEY)) return true; } catch (e) {}
+    return document.cookie.indexOf(KEY + "=1") >= 0;
+  }
+  function tandai() {
+    // Tandai SAAT video ditampilkan (bukan saat ditutup) — refresh di
+    // tengah video / tutup tab pun tidak memunculkannya lagi.
+    try { localStorage.setItem(KEY, "1"); } catch (e) {}
+    try {
+      var d = new Date(); d.setFullYear(d.getFullYear() + 1);
+      document.cookie = KEY + "=1; expires=" + d.toUTCString() + "; path=/; SameSite=Lax";
+    } catch (e) {}
+  }
+  function tutup() {
+    if (ov.hidden) return; // idempoten: aman dipanggil 2x (touchend + click)
+    // Sembunyi DULU, pause belakangan (request Sul 2026-10-14): klik X /
+    // Tutup harus hilang di detik yang sama, tanpa menunggu pause video.
+    ov.hidden = true;
+    try { vid.pause(); } catch (e) {}
+  }
+  document.getElementById("introClose").addEventListener("click", tutup);
+  document.getElementById("introSkip").addEventListener("click", tutup);
+  // touchend = respon sentuh instan di iOS (click bisa telat kena layer
+  // kontrol native video); tutup() idempoten jadi dobel-panggil aman.
+  document.getElementById("introClose").addEventListener("touchend", tutup, { passive: true });
+  document.getElementById("introSkip").addEventListener("touchend", tutup, { passive: true });
+  // Klik area gelap di luar kotak video juga menutup.
+  ov.addEventListener("click", function (e) { if (e.target === ov) tutup(); });
+  vid.addEventListener("ended", tutup);
+  // Tombol melayang "Video Kenalan": nonton ulang kapan pun, seperti
+  // tombol Riwayat. Dibuat sebelum cek sudahLihat agar selalu tersedia.
+  var fab = document.createElement("button");
+  fab.type = "button";
+  fab.className = "fab-video";
+  fab.setAttribute("aria-label", "Tonton video kenalan KhairyPustaka");
+  fab.innerHTML = '<span class="fab-video-label">Video Kenalan</span><span class="fab-bulat">&#9654;</span>';
+  fab.addEventListener("click", function () {
+    var sk = document.getElementById("introSkip");
+    if (sk) sk.textContent = "Tutup";
+    ov.hidden = false;
+    try { vid.currentTime = 0; } catch (e) {}
+    vid.muted = false;
+    var pr = vid.play(); if (pr && pr.catch) pr.catch(function () {});
+  });
+  document.body.appendChild(fab);
+  // Penayangan otomatis: HANYA kunjungan pertama per browser.
+  if (sudahLihat()) return;
+  tandai();
+  ov.hidden = false;
+  var p = vid.play(); if (p && p.catch) p.catch(function () {});
+})();
+</script>
+
+<!-- Modal Sitasi -->
+<div id="modalSit" class="modal hidden" role="dialog" aria-modal="true" aria-label="Buat sitasi">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3><svg class="tic tic-h" aria-hidden="true"><use href="#i-quote"></use></svg> Buat Sitasi</h3>
+      <button class="x" id="modalSitClose" aria-label="Tutup">✕</button>
+    </div>
+    <p class="tiny muted modal-judul" id="modalSitJudul"></p>
+    <div class="chip-row" id="modalSitGaya">
+      <button class="chip" data-gaya="harvard">Harvard</button>
+      <button class="chip" data-gaya="apa">APA</button>
+      <button class="chip" data-gaya="mla">MLA</button>
+      <button class="chip" data-gaya="chicago">Chicago</button>
+      <button class="chip" data-gaya="vancouver">Vancouver</button>
+      <button class="chip" data-gaya="ieee">IEEE</button>
+    </div>
+    <div id="modalSitHasil" class="sitasi-hasil hidden">
+      <pre id="modalSitTeks"></pre>
+      <button class="btn btn-primary btn-block" id="modalSitCopy"><svg class="tic tic-btn" aria-hidden="true"><use href="#i-clipboard"></use></svg> Salin Sitasi</button>
+    </div>
+    <p id="modalSitLoading" class="tiny muted hidden">⏳ Lagi bikin sitasi...</p>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<div id="modalTgNudge" class="modal hidden" role="dialog" aria-modal="true" aria-label="Kaitkan Telegram">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3><svg class="tic tic-h" aria-hidden="true"><use href="#i-bulb"></use></svg> Punya akun Telegram?</h3>
+      <button class="x" id="modalTgNudgeClose" aria-label="Tutup">✕</button>
+    </div>
+    <p>Kaitkan akunmu dulu sebelum top-up — biar saldo yang kamu beli bisa dipakai di <b>DUA</b> tempat: web ini <b>DAN</b> bot Telegram @KhairyPustaka_bot.</p>
+    <p class="muted">Contoh: top-up 100x, 40x dipakai di web, sisanya tetap bisa dipakai di bot. Tanpa dikaitkan, saldo cuma berlaku di web ini saja.</p>
+    <label class="tiny muted" style="display:flex;align-items:center;gap:8px;margin:8px 0">
+      <input type="checkbox" id="modalTgNudgeSkip"> jangan tampilkan lagi
+    </label>
+    <button class="btn btn-primary btn-block" id="modalTgNudgeLink"><svg class="tic tic-btn" aria-hidden="true"><use href="#i-link"></use></svg> Kaitkan Sekarang</button>
+    <button class="btn btn-block" id="modalTgNudgeLanjut" style="margin-top:8px">Lanjut Tanpa Kaitkan</button>
+  </div>
+</div>
+
+<script src="app.js?v=15"></script>
+</body>
+</html>
