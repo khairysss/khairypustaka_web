@@ -5,8 +5,14 @@ Identitas referral kanonik — satu orang = satu kode & satu hitungan:
   -> identitas = ID Telegram numerik, tercatat di file BOT
     (/root/jurnal-bot/data/referral.json), kode KH-<tg_id> SAMA seperti di bot.
 - selain itu (tamu web_<sid> / akun password belum link)
-  -> identitas = uid web, tercatat di file web (data/referral.json),
-  kode KH-<uid>.
+  -> identitas = uid web, tercatat di file web (data/referral.json).
+
+Format kode (keputusan Sul 2026-10-17): KP-<6 char acak A-Z0-9>,
+mis. KP-AB12CD. Dibuat SEKALI per user, disimpan di store
+("codes": {"KP-XXXXXX": "<uid_pemilik>"}) di file web; stabil lintas
+restart. Kode legacy KH-<tg_id> / KH-<uid> / <tg_id> telanjang dari era bot
+TETAP dikenali saat dipakai mendaftar (lihat parse_referrer) karena
+member mungkin sudah membagikannya.
 
 Reward milestone (+30x tiap 3 teman) selalu dikirim ke pool saldo yang benar
 (pool bot/shared untuk ID Telegram, pool web untuk uid web-only).
@@ -22,6 +28,7 @@ import json
 import logging
 import os
 import re
+import secrets
 import threading
 
 import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
@@ -37,6 +44,34 @@ _LOCK = threading.Lock()
 REFERRALS_FOR_REWARD = 3   # tiap 3 teman...
 REWARD_USES = 30          # ...dapat +30x jatah AI
 TRIAL_USES = 10           # bonus klaim trial (1x per user, bot-only)
+
+# ---------------------------------------------------------------- format kode
+_KP_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"  # 36^6 ~ 2,2 miliar
+_KP_LEN = 6
+
+
+def _codes_of(path):
+    """Peta codes di satu file store: {kode: uid_pemilik}. Fail-safe."""
+    try:
+        codes = _load_file(path).get("codes")
+        return codes if isinstance(codes, dict) else {}
+    except Exception:
+        return {}
+
+
+def _generate_unique_code(existing):
+    """Hasilkan kode KP- unik. Tabrakan -> ulangi (di bawah _LOCK)."""
+    taken = set(existing or ())
+    try:
+        taken |= set(_codes_of(_BOT_FILE))
+    except Exception:
+        pass
+    for _ in range(1000):
+        code = "KP-" + "".join(secrets.choice(_KP_ALPHABET)
+                               for _ in range(_KP_LEN))
+        if code not in taken:
+            return code
+    raise RuntimeError("gagal membuat kode referral unik")
 
 
 def _load_file(path):
@@ -121,16 +156,80 @@ def claim_trial(chat_id):
 
 # ---------------------------------------------------------------- referral
 def my_code(uid):
-    """Kode referral milik user: KH-<tg_id> bila terhubung Telegram
-    (SAMA dengan kode di bot), else KH-<uid>."""
-    _path, key = kanal(uid)
-    return f"KH-{key}"
+    """Kode referral milik user, format KP-XXXXXX (acak, 6 char A-Z0-9).
+
+    Dibuat SEKALI per user lalu disimpan di store ("codes" di file web)
+    sehingga stabil lintas pemanggilan & restart. Kode lama era bot
+    (KH-<tg_id> / KH-<uid>) tetap bisa DIPAKAI mendaftar, tapi my_code
+    tidak lagi mengeluarkannya untuk user baru.
+    """
+    u = str(uid or "").strip()
+    if u.isdigit():
+        return f"KH-{u}"  # identitas bot-era (tidak dijangkau alur web)
+    with _LOCK:
+        d = _load()
+        codes = d.get("codes")
+        if not isinstance(codes, dict):
+            codes = {}
+        for code, owner in codes.items():
+            if owner == u:
+                return code
+        try:
+            code = _generate_unique_code(codes)
+        except RuntimeError:
+            # Praktis mustahil (36^6 ruang); fallback deterministik lama
+            # supaya endpoint tidak pernah 500.
+            log.warning("gagal buat kode KP unik, fallback KH")
+            return f"KH-{u}"
+        codes[code] = u
+        d["codes"] = codes
+        _save(d)
+        return code
+
+
+def _move_code_locked(d, old_uid, new_uid):
+    """Pindahkan kepemilikan kode KP- dari uid lama ke uid baru.
+
+    Dipanggil dengan _LOCK sudah dipegang (dipakai migrate_guest di
+    auth.py). Bila uid baru sudah punya kode sendiri, kode lama dibuang
+    (hitungan & referred_by sudah dipindahkan pemanggil).
+    """
+    codes = d.get("codes")
+    if not isinstance(codes, dict):
+        return
+    old_u = str(old_uid or "").strip()
+    new_u = str(new_uid or "").strip()
+    if not old_u or not new_u or old_u == new_u:
+        return
+    if any(o == new_u for o in codes.values()):
+        for code in [c for c, o in codes.items() if o == old_u]:
+            del codes[code]
+        return
+    for code, owner in codes.items():
+        if owner == old_u:
+            codes[code] = new_u
 
 
 def parse_referrer(payload):
-    """'KH-12345'/'12345' -> '12345'; 'KH-web_<hex>'/'KH-user_<hex>'
-    -> 'web_<hex>'/'user_<hex>'; else None."""
+    """Kode referral -> kunci identitas pemiliknya.
+
+    Menerima (case-insensitive; dinormalisasi ke huruf besar):
+      - 'KP-AB12CD' -> kunci pemilik dari peta codes
+        (None bila kode tidak dikenal: ditolak tanpa kredit)
+    Kompatibilitas legacy era bot (perilaku byte-identical):
+      - 'KH-12345'/'12345' -> '12345'
+      - 'KH-web_<hex>'/'KH-user_<hex>' -> 'web_<hex>'/'user_<hex>'
+    Selain itu -> None.
+    """
     p = (payload or "").strip()
+    m = re.fullmatch(r"KP-([A-Z0-9]{6})", p, re.IGNORECASE)
+    if m:
+        code = "KP-" + m.group(1).upper()
+        for path in (_FILE, _BOT_FILE):
+            owner = _codes_of(path).get(code)
+            if owner:
+                return owner
+        return None
     m = re.fullmatch(r"KH-(\d+)", p, re.IGNORECASE)
     if m:
         return m.group(1)
