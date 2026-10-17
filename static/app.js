@@ -83,7 +83,6 @@ const _pageTimers = [];
 function regTimer(t) { _pageTimers.push(t); return t; }
 function clearPageTimers() {
   while (_pageTimers.length) { try { clearInterval(_pageTimers.pop()); } catch (e) {} }
-  try { stopTgPoll(); } catch (e) {}
 }
 
 async function apiJSON(path, opts) {
@@ -122,11 +121,10 @@ function apiPOST(path, body) {
   return apiJSON(path, { method: "POST", body: JSON.stringify(body || {}) });
 }
 
-/* ---------- Auth (Telegram / Google / tamu) ---------- */
+/* ---------- Auth (username+password / tamu) ---------- */
 let AUTH = { login: false };
 let AUTH_SIAP = false; // R2 (audit 2026-10-13): true setelah /auth/status pertama resolve
 let _riwAntre = [];    // R2: entri tamu yang dicatat sebelum status auth pasti
-let _tgWidgetLoaded = false;
 
 /* Jatah AI gratis harian sesuai status login: tamu 5x, login 10x. */
 function aiHarian() { return AUTH.login ? 10 : 5; }
@@ -157,19 +155,6 @@ async function refreshAuth() {
     area.innerHTML = '<a href="#/masuk" class="btn-login">🔑 Masuk</a>';
   }
 }
-
-// dipanggil Telegram Login Widget: onTelegramAuth(user)
-async function onTelegramAuth(user) {
-  const res = await apiPOST("/auth/telegram", user || {});
-  if (res.ok) {
-    await refreshAuth();
-    toast("Login berhasil! 🎉");
-    location.hash = "#/akun";
-  } else {
-    toast("😅 " + ((res.data && res.data.error) || "Login Telegram gagal, coba lagi ya."));
-  }
-}
-window.onTelegramAuth = onTelegramAuth;
 
 /* unduh file dari endpoint (response = file biasa) */
 async function apiDownload(path, opts, fallbackName) {
@@ -494,9 +479,11 @@ function pageMasuk() {
   view().innerHTML =
     "<h2>"+tic("key")+" Masuk</h2>" +
     (errMsg ? '<div class="err-box">' + esc(errMsg) + "</div>" : "") +
-    '<div class="card center"><p class="muted">Login biar saldomu aman & bisa dipakai di semua perangkat. Tanpa password, 1 ketuk aja. ✨</p>' +
-    '<div id="tgWidget" class="login-widget"></div>' +
-    '<div class="login-or"><span>atau pakai username / email</span></div>' +
+    '<div class="card center">' +
+    '<div class="kp-brand-block"><img src="maskot.jpg" class="kp-brand-maskot" alt="Maskot KhairyPustaka">' +
+    '<div class="kp-brand-text"><h3 class="kp-brand-name">KhairyPustaka</h3>' +
+    '<p class="kp-brand-tag">Asisten skripsi dan nugas, seratus persen gratis</p></div></div>' +
+    '<p class="muted">Login biar saldomu aman & bisa dipakai di semua perangkat. ✨</p>' +
     '<div class="chip-row" style="justify-content:center;margin-bottom:10px">' +
     '<button class="chip active" id="tabPwMasuk">Masuk</button>' +
     '<button class="chip" id="tabPwDaftar">Daftar</button></div>' +
@@ -582,25 +569,6 @@ function pageMasuk() {
   $("#btnPwDaftar").addEventListener("click", () => pwAuth("up"));
   $("#pwPassIn").addEventListener("keydown", e => { if (e.key === "Enter") pwAuth("in"); });
   $("#pwPassUp").addEventListener("keydown", e => { if (e.key === "Enter") pwAuth("up"); });
-  if (!_tgWidgetLoaded) {
-    _tgWidgetLoaded = true;
-    const s = document.createElement("script");
-    s.src = "https://telegram.org/js/telegram-widget.js?22";
-    s.async = true;
-    s.setAttribute("data-telegram-login", "KhairyPustaka_bot");
-    s.setAttribute("data-size", "large");
-    s.setAttribute("data-radius", "12");
-    s.setAttribute("data-request-access", "write");
-    s.setAttribute("data-onauth", "onTelegramAuth(user)");
-    const box = $("#tgWidget");
-    if (box) box.appendChild(s);
-  } else {
-    const box = $("#tgWidget");
-    if (box && !box.querySelector("iframe")) {
-      _tgWidgetLoaded = false;
-      pageMasuk();
-    }
-  }
 }
 
 /* ----- Lupa password ----- */
@@ -700,7 +668,6 @@ function pfMsg(id, ok, text) {
 }
 
 function pageAkun() {
-  stopTgPoll();
   if (!AUTH.login) {
     view().innerHTML =
       "<h2>"+tic("person")+" Akun</h2>" +
@@ -711,7 +678,7 @@ function pageAkun() {
   }
   const u = AUTH;
   const isPw = u.provider === "password";
-  const via = u.provider === "telegram" ? "via Telegram" : u.provider === "google" ? "via Google" : "";
+  const via = u.provider === "google" ? "via Google" : "";
   view().innerHTML =
     "<h2>"+tic("person")+" Akun Saya</h2>" +
     '<div class="card center">' +
@@ -720,7 +687,7 @@ function pageAkun() {
     (isPw
       ? '<p class="pf-akun-info">👤 @' + esc(u.username || "") + "</p>" +
         '<p class="pf-akun-info">📧 ' + esc(u.email || "") + "</p>"
-      : '<p class="muted">' + esc(via) + "</p>") +
+      : (via ? '<p class="muted">' + esc(via) + "</p>" : "")) +
     '<a class="btn btn-primary btn-block" href="#/topup">⚡ Jatah AI</a>' +
     '<button class="btn btn-block" id="btnLogout">🚪 Keluar</button></div>' +
     (!u.foto ?
@@ -748,9 +715,8 @@ function pageAkun() {
       '<div class="pw-wrap"><input type="password" id="pfMailPw" placeholder="konfirmasi password" autocomplete="current-password">' +
       '<button type="button" class="pw-eye" data-for="pfMailPw" aria-label="Tampilkan password">👁️</button></div>' +
       '<p class="pf-msg" id="pfMailMsg"></p>' +
-      '<button class="btn btn-primary btn-block" id="btnUbahMail">Kirim Link Verifikasi</button></div>' +
-      '<div class="card" id="pfTgCard"><h3>🔗 Telegram</h3><div id="pfTgBox"><p class="loading">...</p></div></div>'
-      : '<div class="card"><p class="muted">Akun ini login ' + esc(via || "via Telegram/Google") +
+      '<button class="btn btn-primary btn-block" id="btnUbahMail">Kirim Link Verifikasi</button></div>'
+      : '<div class="card"><p class="muted">Akun ini login ' + esc(via || "via Google") +
         " — ubah username, password & email hanya tersedia untuk akun username+password. 🙂</p></div>");
   $("#btnLogout").addEventListener("click", async () => {
     await apiPOST("/auth/logout", {});
@@ -831,76 +797,6 @@ function pageAkun() {
       pfMsg("pfMailMsg", false, "😅 " + ((res.data && res.data.error) || "gagal"));
     }
   });
-
-  renderTgBox();
-
-  // deep-target dari nudge top-up: scroll ke seksi Telegram
-  try {
-    if (sessionStorage.getItem("kp_scroll_tg")) {
-      sessionStorage.removeItem("kp_scroll_tg");
-      setTimeout(() => {
-        const c = $("#pfTgCard", view());
-        if (c) c.scrollIntoView({ behavior: "smooth", block: "center" });
-      }, 350);
-    }
-  } catch (e) {}
-}
-
-/* ----- Hubungkan Telegram ----- */
-let _tgPoll = null;
-function stopTgPoll() { if (_tgPoll) { clearInterval(_tgPoll); _tgPoll = null; } }
-
-function renderTgBox() {
-  const box = $("#pfTgBox", view());
-  if (!box) return;
-  if (AUTH.tg_linked) {
-    box.innerHTML =
-      '<p>✅ <b>Terhubung Telegram</b></p>' +
-      '<p class="muted">Saldo top-up-mu shared antara web & bot. 🎉</p>' +
-      '<p class="pf-msg" id="pfTgMsg"></p>' +
-      '<button class="btn btn-block" id="btnTgUnlink">🔌 Putuskan</button>';
-    $("#btnTgUnlink").addEventListener("click", async () => {
-      const btn = $("#btnTgUnlink"); setLoading(btn, true, "Mutusin...");
-      const res = await apiPOST("/auth/telegram/unlink", {});
-      setLoading(btn, false);
-      if (res.ok) { await refreshAuth(); pageAkun(); toast("Hubungan Telegram diputus 🔌"); }
-      else pfMsg("pfTgMsg", false, "😅 " + ((res.data && res.data.error) || "gagal"));
-    });
-    return;
-  }
-  box.innerHTML =
-    '<p class="muted">Hubungkan akunmu ke Telegram biar saldo top-up bisa dipakai di <b>web & bot</b>.</p>' +
-    '<p class="pf-msg" id="pfTgMsg"></p>' +
-    '<button class="btn btn-primary btn-block" id="btnTgLink">🔗 Hubungkan Telegram</button>';
-  $("#btnTgLink").addEventListener("click", async () => {
-    const btn = $("#btnTgLink"); setLoading(btn, true, "Bikin kode...");
-    const res = await apiPOST("/auth/telegram/link", {});
-    setLoading(btn, false);
-    if (!res.ok || !res.data || !res.data.kode) {
-      pfMsg("pfTgMsg", false, "😅 " + ((res.data && res.data.error) || "gagal"));
-      return;
-    }
-    const kode = res.data.kode, deep = res.data.deep_link;
-    box.innerHTML =
-      '<p class="muted">Kirim kode ini ke bot (berlaku 10 menit):</p>' +
-      '<p class="tg-kode">' + esc(kode) + '</p>' +
-      '<a class="btn btn-primary btn-block" target="_blank" rel="noopener" href="' + safeUrl(deep) + '">📲 Buka @KhairyPustaka_bot</a>' +
-      '<p class="muted">atau kirim <code>/hubungkan ' + esc(kode) + '</code> ke bot secara manual.</p>' +
-      '<p class="pf-msg" id="pfTgMsg"></p>' +
-      '<button class="btn btn-block" id="btnTgCek">✓ Saya sudah kirim</button>';
-    stopTgPoll();
-    let n = 0;
-    const cek = async () => {
-      n++;
-      const st = await apiJSON("/auth/telegram/status");
-      if (st.ok && st.data && st.data.linked) {
-        stopTgPoll();
-        await refreshAuth(); pageAkun(); toast("Telegram terhubung! 🎉");
-      } else if (n >= 120) { stopTgPoll(); }
-    };
-    $("#btnTgCek").addEventListener("click", cek);
-    _tgPoll = setInterval(cek, 5000);
-  });
 }
 
 /* ----- Konfirmasi ganti email (dari link email) ----- */
@@ -927,6 +823,49 @@ function pageKonfirmasiEmail() {
         'Minta link baru dari halaman Akun Saya ya.</p><a class="btn btn-primary" href="#/akun">Ke Akun Saya</a></div>';
     }
   })();
+}
+
+/* Etalase postingan media sosial KhairyPustaka — marquee CSS murni.
+   Pengganti kartu pengumuman lama di beranda.
+   Cara menambah item baru: tambah satu objek {platform, judul, url, img}
+   di bawah ini, lalu taruh file gambarnya di static/showcase/.
+   Kalau tidak ada gambar yang cocok, kosongkan img ("") — otomatis
+   jadi kartu teks bergaya yang tetap bisa diklik. */
+const SHOWCASE_ITEMS = [
+  { platform: "Instagram", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://www.instagram.com/reel/DebEwzCj9St/", img: "showcase/cover-pilot.jpg" },
+  { platform: "Instagram", judul: "EP02: Salah jurusan?", url: "https://www.instagram.com/reel/DedeF0GkxT2/", img: "showcase/cover-ep02.jpg" },
+  { platform: "Instagram", judul: "EP03: Jurnal predator", url: "https://www.instagram.com/reel/DegC3j-j5Z6/", img: "showcase/cover-ep03.jpg" },
+  { platform: "Instagram", judul: "EP04: Sidang skripsi", url: "https://www.instagram.com/reel/DelMbxkE8hH/", img: "showcase/cover-ep04.jpg" },
+  { platform: "Threads", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://www.threads.com/@khairypustaka/post/DebFzE7jVfo", img: "showcase/cover-pilot.jpg" },
+  { platform: "Threads", judul: "EP02: Salah jurusan?", url: "https://www.threads.com/@khairypustaka/post/DedeBZDjWye", img: "showcase/cover-ep02.jpg" },
+  { platform: "Threads", judul: "EP03: Jurnal predator", url: "https://www.threads.com/@khairypustaka/post/DegC0mADRM7", img: "showcase/cover-ep03.jpg" },
+  { platform: "Threads", judul: "EP04: Sidang skripsi", url: "https://www.threads.com/@khairypustaka/post/DelMZiTjSZy", img: "showcase/cover-ep04.jpg" },
+  { platform: "Threads", judul: "Tips memilih uji statistik", url: "https://www.threads.com/@khairypustaka/post/Del9211Fi4W", img: "showcase/harian-threads-statistik.webp" },
+  { platform: "X", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://x.com/KhairyPustaka/status/2109883741069844871", img: "showcase/cover-pilot.jpg" },
+  { platform: "X", judul: "EP02: Salah jurusan?", url: "https://x.com/KhairyPustaka/status/2110218334688166193", img: "showcase/cover-ep02.jpg" },
+  { platform: "X", judul: "EP03: Jurnal predator", url: "https://x.com/KhairyPustaka/status/2110580638860583109", img: "showcase/cover-ep03.jpg" },
+  { platform: "X", judul: "EP04: Sidang skripsi", url: "https://x.com/KhairyPustaka/status/2111180868404629997", img: "showcase/cover-ep04.jpg" },
+  { platform: "X", judul: "EP05: Nyari jurnal jangan cuma Google", url: "https://x.com/KhairyPustaka/status/2111305714472014119", img: "showcase/cover-ep05.jpg" },
+  { platform: "X", judul: "Update KhairyPustaka minggu ini", url: "https://x.com/KhairyPustaka/status/2111308490987778428", img: "showcase/harian-x-update.webp" }
+];
+
+function showcaseHTML() {
+  // Acak urutan tiap halaman dimuat (Fisher-Yates).
+  var items = SHOWCASE_ITEMS.slice();
+  for (var i = items.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = items[i]; items[i] = items[j]; items[j] = tmp;
+  }
+  function kartu(it) {
+    var isi = it.img
+      ? '<img src="' + esc(it.img) + '" alt="' + esc(it.judul) + '" loading="lazy">'
+      : '<span class="kp-show-teks"><b>' + esc(it.platform) + "</b><i>" + esc(it.judul) + "</i></span>";
+    return '<a class="kp-show-item" href="' + esc(it.url) + '" target="_blank" rel="noopener">' +
+      isi + '<span class="kp-show-label">' + esc(it.platform) + "</span>" +
+      '<span class="kp-show-judul">' + esc(it.judul) + "</span></a>";
+  }
+  var sekali = items.map(kartu).join("");
+  return sekali + sekali; // digandakan agar loop marquee mulus
 }
 
 function pageBeranda() {
@@ -986,7 +925,6 @@ function pageBeranda() {
       "<h1>KhairyPustaka</h1>" +
       "<p>Asisten skripsi & nugas anti begadang: cari jurnal, bikin sitasi, sampai nulis bab — semua dari HP.</p>" +
       '<a class="btn btn-accent" href="#/cari">' + tic("search") + ' Mulai Cari Jurnal</a> ' +
-      '<a class="btn" style="background:rgba(255,255,255,.22);color:#fff" href="https://t.me/KhairyPustaka_bot" target="_blank" rel="noopener">' + tic("send") + ' Buka Bot Telegram</a>' +
     "</section>" +
     '<div class="filter-row" role="tablist">' +
       KATS.map(k =>
@@ -994,10 +932,10 @@ function pageBeranda() {
       ).join("") +
     "</div>" +
     '<div class="grid" id="featGrid">' + gridHTML() + "</div>" +
-    '<div class="card center" style="margin-top:16px">' +
-      "<h3>"+tic("bell")+" Mau yang ada notifikasinya?</h3>" +
-      "<p class='muted'>Pantau artikel baru &amp; pengingat deadline otomatis cuma ada di bot Telegram.</p>" +
-      '<a class="btn btn-primary" href="https://t.me/KhairyPustaka_bot" target="_blank" rel="noopener">' + tic("send") + ' t.me/KhairyPustaka_bot</a>' +
+    '<div class="card kp-show-card" style="margin-top:16px">' +
+      "<h3>"+tic("spark")+" Postingan terbaru KhairyPustaka</h3>" +
+      '<p class="muted">Video dan postingan edukasi dari akun resmi kami. Ketuk gambarnya buat buka langsung. 🎓</p>' +
+      '<div class="kp-show-strip" id="kpShowStrip"><div class="kp-show-track" id="kpShowTrack">' + showcaseHTML() + "</div></div>" +
     "</div>";
   $$("#view .filter-chip").forEach(ch => ch.addEventListener("click", () => {
     aktif = ch.dataset.kat;
@@ -1005,6 +943,18 @@ function pageBeranda() {
     $$("#view .filter-chip").forEach(c => c.classList.toggle("active", c === ch));
     $("#featGrid").innerHTML = gridHTML();
   }));
+  // Etalase: jeda animasi saat disentuh, lanjut lagi setelah dilepas.
+  var strip = $("#kpShowStrip"), track = $("#kpShowTrack"), tmrJeda = null;
+  if (strip && track) {
+    strip.addEventListener("touchstart", function () {
+      track.style.animationPlayState = "paused";
+      if (tmrJeda) clearTimeout(tmrJeda);
+    }, { passive: true });
+    strip.addEventListener("touchend", function () {
+      if (tmrJeda) clearTimeout(tmrJeda);
+      tmrJeda = setTimeout(function () { track.style.animationPlayState = ""; }, 1600);
+    }, { passive: true });
+  }
 }
 
 /* ----- Cari Jurnal ----- */
@@ -1713,11 +1663,9 @@ function pageRiwayat() {
 function pageFavorit() {
   view().innerHTML =
     "<h2>"+tic("star")+" Jurnal Favorit</h2>" +
-    '<div class="card"><h3>Soal notifikasi artikel baru 🔔</h3>' +
-    "<p>Fitur pantau jurnal favorit + notifikasi artikel baru saat ini <b>tetap jalan via Telegram</b> — biar notifnya nyampe langsung ke HP kamu. 📲</p>" +
-    '<a class="btn btn-primary" href="https://t.me/KhairyPustaka_bot" target="_blank" rel="noopener">📩 Atur di @KhairyPustaka_bot</a></div>' +
-    '<div class="warn-box">Versi web-nya <b>segera hadir</b> — untuk sekarang pakai bot Telegram dulu ya! 🚧</div>' +
-    '<div class="card"><h3>Tips 💡</h3><p class="muted">Di bot, ketik <b>/favorit</b> buat nambah jurnal pantauanmu. Tiap ada artikel baru, kamu langsung dikabari. ✨</p></div>';
+    '<div class="card"><h3>⭐ Jurnal Favorit</h3>' +
+    "<p class='muted'>Kumpulan jurnal yang kamu tandai favorit, biar gampang dibuka lagi kapan pun tanpa nyari ulang. ✨</p></div>" +
+    '<div class="card"><h3>Tips 💡</h3><p class="muted">Lagi baca abstrak yang pas banget sama topikmu? Tandai sebagai favorit biar tidak hilang saat ganti halaman. 📚</p></div>';
 }
 
 /* ----- Matriks ----- */
@@ -1798,7 +1746,7 @@ function pageDeadline() {
     '<label for="dlTgl">Tanggal</label><input type="date" id="dlTgl">' +
     '<button class="btn btn-primary btn-block" id="btnDlAdd" style="margin-top:12px">➕ Tambah</button></div>' +
     "<h3>Daftarmu 📋</h3><div id='listDeadline'></div>" +
-    '<p class="tiny muted">Mau diingetin otomatis via chat? Atur di <a href="https://t.me/KhairyPustaka_bot" target="_blank" rel="noopener">bot Telegram</a>. 💡</p>';
+    '<p class="tiny muted">Belum ada pengingat otomatis di web. Cek halaman ini berkala biar tidak ada yang kelewat. 💡</p>';
   muatDeadline();
   $("#btnDlAdd").addEventListener("click", async () => {
     const nama = ($("#dlNama").value || "").trim();
@@ -2004,7 +1952,7 @@ function kuotaBadgeUpdate(sisa) {
 function kuotaHabisBox() {
   return '<div class="warn-box">Yah, kuota AI harianmu habis (' + aiHarian() + 'x/hari). 🥲 ' +
     (AUTH.login
-      ? 'Besok reset otomatis kok — atau cek sisa kuotamu di <a href="https://t.me/KhairyPustaka_bot" target="_blank" rel="noopener">bot Telegram</a>. 💪'
+      ? 'Besok reset otomatis kok. Semangat ngerjainnya! 💪'
       : '<a href="#/masuk">Login gratis</a> biar dapat 10x/hari! ✨') + '</div>';
 }
 
@@ -2013,7 +1961,7 @@ function pageAI() {
     "<h2>"+tic("spark")+" AI Studio</h2>" +
     '<p><span class="kuota" id="kuotaBadge">cek kuota... ⏳</span></p>' +
     '<p class="muted tiny">' + (AUTH.login
-      ? 'Gratis <b>10x/hari</b>, sama kayak di bot Telegram. Pakai bijak ya! 😉'
+      ? 'Gratis <b>10x/hari</b> buat akun login. Pakai bijak ya! 😉'
       : 'Gratis <b>5x/hari</b> buat tamu — <a href="#/masuk">login gratis</a> biar dapat 10x/hari! 😉') + '</p>' +
     '<div class="ai-grid">' + AI_KINDS.map((k, i) =>
       '<div class="card ai-card"><h3>' + tic(k.ico) + " " + esc(k.nama) + "</h3>" +
@@ -2135,56 +2083,6 @@ function pageTanya() {
 }
 
 /* ----- Jatah AI (top-up) ----- */
-/* ----- Nudge hubungkan Telegram sebelum top-up ----- */
-let _tgNudgeShown = false;
-const TG_NUDGE_SKIP_KEY = "kp_tg_nudge_skip";
-const TG_NUDGE_SKIP_MS = 7 * 24 * 3600 * 1000;
-
-function mauTampilNudge() {
-  if (_tgNudgeShown) return false;
-  if (!AUTH.login) return false;
-  if (AUTH.provider !== "password") return false;
-  if (AUTH.tg_linked) return false;
-  try {
-    const skip = parseInt(localStorage.getItem(TG_NUDGE_SKIP_KEY) || "0", 10);
-    if (skip && Date.now() - skip < TG_NUDGE_SKIP_MS) return false;
-  } catch (e) {}
-  return true;
-}
-
-function tutupTgNudge() {
-  const m = $("#modalTgNudge");
-  if (m) m.classList.add("hidden");
-  // simpan preferensi "jangan tampilkan lagi" walau ditutup via ✕/backdrop
-  try {
-    if ($("#modalTgNudgeSkip") && $("#modalTgNudgeSkip").checked)
-      localStorage.setItem(TG_NUDGE_SKIP_KEY, String(Date.now()));
-  } catch (e) {}
-}
-
-function bukaTgNudge(lanjut) {
-  _tgNudgeShown = true;
-  const m = $("#modalTgNudge");
-  if (!m) { lanjut(); return; }
-  try { $("#modalTgNudgeSkip").checked = false; } catch (e) {}
-  m.classList.remove("hidden");
-  $("#modalTgNudgeClose").onclick = tutupTgNudge;
-  m.onclick = (e) => { if (e.target === m) tutupTgNudge(); };
-  $("#modalTgNudgeLanjut").onclick = () => {
-    try {
-      if ($("#modalTgNudgeSkip").checked)
-        localStorage.setItem(TG_NUDGE_SKIP_KEY, String(Date.now()));
-    } catch (e) {}
-    tutupTgNudge();
-    lanjut();
-  };
-  $("#modalTgNudgeLink").onclick = () => {
-    tutupTgNudge();
-    try { sessionStorage.setItem("kp_scroll_tg", "1"); } catch (e) {}
-    location.hash = "#/akun";
-  };
-}
-
 function pageTopup() {
   _tgNudgeShown = false;
   view().innerHTML =
@@ -2225,10 +2123,7 @@ function pageTopup() {
         if (tot) tot.textContent = "Rp" + (u * perU).toLocaleString("id-ID") + " = " + u + "x";
       }
       if (inp) { inp.addEventListener("input", updTotal); updTotal(); }
-      if (bt) bt.addEventListener("click", () => {
-        if (mauTampilNudge()) bukaTgNudge(topupCreate);
-        else topupCreate();
-      });
+      if (bt) bt.addEventListener("click", () => topupCreate());
     });
   }
   refreshInfo();
@@ -2343,18 +2238,18 @@ function pageTopup() {
 function pageBantuan() {
   const faq = [
     ["KhairyPustaka itu apa? ❓", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, deadline, sampai 10 generator AI naskah. Gratis! 🎓"],
-    ["Beneran gratis? 💰", "Iya! Fitur AI gratis " + aiHarian() + "x/hari" + (AUTH.login ? " — sama kayak di bot Telegram." : " buat tamu (login gratis biar dapat 10x/hari).") + " Fitur non-AI gratis tiap hari: tamu 10x/hari per fitur, login sepuasnya. 😉"],
+    ["Beneran gratis? 💰", "Iya! Fitur AI gratis " + aiHarian() + "x/hari" + (AUTH.login ? "." : " buat tamu (login gratis biar dapat 10x/hari).") + " Fitur non-AI gratis tiap hari: tamu 10x/hari per fitur, login sepuasnya. 😉"],
     ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage), tanpa login. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang — jadi rajin-rajin export ya!"],
-    ["Kok nggak ada notifikasi? 🔔", "Notifikasi artikel baru & pengingat deadline otomatis cuma ada di bot Telegram: @KhairyPustaka_bot. Web ini fokus ke tools-nya."],
+    ["Kok nggak ada notifikasi? 🔔", "Belum ada notifikasi otomatis di versi web. Untuk deadline, catat di halaman Deadline dan cek berkala ya. 😉"],
     ["Sitasi gaya apa aja yang didukung? 📑", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
     ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Groq, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp100/x, minimal 50x (Rp5.000), nggak hangus."],
-    ["Error / nggak jalan, gimana? 😭", "Coba refresh dulu. Kalau masih error, cek koneksi internetmu. Masih bandel juga? Lapor ke @KhairyPustaka_bot biar dibenerin. 🛠️"]
+    ["Error / nggak jalan, gimana? 😭", "Coba refresh dulu. Kalau masih error, cek koneksi internetmu. Masih bandel juga? Hubungi admin lewat tombol Hubungi Admin di bagian bawah halaman. 🛠️"]
   ];
   view().innerHTML =
     "<h2>"+tic("help")+" Bantuan</h2>" +
     faq.map(f => '<div class="card"><h3>' + f[0] + "</h3><p>" + f[1] + "</p></div>").join("") +
-    '<div class="card center"><h3>Masih bingung? 💬</h3><p class="muted">Tanya langsung di bot Telegram kami.</p>' +
-    '<a class="btn btn-primary" href="https://t.me/KhairyPustaka_bot" target="_blank" rel="noopener">' + tic("send") + ' t.me/KhairyPustaka_bot</a></div>';
+    '<div class="card center"><h3>Masih bingung? 💬</h3><p class="muted">Chat admin langsung, fast respon di jam kerja. ✨</p>' +
+    '<a class="btn btn-primary" href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">' + tic("ig") + ' Hubungi Admin</a></div>';
 }
 
 /* ---------- Router ---------- */
@@ -2507,7 +2402,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (t) copyText(t);
   });
   document.addEventListener("keydown", e => {
-    if (e.key === "Escape") { tutupModalSit(); tutupTgNudge(); }
+    if (e.key === "Escape") { tutupModalSit(); }
   });
 
   // cek backend hidup (non-blocking; gagal = diam saja, tiap aksi tetap coba API)
