@@ -3,6 +3,7 @@
 Pakai rotasi provider AI (ai_providers) + kuota harian
 gratis agar siap jadi fitur premium (user premium = tanpa batas).
 """
+import hashlib
 import json
 import logging
 import os
@@ -17,6 +18,10 @@ log = logging.getLogger("skripsi_ai")
 
 FREE_AI_PER_DAY = 10        # login: jatah AI gratis harian
 FREE_AI_PER_DAY_TAMU = 5    # tamu web (uid "web_*"): lebih ketat
+GUEST_IP_AI_DAILY_CAP = 25  # hitung ganda: plafon gabungan per alamat IP
+# untuk SEMUA tamu dari IP itu (lintas identitas browser). Longgar supaya
+# jaringan kampus/kos tidak langsung kena hukuman; cukup menutup akal
+# ganti-ganti browser di satu jaringan.
 _QUOTA_PATH = "data/ai_quota.json"
 _WITA = ZoneInfo("Asia/Makassar")
 _LOCK = threading.Lock()  # jaga read-modify-write kuota lintas thread
@@ -289,6 +294,121 @@ def ai_try_consume(chat_id):
             _save(d)
             return "saldo"
         return None
+
+
+def guest_ip_key(ip):
+    """Kunci namespace ember gabungan tamu per alamat IP.
+
+    Bentuk "ip:" + 32 hex sha256 — sengaja beda namespace dari kunci
+    identitas tamu-tanpa-cookie ("web_ip" + hex di app._session), jadi
+    satu pemakaian dihitung tepat 1x di tiap ember, tidak dobel.
+    """
+    return "ip:" + hashlib.sha256(str(ip or "unknown").encode()).hexdigest()[:32]
+
+
+def ip_ai_used(ip):
+    """Total pemakaian AI oleh SEMUA tamu dari alamat IP ini hari ini (WITA).
+
+    Fail-safe baca saja: bila store gagal dibaca, anggap 0 (tidak memblokir).
+    """
+    try:
+        d = _load()
+    except Exception:
+        return 0
+    ipd = d.get("ip_usage") or {}
+    e = ipd.get(guest_ip_key(ip))
+    if isinstance(e, dict) and e.get("date") == _today():
+        try:
+            return max(0, int(e.get("count", 0) or 0))
+        except (TypeError, ValueError):
+            return 0
+    return 0
+
+
+def ip_ai_left(ip):
+    """Sisa plafon gabungan alamat IP hari ini."""
+    return max(0, GUEST_IP_AI_DAILY_CAP - ip_ai_used(ip))
+
+
+def ai_try_consume_guest(uid, ip):
+    """Reservasi 1 jatah AI untuk tamu web dengan hitung ganda.
+
+    Ember identitas (5x/hari, kunci uid "web_*") DAN ember alamat IP
+    (GUEST_IP_AI_DAILY_CAP/hari, kunci "ip:*") dicek DULU keduanya, baru
+    keduanya dikurangi — satu langkah atomik di bawah _LOCK. Hasil:
+    "harian" bila lolos, None bila identitas ATAU IP sudah habis
+    (yang habis identitas tidak mengurangi ember IP, dan sebaliknya).
+    Premium tetap "harian" tanpa mencatat, seperti ai_try_consume.
+    Login/member TIDAK lewat sini (mereka pakai ai_try_consume biasa).
+    """
+    if is_premium(uid):
+        return "harian"
+    with _LOCK:
+        d = _load()  # DBUnavailable (mode strict) menular ke pemanggil -> 503
+        today = _today()
+        users = d.setdefault("users", {})
+        u = users.get(str(uid))
+        used = 0
+        if isinstance(u, dict) and u.get("date") == today:
+            try:
+                used = max(0, int(u.get("count", 0) or 0))
+            except (TypeError, ValueError):
+                used = 0
+        if used >= FREE_AI_PER_DAY_TAMU:
+            return None
+        ipd = d.get("ip_usage") or {}
+        k = guest_ip_key(ip)
+        e = ipd.get(k)
+        iused = 0
+        if isinstance(e, dict) and e.get("date") == today:
+            try:
+                iused = max(0, int(e.get("count", 0) or 0))
+            except (TypeError, ValueError):
+                iused = 0
+        if iused >= GUEST_IP_AI_DAILY_CAP:
+            return None
+        users[str(uid)] = {"date": today, "count": used + 1}
+        ipd[k] = {"date": today, "count": iused + 1}
+        d["ip_usage"] = ipd
+        _save(d)
+        return "harian"
+
+
+def ai_refund_guest(uid, ip):
+    """Kembalikan 1 jatah tamu yang gagal dipakai: kurangi ember
+    identitas DAN ember alamat IP (masing-masing dijaga tidak negatif)."""
+    if is_premium(uid):
+        return
+    with _LOCK:
+        d = _load()
+        today = _today()
+        u = d.get("users", {}).get(str(uid))
+        if isinstance(u, dict) and u.get("date") == today:
+            try:
+                if int(u.get("count", 0) or 0) > 0:
+                    u["count"] = int(u["count"]) - 1
+            except (TypeError, ValueError):
+                pass
+        ipd = d.get("ip_usage") or {}
+        e = ipd.get(guest_ip_key(ip))
+        if isinstance(e, dict) and e.get("date") == today:
+            try:
+                if int(e.get("count", 0) or 0) > 0:
+                    e["count"] = int(e["count"]) - 1
+            except (TypeError, ValueError):
+                pass
+        _save(d)
+
+
+def ai_quota_info_guest(uid, ip):
+    """(sisa_harian_efektif, saldo) untuk tamu web.
+
+    sisa_harian = min(ember identitas, ember alamat IP) supaya tampilan
+    tidak pernah menjanjikan pemakaian yang akan diblokir plafon IP.
+    """
+    if is_premium(uid):
+        return 999, ai_balance(uid)
+    return min(ai_quota_left(uid), ip_ai_left(ip)), ai_balance(uid)
 
 
 def ai_refund(chat_id, pool=None):
