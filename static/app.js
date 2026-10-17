@@ -2107,8 +2107,8 @@ function pageTopup() {
       const isAdm = d.admin === true;
       const harian = d.sisa_harian != null ? d.sisa_harian : 0;
       const saldo = d.saldo != null ? d.saldo : 0;
-      const harga = d.harga_rp || 5000, uses = d.uses || 50;
-      const minU = d.min_uses || 50, perU = d.harga_per_use || 100;
+      const harga = d.harga_rp || 5000, uses = d.uses || 25;
+      const minU = d.min_uses || 25, perU = d.harga_per_use || 200;
       let html = '<div class="card"><h3>Sisa jatahmu</h3>' +
         (isAdm
           ? '<p>🎁 Akun admin: jatah AI tanpa batas, pakai sepuasnya ♾️</p>'
@@ -2251,7 +2251,7 @@ function pageBantuan() {
     ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage), tanpa login. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang — jadi rajin-rajin export ya!"],
     ["Kok nggak ada notifikasi? 🔔", "Belum ada notifikasi otomatis di versi web. Untuk deadline, catat di halaman Deadline dan cek berkala ya. 😉"],
     ["Sitasi gaya apa aja yang didukung? 📑", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
-    ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Groq, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp100/x, minimal 50x (Rp5.000), nggak hangus."],
+    ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Groq, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp200/x, minimal 25x (Rp5.000), nggak hangus."],
     ["Error / nggak jalan, gimana? 😭", "Coba refresh dulu. Kalau masih error, cek koneksi internetmu. Masih bandel juga? Hubungi admin lewat tombol Hubungi Admin di bagian bawah halaman. 🛠️"]
   ];
   view().innerHTML =
