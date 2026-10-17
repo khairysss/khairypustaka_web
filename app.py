@@ -681,11 +681,11 @@ def topik():
         log.warning("topik tren gagal: %s", e)
         return _err("gagal mengambil tren publikasi", 502)
     ide, kuota_habis = None, False
-    pool = sai.ai_try_consume(g.uid)
+    pool = _ai_consume_uid(g.uid)
     if pool:
         try:
             ide = _run(topik_mod.ide_topik_ai(
-                keyword, top, gaps, premium=sai.is_premium(g.uid)))
+                keyword, top, gaps, premium=_ai_premium_uid(g.uid)))
         except Exception as e:
             log.warning("topik ide gagal: %s", e)
             ide = None
@@ -704,7 +704,7 @@ def topik():
     return jsonify({
         "tren": top, "gaps": gaps, "ide": ide, "saran": saran,
         "kuota_habis": kuota_habis,
-        "sisa": sai.ai_quota_left(g.uid),
+        "sisa": _ai_left_uid(g.uid),
     })
 
 
@@ -960,7 +960,7 @@ def ai():
     if len(text) > 8000:
         return _err("teks kepanjangan (maksimal 8000 karakter)", 400)
     extra = (body.get("extra") or "").strip()
-    pool = sai.ai_try_consume(g.uid)
+    pool = _ai_consume_uid(g.uid)
     if not pool:
         return jsonify({"error": "kuota_habis",
                         "pesan": pesan_ai_habis()}), 429
@@ -978,7 +978,7 @@ def ai():
                       {"sumber": "ai", "kind": kind,
                        "text": text[:2000], "hasil": hasil})
     return jsonify({"hasil": hasil, "kind": kind,
-                    "sisa": sai.ai_quota_left(g.uid)})
+                    "sisa": _ai_left_uid(g.uid)})
 
 
 # ---------------------------------------------------------------- tanya
@@ -1003,13 +1003,13 @@ def tanya():
             "terkait": [{"id": e["id"], "title": e["title"]}
                         for e in tanya_mod.related(entry)],
         })
-    pool = sai.ai_try_consume(g.uid)
+    pool = _ai_consume_uid(g.uid)
     if not pool:
         return jsonify({"error": "kuota_habis",
                         "pesan": pesan_ai_habis()}), 429
     try:
         jawaban = _run(tanya_mod.gemini_answer(
-            q[:500], premium=sai.is_premium(g.uid)))
+            q[:500], premium=_ai_premium_uid(g.uid)))
     except Exception as e:
         log.warning("tanya ai error: %s", e)
         jawaban = None
@@ -1023,7 +1023,7 @@ def tanya():
                       {"sumber": "tanya", "tipe_jawab": "ai",
                        "q": q[:500], "jawaban": jawaban})
     return jsonify({"tipe": "ai", "jawaban": jawaban,
-                    "sisa": sai.ai_quota_left(g.uid)})
+                    "sisa": _ai_left_uid(g.uid)})
 
 
 # ---------------------------------------------------------------- riwayat
@@ -1100,15 +1100,16 @@ def history_clear():
 # ---------------------------------------------------------------- kuota
 @app.get("/api/kuota")
 def kuota():
-    harian, saldo = sai.ai_quota_info(g.uid)
+    harian, saldo = _ai_info_uid(g.uid)
     return jsonify({"sisa": harian, "saldo": saldo,
-                    "premium": sai.is_premium(g.uid)})
+                    "premium": _ai_premium_uid(g.uid),
+                    "admin": _is_web_admin()})
 
 
 # ---------------------------------------------------------------- topup jatah AI
 @app.get("/api/topup")
 def topup_info():
-    harian, saldo = sai.ai_quota_info(g.uid)
+    harian, saldo = _ai_info_uid(g.uid)
     return jsonify({
         "harga_rp": ppay.TOPUP_PRICE if ppay else 5000,
         "uses": ppay.TOPUP_USES if ppay else 50,
@@ -1117,6 +1118,7 @@ def topup_info():
         "pay_enabled": ppay.pay_enabled() if ppay else False,
         "sisa_harian": harian,
         "saldo": saldo,
+        "admin": _is_web_admin(),
     })
 
 
@@ -1277,6 +1279,42 @@ def _need_admin():
     if not g.user or not is_admin_user(g.user):
         return jsonify({"ok": False, "error": "khusus admin"}), 403
     return None
+
+
+def _is_web_admin():
+    """True bila request saat ini datang dari akun admin web."""
+    return bool(g.user) and is_admin_user(g.user)
+
+
+def _ai_consume_uid(uid):
+    """Reservasi 1 jatah AI untuk request web.
+
+    Admin web tidak pernah kehabisan: kembalikan "harian" tanpa
+    mengurangi apa pun (pool ini dikenali semua call site sebagai sukses).
+    Non-admin memakai jalur normal sai.ai_try_consume apa adanya.
+    """
+    if _is_web_admin():
+        return "harian"
+    return sai.ai_try_consume(uid)
+
+
+def _ai_left_uid(uid):
+    """Sisa jatah AI harian; admin web selalu 999 (tanpa batas)."""
+    if _is_web_admin():
+        return 999
+    return sai.ai_quota_left(uid)
+
+
+def _ai_info_uid(uid):
+    """(sisa_harian, saldo); admin web selalu (999, saldo)."""
+    if _is_web_admin():
+        return 999, sai.ai_balance(uid)
+    return sai.ai_quota_info(uid)
+
+
+def _ai_premium_uid(uid):
+    """Admin web diperlakukan premium, seperti owner di bot Telegram."""
+    return _is_web_admin() or sai.is_premium(uid)
 
 
 def _wita_midnight_ts():
