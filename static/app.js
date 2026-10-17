@@ -2086,7 +2086,6 @@ function pageTanya() {
 
 /* ----- Jatah AI (top-up) ----- */
 function pageTopup() {
-  _tgNudgeShown = false;
   view().innerHTML =
     "<h2>"+tic("bolt")+" Jatah AI</h2>" +
     '<div id="topInfo"><p class="loading">Lagi ngecek jatah AI... ⏳</p></div>' +
