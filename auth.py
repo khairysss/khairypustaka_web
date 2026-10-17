@@ -1,4 +1,10 @@
-"""Login web KhairyPustaka: Telegram + Google + mode tamu.
+"""Login web KhairyPustaka: username+password + mode tamu.
+
+Login Telegram DINONAKTIFKAN TOTAL (keputusan Sul 2026-10-17): tidak ada lagi
+widget/callback Telegram dan tidak ada lagi penghubungan akun ke Telegram.
+Data lama (provider "telegram" / field tg_id) tetap dibaca tanpa crash,
+hanya cara loginnya yang hilang; field tg_id tetap dipakai untuk merujuk
+pool shared botdata (bukan login).
 
 Identitas dipakai sebagai ``g.uid`` di app.py:
 - tamu        -> "web_<sid>"   (seperti sekarang, cookie 2 tahun)
@@ -17,6 +23,8 @@ import os
 import secrets
 import threading
 import time
+
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 import urllib.parse
 import urllib.request
 
@@ -34,53 +42,25 @@ RESET_TTL = 3600         # link reset password: 1 jam
 
 LOGIN_COOKIE = "kp_login"
 LOGIN_TTL = 90 * 24 * 3600  # 90 hari
-TG_AUTH_MAX_AGE = 86400     # data widget Telegram maks 1 hari
-
-# hubungkan Telegram manual (akun username/password)
-LINK_TTL = 600              # kode hubungkan: 10 menit
-_LINK_FILE = os.path.join(_DIR, "link_tokens.json")
-_LINK_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # tanpa I,O,0,1 biar jelas
 
 
 # ---------------------------------------------------------------- util file
 def _load_users():
-    try:
-        with open(_USERS_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
+    d = dbstore.load_json(_USERS_FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save_users(d):
-    try:
-        os.makedirs(_DIR, exist_ok=True)
-        tmp = _USERS_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, _USERS_FILE)
-    except Exception as e:
-        log.warning("simpan users gagal: %s", e)
+    dbstore.save_json(_USERS_FILE, d)
 
 
 def _load_tokens():
-    try:
-        with open(_TOKENS_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
+    d = dbstore.load_json(_TOKENS_FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save_tokens(d):
-    try:
-        os.makedirs(_DIR, exist_ok=True)
-        tmp = _TOKENS_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, _TOKENS_FILE)
-    except Exception as e:
-        log.warning("simpan tokens gagal: %s", e)
+    dbstore.save_json(_TOKENS_FILE, d)
 
 
 def _secret():
@@ -188,29 +168,6 @@ def touch_login(uid):
         if uid in d:
             d[uid]["last_login"] = int(time.time())
             _save_users(d)
-
-
-# ------------------------------------------------------- verifikasi Telegram
-def verify_telegram(data, bot_token):
-    """Validasi data dari Telegram Login Widget (hash HMAC-SHA256)."""
-    if not bot_token or not isinstance(data, dict):
-        return False
-    data = dict(data)
-    recv = str(data.pop("hash", "") or "")
-    if not recv:
-        return False
-    try:
-        auth_date = int(data.get("auth_date") or 0)
-    except (TypeError, ValueError):
-        return False
-    if time.time() - auth_date > TG_AUTH_MAX_AGE:
-        return False
-    if auth_date > time.time() + 300:
-        return False  # auth_date masa depan (toleransi 5 mnt skew jam)
-    check = "\n".join(f"{k}={data[k]}" for k in sorted(data))
-    key = hashlib.sha256(bot_token.encode()).digest()
-    calc = hmac.new(key, check.encode(), hashlib.sha256).hexdigest()
-    return hmac.compare_digest(calc, recv.lower())
 
 
 # ------------------------------------------------------------- Google OAuth
@@ -682,9 +639,9 @@ def migrate_guest(old_uid, new_uid):
             bal = d.get("ai_balance") or {}
             old_b = int(bal.pop(old_uid, 0) or 0)
             if old_b:
-                # akun baru telegram-linked (login Telegram / hasil hubungkan
-                # manual) -> saldo tamu pindah ke pool BOT (shared antar
-                # platform), bukan ke uid web
+                # akun telegram lama (provider "telegram" / tg_id hasil
+                # hubungkan sebelum penghubungan dimatikan) -> saldo tamu
+                # pindah ke pool BOT (shared antar platform), bukan ke uid web
                 pid = linked_tg_id(new_uid)
                 if pid:
                     try:
@@ -736,33 +693,9 @@ def migrate_guest(old_uid, new_uid):
         log.warning("merge referral ke tg gagal: %s", e)
 
 
-# -------------------------------------------- hubungkan Telegram manual
-def _load_links():
-    try:
-        with open(_LINK_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
-
-
-def _save_links(d):
-    try:
-        os.makedirs(_DIR, exist_ok=True)
-        tmp = _LINK_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, _LINK_FILE)
-    except Exception as e:
-        log.warning("simpan link_tokens gagal: %s", e)
-
-
-def _prune_links(d):
-    now = int(time.time())
-    for k in [k for k, v in d.items()
-              if not isinstance(v, dict) or int(v.get("exp", 0) or 0) <= now]:
-        d.pop(k, None)
-    return d
+# -------------------------------------------- identitas Telegram lama
+# (baca-saja: dipakai referral sync + migrasi saldo tamu untuk akun yang
+# dulunya login/hubung via Telegram. Penghubungan BARU sudah dimatikan.)
 
 
 def linked_tg_id(uid_or_user):
@@ -782,105 +715,3 @@ def linked_tg_id(uid_or_user):
         return tid if tid.isdigit() else None
     except Exception:
         return None
-
-
-def buat_link_token(uid):
-    """Buat kode 6 karakter untuk menghubungkan akun ke Telegram.
-
-    Hanya untuk akun username/password yang belum terhubung.
-    Return kode (str) atau None bila gagal.
-    """
-    try:
-        with _LOCK:
-            users = _load_users()
-            u = users.get(uid)
-            if not u or u.get("provider") != "password":
-                return None
-            if linked_tg_id(u):
-                return None  # sudah terhubung
-            d = _prune_links(_load_links())
-            # satu akun cukup satu kode aktif
-            for k in [k for k, v in d.items() if v.get("uid") == uid]:
-                d.pop(k, None)
-            kode = None
-            for _ in range(20):
-                c = "".join(secrets.choice(_LINK_CHARS) for _ in range(6))
-                if c not in d:
-                    kode = c
-                    break
-            if not kode:
-                return None
-            d[kode] = {"uid": uid, "exp": int(time.time()) + LINK_TTL,
-                       "used": False}
-            if "tg_id" not in u:
-                u["tg_id"] = None
-            _save_users(users)
-            _save_links(d)
-            return kode
-    except Exception as e:
-        log.warning("buat_link_token gagal: %s", e)
-        return None
-
-
-def pakai_link_token(kode, telegram_id):
-    """Tukar kode hubungkan dengan Telegram ID. Return (ok, pesan)."""
-    kode = str(kode or "").strip().upper()
-    tid = str(telegram_id or "").strip()
-    if not kode or not tid.isdigit():
-        return False, "kodenya nggak valid 😅"
-    try:
-        with _LOCK:
-            d = _prune_links(_load_links())
-            rec = d.get(kode)
-            if not rec or rec.get("used"):
-                _save_links(d)
-                return False, "kode tidak ditemukan / sudah dipakai 😅"
-            if int(rec.get("exp", 0) or 0) <= int(time.time()):
-                d.pop(kode, None)
-                _save_links(d)
-                return False, "kode sudah kedaluwarsa — minta kode baru di web ya ⏳"
-            users = _load_users()
-            uid = rec.get("uid")
-            u = users.get(uid)
-            if not isinstance(u, dict):
-                d.pop(kode, None)
-                _save_links(d)
-                return False, "akun web tidak ditemukan 😅"
-            for ouid, ou in users.items():
-                if ouid == uid or not isinstance(ou, dict):
-                    continue
-                if str(ou.get("tg_id") or "").strip() == tid:
-                    return False, "Telegram ini sudah terhubung ke akun web lain 🙂"
-                if (ou.get("provider") == "telegram"
-                        and str(ou.get("pid") or "").strip() == tid):
-                    return False, "Telegram ini sudah dipakai login di web 🙂"
-            # idempoten: akun yang sama menautkan ulang id yang sama -> ok
-            u["tg_id"] = tid
-            d.pop(kode, None)  # sekali pakai
-            _save_users(users)
-            _save_links(d)
-            return True, ("akun Telegram berhasil dihubungkan 🎉 "
-                          "saldo top-up-mu kini shared web ↔ bot!")
-    except Exception as e:
-        log.warning("pakai_link_token gagal: %s", e)
-        return False, "gagal menghubungkan, coba lagi ya 😅"
-
-
-def putus_link(uid):
-    """Putuskan hubungan Telegram akun. Return True bila ada yang diputus."""
-    try:
-        with _LOCK:
-            users = _load_users()
-            u = users.get(uid)
-            if not isinstance(u, dict):
-                return False
-            if u.get("provider") != "password":
-                return False
-            if not str(u.get("tg_id") or "").strip():
-                return False
-            u["tg_id"] = None
-            _save_users(users)
-            return True
-    except Exception as e:
-        log.warning("putus_link gagal: %s", e)
-        return False

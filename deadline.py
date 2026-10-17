@@ -11,6 +11,8 @@ import re
 import threading
 from datetime import date, datetime
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
+
 log = logging.getLogger(__name__)
 
 # lock read-modify-write lintas thread (command vs background loop)
@@ -28,20 +30,12 @@ _BULAN = {"jan": 1, "januari": 1, "feb": 2, "februari": 2, "mar": 3, "maret": 3,
 
 
 def _load():
-    try:
-        with open(FILE, "r", encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    d = dbstore.load_json(FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save(d):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, FILE)
+    dbstore.save_json(FILE, d)
 
 
 def parse_tanggal(text):

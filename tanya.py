@@ -13,6 +13,8 @@ import os
 import re
 import time
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
+
 log = logging.getLogger(__name__)
 
 KB = [
@@ -808,9 +810,5 @@ async def gemini_answer(q, premium=False):
 
 def log_unanswered(q):
     """Catat pertanyaan tak terjawab agar KB bisa diperbaiki."""
-    try:
-        os.makedirs("data", exist_ok=True)
-        with open("data/tanya_unanswered.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": int(time.time()), "q": q}, ensure_ascii=False) + "\n")
-    except Exception as e:
-        log.warning("log_unanswered gagal: %s", e)
+    dbstore.append_jsonl("data/tanya_unanswered.jsonl",
+                         {"ts": int(time.time()), "q": q})

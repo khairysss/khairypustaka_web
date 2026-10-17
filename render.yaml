@@ -41,3 +41,8 @@ services:
         sync: false
       - key: WIJAYAPAY_MERCHANT
         sync: false
+      # Lapisan dbstore: bila DATABASE_URL diisi (Neon/Supabase), 15+ file JSON
+      # state pindah ke Postgres. Bila kosong, app tetap jalan mode file lokal
+      # (data hilang tiap deploy/restart di Render free).
+      - key: DATABASE_URL
+        sync: false

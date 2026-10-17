@@ -10,6 +10,7 @@ import re
 import threading
 import time
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 from search_intl import search_openalex
 
 log = logging.getLogger(__name__)
@@ -23,20 +24,12 @@ MAX_SUBS = 10  # batas langganan per pengguna (lindungi kuota API)
 
 
 def _load():
-    try:
-        with open(PANTAU_FILE, "r", encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    d = dbstore.load_json(PANTAU_FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save(d):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = PANTAU_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, PANTAU_FILE)
+    dbstore.save_json(PANTAU_FILE, d)
 
 
 def _key(w):

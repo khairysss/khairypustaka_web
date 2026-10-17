@@ -10,3 +10,4 @@ pypdf
 waitress>=2.1
 qrcode>=7.4
 itsdangerous>=2.1
+psycopg2-binary>=2.9   # lapisan dbstore: Postgres via env DATABASE_URL (opsional; tanpa env, app tetap jalan mode file)

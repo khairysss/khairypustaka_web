@@ -9,6 +9,8 @@ import os
 import threading
 from datetime import date
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
+
 log = logging.getLogger(__name__)
 
 # lock read-modify-write lintas thread (command vs background loop)
@@ -19,25 +21,15 @@ _FILE = os.path.join(_DIR, "favorit.json")
 
 
 def _load():
-    try:
-        with open(_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    d = dbstore.load_json(_FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save(data):
     """Simpan atomik (tmp + os.replace) agar file tak korup bila dua
-    penulis (command & background loop) menulis bersamaan."""
-    try:
-        os.makedirs(_DIR, exist_ok=True)
-        tmp = _FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, _FILE)
-    except Exception as e:
-        log.warning("gagal simpan favorit: %s", e)
+    penulis (command & background loop) menulis bersamaan.
+    Di Postgres: upsert satu baris."""
+    dbstore.save_json(_FILE, data)
 
 
 def list_favs(chat_id):

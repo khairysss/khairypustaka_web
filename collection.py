@@ -8,6 +8,7 @@ import os
 import re
 from io import BytesIO
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 from cite import cite_in, style_label
 
 log = logging.getLogger(__name__)
@@ -17,20 +18,12 @@ KOLEKSI_FILE = os.path.join(DATA_DIR, "koleksi.json")
 
 
 def _load():
-    try:
-        with open(KOLEKSI_FILE, "r", encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    d = dbstore.load_json(KOLEKSI_FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save(d):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = KOLEKSI_FILE + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, KOLEKSI_FILE)
+    dbstore.save_json(KOLEKSI_FILE, d)
 
 
 def _key(work):

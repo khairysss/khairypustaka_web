@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import ai_providers
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 
 log = logging.getLogger("skripsi_ai")
 
@@ -42,28 +43,19 @@ BASE = ("Kamu asisten skripsi/tugas akhir untuk mahasiswa Indonesia semua jurusa
 
 # ------------------------------------------------------------ kuota
 def _load():
-    try:
-        with open(_QUOTA_PATH, encoding="utf-8") as f:
-            d = json.load(f)
-            d.setdefault("users", {})
-            d.setdefault("premium", {})
-            # migrasi format lama (list) -> dict {chat_id: expires_iso}
-            if isinstance(d["premium"], list):
-                d["premium"] = {str(c): "2099-12-31" for c in d["premium"]}
-            return d
-    except Exception:
+    d = dbstore.load_json(_QUOTA_PATH, {"users": {}, "premium": {}})
+    if not isinstance(d, dict):
         return {"users": {}, "premium": {}}
+    d.setdefault("users", {})
+    d.setdefault("premium", {})
+    # migrasi format lama (list) -> dict {chat_id: expires_iso}
+    if isinstance(d["premium"], list):
+        d["premium"] = {str(c): "2099-12-31" for c in d["premium"]}
+    return d
 
 
 def _save(d):
-    try:
-        os.makedirs("data", exist_ok=True)
-        tmp = _QUOTA_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, _QUOTA_PATH)
-    except Exception as e:
-        log.warning("simpan kuota gagal: %s", e)
+    dbstore.save_json(_QUOTA_PATH, d)
 
 
 # ------------------------------------------------------------ saldo shared bot
@@ -97,20 +89,12 @@ def _tg_pid(chat_id):
 
 def _bot_load():
     """Baca file kuota bot. Return dict atau None bila gagal (fail-safe)."""
-    try:
-        with open(_bot_quota_path(), encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else None
-    except Exception:
-        return None
+    d = dbstore.load_json(_bot_quota_path(), None)
+    return d if isinstance(d, dict) else None
 
 
 def _bot_save(d):
-    os.makedirs(_BOT_DATA_DIR, exist_ok=True)
-    tmp = _bot_quota_path() + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(d, f)
-    os.replace(tmp, _bot_quota_path())
+    dbstore.save_json(_bot_quota_path(), d)
 
 
 def _bot_new():

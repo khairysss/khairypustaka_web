@@ -29,6 +29,7 @@ from io import BytesIO
 from flask import Flask, jsonify, request, g, send_file, Response, redirect
 
 import auth as authmod
+import dbstore
 import mailer as mailmod
 import skripsi_ai as sai
 import collection as koleksi
@@ -124,12 +125,8 @@ def track_penggunaan(tool):
         if not name:
             return
         with _USAGE_LOCK:
-            try:
-                with open(_USAGE_PATH, encoding="utf-8") as f:
-                    d = json.load(f)
-                if not isinstance(d, dict):
-                    d = {}
-            except Exception:
+            d = dbstore.load_json(_USAGE_PATH, {})
+            if not isinstance(d, dict):
                 d = {}
             t = d.get(name)
             if not isinstance(t, dict):
@@ -142,11 +139,7 @@ def track_penggunaan(tool):
             t["total"] = int(t.get("total", 0) or 0) + 1
             t["days"] = days
             d[name] = t
-            os.makedirs("data", exist_ok=True)
-            tmp = _USAGE_PATH + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(d, f)
-            os.replace(tmp, _USAGE_PATH)
+            dbstore.save_json(_USAGE_PATH, d)
     except Exception as e:
         log.warning("track_penggunaan gagal: %s", e)
 
@@ -189,12 +182,8 @@ def kuota_tamu(tool):
         uid = g.uid
         today = _today_wita()
         with _GUEST_USAGE_LOCK:
-            try:
-                with open(_GUEST_USAGE_PATH, encoding="utf-8") as f:
-                    d = json.load(f)
-                if not isinstance(d, dict):
-                    d = {}
-            except Exception:
+            d = dbstore.load_json(_GUEST_USAGE_PATH, {})
+            if not isinstance(d, dict):
                 d = {}
             u = d.get(uid)
             if not isinstance(u, dict):
@@ -206,11 +195,7 @@ def kuota_tamu(tool):
                                 "pesan": "Jatah harian tamu untuk fitur ini habis (10x/hari). Login gratis biar pakai sepuasnya!"}), 429
             u[name] = {today: n + 1}
             d[uid] = u
-            os.makedirs("data", exist_ok=True)
-            tmp = _GUEST_USAGE_PATH + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(d, f)
-            os.replace(tmp, _GUEST_USAGE_PATH)
+            dbstore.save_json(_GUEST_USAGE_PATH, d)
         return None
     except Exception as e:
         log.warning("kuota_tamu gagal: %s", e)
@@ -253,6 +238,15 @@ def _set_sid(resp):
     if getattr(g, "new_sid", False):
         resp.set_cookie(SID_COOKIE, g.sid, max_age=SID_TTL,
                         httponly=True, samesite="Lax", secure=True)
+    # Security headers — meniru set Caddy di VPS lama (audit 2026-10-12),
+    # karena di Render tidak ada reverse proxy yang memasangnya.
+    resp.headers.setdefault("Strict-Transport-Security",
+                            "max-age=31536000; includeSubDomains")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Permissions-Policy",
+                            "camera=(), microphone=(), geolocation=()")
     return resp
 
 
@@ -1308,29 +1302,6 @@ def auth_status():
     return jsonify(_auth_status_payload())
 
 
-@app.post("/api/auth/telegram")
-def auth_telegram():
-    """Callback dari Telegram Login Widget. Body = data auth widget."""
-    token = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
-    if not token:
-        return _err("login Telegram belum dikonfigurasi", 503)
-    data = request.get_json(silent=True) or {}
-    if not authmod.verify_telegram(data, token):
-        return _err("verifikasi Telegram gagal", 401)
-    uid = authmod.find_user("telegram", data.get("id"))
-    if not uid:
-        nama = (str(data.get("first_name") or "") + " " +
-                str(data.get("last_name") or "")).strip()
-        uid = authmod.create_user("telegram", data.get("id"), nama=nama,
-                                  foto=str(data.get("photo_url") or ""))
-    _do_login(uid, "web_" + g.sid if not g.user else g.uid)
-    g.user = authmod.get_user(uid)
-    g.uid = uid
-    resp = jsonify({"ok": True, **_auth_status_payload()})
-    _set_login_cookie(resp, uid)
-    return resp
-
-
 @app.get("/api/auth/google")
 def auth_google():
     """Login Google DINONAKTIFKAN (keputusan Sul 2026-10-11).
@@ -1349,7 +1320,9 @@ def auth_google_callback():
 @app.post("/api/auth/logout")
 def auth_logout():
     resp = jsonify({"ok": True})
-    resp.delete_cookie(authmod.LOGIN_COOKIE, samesite="Lax")
+    # hapus dengan atribut yang SAMA seperti saat cookie dibuat (Secure),
+    # kalau tidak browser bisa menolak menghapus cookie Secure.
+    resp.delete_cookie(authmod.LOGIN_COOKIE, samesite="Lax", secure=True)
     return resp
 
 
@@ -1633,52 +1606,6 @@ def auth_konfirmasi_email():
     return jsonify({"ok": True, "msg": "email berhasil diganti! 🎉"})
 
 
-# ------------------------------------------------- hubungkan Telegram
-@app.post("/api/auth/telegram/link")
-def auth_telegram_link():
-    """Buat kode untuk menghubungkan akun (username/password) ke Telegram."""
-    err = _need_login()
-    if err:
-        return err
-    if g.user.get("provider") != "password":
-        return _err("akun login " + g.user.get("provider", "") +
-                    " tidak perlu dihubungkan manual 🙂", 400)
-    if authmod.linked_tg_id(g.uid):
-        return _err("akun ini sudah terhubung Telegram 🙂", 400)
-    kode = authmod.buat_link_token(g.uid)
-    if not kode:
-        return _err("gagal membuat kode, coba lagi ya 😅", 500)
-    return jsonify({"ok": True, "kode": kode,
-                    "deep_link": "https://t.me/KhairyPustaka_bot?start=link_" + kode,
-                    "exp_detik": authmod.LINK_TTL,
-                    "msg": "kirim kode ini ke bot ya 📲 (berlaku 10 menit)"})
-
-
-@app.get("/api/auth/telegram/status")
-def auth_telegram_status():
-    """Status hubungan Telegram akun."""
-    err = _need_login()
-    if err:
-        return err
-    return jsonify({"ok": True,
-                    "linked": bool(authmod.linked_tg_id(g.uid)),
-                    "bisa_hubungkan": g.user.get("provider") == "password"})
-
-
-@app.post("/api/auth/telegram/unlink")
-def auth_telegram_unlink():
-    """Putuskan hubungan Telegram (khusus akun username/password)."""
-    err = _need_login()
-    if err:
-        return err
-    if g.user.get("provider") != "password":
-        return _err("akun login-Telegram tidak bisa diputus 🙂", 400)
-    if authmod.putus_link(g.uid):
-        g.user = authmod.get_user(g.uid)
-        return jsonify({"ok": True, "msg": "hubungan Telegram diputus 🔌"})
-    return _err("akun ini belum terhubung Telegram", 400)
-
-
 @app.errorhandler(500)
 def _internal(e):
     log.exception("internal error")
@@ -1695,11 +1622,19 @@ def _spa_root():
     return send_file(os.path.join(_STATIC_DIR, "index.html"))
 
 
-@app.get("/<path:path>")
+@app.route("/<path:path>", methods=["GET", "HEAD", "POST", "PUT", "DELETE",
+                                    "PATCH", "OPTIONS"])
 def _spa_static(path):
+    # route API yang tidak ada (mis. endpoint Telegram yang sudah dihapus)
+    # harus menjawab 404 JSON untuk method apa pun, bukan 405 HTML bawaan.
     if path.startswith("api/"):
         return jsonify({"error": "tidak ditemukan"}), 404
-    cand = os.path.join(_STATIC_DIR, path)
+    # anti path traversal: hanya file DI DALAM static/ yang boleh diserve.
+    # "../app.py", "%2e%2e/" dsb -> jatuh ke index.html, bukan ke source code.
+    base = os.path.realpath(_STATIC_DIR)
+    cand = os.path.realpath(os.path.join(_STATIC_DIR, path))
+    if not cand.startswith(base + os.sep):
+        return send_file(os.path.join(_STATIC_DIR, "index.html"))
     if os.path.isfile(cand):
         return send_file(cand)
     return send_file(os.path.join(_STATIC_DIR, "index.html"))

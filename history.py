@@ -16,6 +16,8 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
+
 log = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
@@ -35,23 +37,12 @@ _MAKS_WORKS = 12       # karya tersimpan per entri jurnal
 
 
 def _load():
-    try:
-        with open(_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
+    d = dbstore.load_json(_FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save(data):
-    try:
-        os.makedirs(_DIR, exist_ok=True)
-        tmp = _FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, _FILE)
-    except Exception as e:
-        log.warning("gagal simpan riwayat: %s", e)
+    dbstore.save_json(_FILE, data)
 
 
 def _judul(text, maks=_JUDUL_MAKS):

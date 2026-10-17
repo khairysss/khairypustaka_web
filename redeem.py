@@ -20,6 +20,8 @@ import secrets
 import threading
 import time
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
+
 log = logging.getLogger("jurnalbot")
 
 _DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -33,23 +35,12 @@ MAX_GEN = 200
 
 
 def _load():
-    try:
-        with open(_FILE, encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
+    d = dbstore.load_json(_FILE, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save(d):
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(_FILE)), exist_ok=True)
-        tmp = _FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, _FILE)
-    except Exception as e:
-        log.warning("simpan redeem gagal: %s", e)
+    dbstore.save_json(_FILE, d)
 
 
 def _norm(raw):

@@ -24,6 +24,8 @@ import os
 import re
 import threading
 
+import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
+
 log = logging.getLogger("skripsi_ai")
 
 _DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -38,23 +40,12 @@ TRIAL_USES = 10           # bonus klaim trial (1x per user, bot-only)
 
 
 def _load_file(path):
-    try:
-        with open(path, encoding="utf-8") as f:
-            d = json.load(f)
-            return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
+    d = dbstore.load_json(path, {})
+    return d if isinstance(d, dict) else {}
 
 
 def _save_file(path, d):
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f)
-        os.replace(tmp, path)
-    except Exception as e:
-        log.warning("simpan referral gagal (%s): %s", path, e)
+    dbstore.save_json(path, d)
 
 
 def _load():
