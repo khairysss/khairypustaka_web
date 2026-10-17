@@ -88,7 +88,7 @@ function clearPageTimers() {
 async function apiJSON(path, opts) {
   const o = Object.assign({ method: "GET", headers: { "Content-Type": "application/json" } }, opts || {});
   // timeout: 30 dtk umum; 80 dtk untuk /ai, /tanya, /topik (budget server
-  // 75 dtk — timeout client HARUS di atasnya supaya kuota tidak hangus diam-diam)
+  // 40 dtk — timeout client HARUS di atasnya supaya kuota tidak hangus diam-diam)
   const _p = String(path);
   const ms = o.timeoutMs || ((_p === "/ai" || _p === "/tanya" || _p === "/topik") ? 80000 : 30000);
   delete o.timeoutMs;
@@ -145,6 +145,7 @@ async function refreshAuth() {
   AUTH_SIAP = true;
   aturMenuAdmin(); // tampilkan/sembunyikan link Panel Admin
   _siramRiwAntre();
+  flushRefPending(); // K-1: klaim referral tertunda bila sudah login
   const area = $("#authArea");
   if (!area) return;
   if (AUTH.login) {
@@ -534,6 +535,13 @@ function pageMasuk() {
     if (!u || !p || (mode === "up" && !m)) { toast("Lengkapi dulu ya 😄"); return; }
     const payload = mode === "in" ? { username: u, password: p }
                                   : { username: u, password: p, email: m };
+    // K-1: bawa kode referral (bila ada) supaya diproses saat verifikasi email
+    if (mode === "up") {
+      try {
+        const rk = localStorage.getItem("kp_ref_pending");
+        if (rk) payload.ref = rk;
+      } catch (e) {}
+    }
     const res = await apiPOST(mode === "in" ? "/auth/login" : "/auth/register", payload);
     if (res.ok) {
       if (mode === "up" && res.data && res.data.need_verify) {
@@ -649,6 +657,7 @@ function pageVerifikasi() {
     const res = await apiPOST("/auth/verifikasi", { token: token });
     if (res.ok) {
       await refreshAuth();
+      flushRefPending(); // K-1: klaim referral tepat setelah verifikasi email
       view().innerHTML = "<h2>"+tic("check")+" Email Terverifikasi!</h2>" +
         '<div class="card center"><p>Akunmu aktif! Selamat datang di KhairyPustaka ✨</p>' +
         '<a class="btn btn-primary btn-block" href="#/akun">Ke Akun Saya</a></div>';
@@ -917,7 +926,9 @@ function pageBeranda() {
     if (t && KATS.some(k => k[0] === t)) aktif = t; // tab terakhir diingat (tombol Kembali)
   } catch (e) {}
   function gridHTML() {
-    const feats = KATS.find(k => k[0] === aktif)[2];
+    // Admin: sembunyikan SEMUA pintu masuk halaman Jatah AI (instruksi Sul).
+    let feats = KATS.find(k => k[0] === aktif)[2];
+    if (AUTH.admin) feats = feats.filter(f => f[0] !== "#/topup");
     return feats.map((f, i) =>
       '<a class="feat" style="animation-delay:' + (i * 55) + 'ms" href="' + f[0] + '">' +
       '<span class="ico">' + tic(f[1]) + "</span><b>" + f[2] + "</b><small>" + f[3] + "</small></a>"
@@ -2630,16 +2641,36 @@ function router() {
   refreshAuth();
 }
 
+/* K-1 (audit 2026-10-17): referral HANYA dihitung untuk akun yang login
+   dan emailnya terverifikasi. Kode dari ?ref= disimpan dulu di localStorage;
+   diklaim via flushRefPending() setelah user login, atau otomatis saat
+   verifikasi email (titik di mana backend memproses pending_ref). Tamu
+   tidak pernah memicu penghitungan. */
+function flushRefPending() {
+  let kode = null;
+  try { kode = localStorage.getItem("kp_ref_pending"); } catch (e) {}
+  if (!kode || !AUTH.login) return;
+  apiJSON("/ref?kode=" + encodeURIComponent(kode)).then(d => {
+    // bersihkan bila server sudah memproses (ok) ATAU menolak final
+    // (kode tak dikenal / duplikat / milik sendiri). 401/403 (belum
+    // login / belum verifikasi) -> simpan, coba lagi nanti.
+    if (d && d.ok) {
+      try { localStorage.removeItem("kp_ref_pending"); } catch (e) {}
+      if (d.milestone) toast("Yeay, temanmu dapat bonus referral! 🎉");
+    }
+  }).catch(() => {});
+}
+
 /* ---------- init ---------- */
 document.addEventListener("DOMContentLoaded", async () => {
-  // referral: ?ref=KH-xxx di URL -> daftarkan sekali per browser
+  // referral: ?ref=KP-XXXXXX di URL -> simpan, klaim setelah login/verifikasi
   try {
     const refKode = new URLSearchParams(location.search).get("ref");
-    if (refKode && !localStorage.getItem("kp_ref_done")) {
-      localStorage.setItem("kp_ref_done", "1");
-      apiJSON("/ref?kode=" + encodeURIComponent(refKode)).then(() => {
-        toast("Selamat datang! 🎉");
-      });
+    if (refKode) {
+      localStorage.setItem("kp_ref_pending", refKode.trim().slice(0, 24));
+      const u = new URL(location.href);
+      u.searchParams.delete("ref");
+      history.replaceState(null, "", u.pathname + u.search + location.hash);
     }
   } catch (e) {}
   $("#menuBtn").addEventListener("click", () => $("#mainNav").classList.toggle("open"));
