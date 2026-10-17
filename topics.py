@@ -78,7 +78,8 @@ async def translate_keyword_en(keyword):
         out = await ai_providers.generate(
             "Terjemahkan kata kunci pencarian jurnal berikut ke bahasa Inggris. "
             "Jawab HANYA dengan hasil terjemahannya, tanpa penjelasan dan tanpa tanda kutip.\n\n"
-            "Kata kunci: " + keyword[:200])
+            "Kata kunci: " + keyword[:200],
+            max_tokens=120)
         out = (out or "").strip().strip('"').strip().split("\n")[0].strip()[:200]
         return out or keyword
     except Exception as e:
@@ -111,8 +112,9 @@ async def ide_topik_ai(keyword, top, gaps, premium=False):
             "atau fokus penelitian untuk kualitatif), dan 1 baris sudut kebaruan/gap-nya. "
             "Variasikan: campur ide kuantitatif dan kualitatif. "
             "Akhiri dengan 1 baris tips memilih topik yang paling feasible.")
+        # Prompt meminta maksimal 350 kata -> 1200 token longgar.
         out = await ai_providers.generate(prompt, premium=premium,
-                                            search=True)
+                                          search=True, max_tokens=1200)
         return (out or "").strip() or None
     except Exception as e:
         log.warning("ide topik AI gagal: %s", e)

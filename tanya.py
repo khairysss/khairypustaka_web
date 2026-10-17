@@ -723,9 +723,11 @@ async def _gemini_ranked_models(key):
     return _GEMINI_MODELS
 
 
-async def gemini_generate(prompt):
+async def gemini_generate(prompt, max_output_tokens=1500):
     """Generate teks bebas via Gemini dengan fallback model.
 
+    max_output_tokens membatasi output di sisi provider (ekonomi AI,
+    T-2 audit 2026-10-17).
     Tahan banting: tiap model dicoba; 404 -> lewati (model pensiun),
     429/500/503 -> coba ulang 1x lalu pindah model berikut.
     Model yang berhasil diingat untuk panggilan berikutnya.
@@ -755,7 +757,9 @@ async def gemini_generate(prompt):
                     r = await cli.post(
                         f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent",
                         params={"key": key},
-                        json={"contents": [{"parts": [{"text": prompt}]}]},
+                        json={"contents": [{"parts": [{"text": prompt}]}],
+                              "generationConfig": {
+                                  "maxOutputTokens": int(max_output_tokens)}},
                     )
                     if r.status_code == 404:
                         log.info("gemini %s 404 (pensiun), lanjut model berikut", model)
@@ -805,10 +809,30 @@ async def gemini_answer(q, premium=False):
         "Jika pertanyaan di luar topik skripsi/akademik, tolak dengan sopan dan "
         "arahkan kembali ke topik skripsi.\n\nPertanyaan: " + q
     )
-    return await ai_providers.generate(prompt, premium=premium, search=True)
+    # Prompt meminta maksimal 250 kata -> 1000 token longgar.
+    return await ai_providers.generate(prompt, premium=premium, search=True,
+                                       max_tokens=1000)
+
+
+_UNANSWERED_PRUNE_AT = 0.0
 
 
 def log_unanswered(q):
-    """Catat pertanyaan tak terjawab agar KB bisa diperbaiki."""
+    """Catat pertanyaan tak terjawab agar KB bisa diperbaiki.
+
+    S-4 (audit 2026-10-17): retensi dibatasi 30 hari; prune dijalankan
+    maksimal sekali per 24 jam (throttled) supaya tidak membebani tiap
+    append.
+    """
+    global _UNANSWERED_PRUNE_AT
     dbstore.append_jsonl("data/tanya_unanswered.jsonl",
                          {"ts": int(time.time()), "q": q})
+    now = time.time()
+    if now - _UNANSWERED_PRUNE_AT > 86400:
+        _UNANSWERED_PRUNE_AT = now
+        try:
+            n = dbstore.prune_unanswered(30)
+            if n:
+                log.info("tanya_unanswered: %d entri lama dibersihkan", n)
+        except Exception as e:
+            log.warning("prune tanya_unanswered gagal: %s", e)

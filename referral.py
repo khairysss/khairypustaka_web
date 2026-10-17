@@ -40,6 +40,13 @@ _FILE = os.path.join(_DIR, "referral.json")
 _BOT_FILE = os.path.join(os.environ.get("BOT_DATA_DIR", "/root/jurnal-bot/data"),
                          "referral.json")
 _LOCK = threading.Lock()
+# S-7 (audit 2026-10-17) PERINGATAN SCALE-OUT: lock ini hanya melindungi
+# read-modify-write di DALAM satu proses. Aman hari ini (Render free =
+# 1 instance = 1 proses). Bila suatu hari scale ke >1 instance/proses,
+# PINDAHKAN operasi kritis ke primitif atomik Postgres (UPDATE ... WHERE
+# kondisional / advisory lock) SEBELUM menambah instance — kalau tidak,
+# double-redeem / kuota terlampaui / double-claim bisa terjadi.
+
 
 REFERRALS_FOR_REWARD = 3   # tiap 3 teman...
 REWARD_USES = 30          # ...dapat +30x jatah AI

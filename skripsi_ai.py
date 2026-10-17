@@ -20,6 +20,13 @@ FREE_AI_PER_DAY_TAMU = 5    # tamu web (uid "web_*"): lebih ketat
 _QUOTA_PATH = "data/ai_quota.json"
 _WITA = ZoneInfo("Asia/Makassar")
 _LOCK = threading.Lock()  # jaga read-modify-write kuota lintas thread
+# S-7 (audit 2026-10-17) PERINGATAN SCALE-OUT: lock ini hanya melindungi
+# read-modify-write di DALAM satu proses. Aman hari ini (Render free =
+# 1 instance = 1 proses). Bila suatu hari scale ke >1 instance/proses,
+# PINDAHKAN operasi kritis ke primitif atomik Postgres (UPDATE ... WHERE
+# kondisional / advisory lock) SEBELUM menambah instance — kalau tidak,
+# double-redeem / kuota terlampaui / double-claim bisa terjadi.
+
 
 
 def limit_ai_harian(uid):
@@ -679,6 +686,17 @@ FOOTERS = {
 _SEARCH_KINDS = {"tanya", "topik"}
 
 
+# Ekonomi AI (audit 2026-10-17): batas output per kind, proporsional dengan
+# instruksi "maksimal N kata" di tiap prompt (1 kata Indonesia ~= 1,5 token;
+# angka di sini longgar 2-3x supaya jawaban normal tidak kepotong).
+AI_KIND_MAXTOK = {
+    "kerangka": 1500, "kuesioner": 1500, "sidang": 1500, "metode": 1500,
+    "abstrak": 1200, "latarbelakang": 1200, "simpulan": 1200,
+    "kisi": 1200, "pembahasan": 1200, "bab2": 1200,
+    "ringkas": 800, "interpretasi": 800,
+}
+
+
 async def generate(kind, text, extra="", chat_id=None):
     """Generate via rotasi AI. User premium -> model berbayar (Haiku/Sonar),
     fallback otomatis ke rotasi gratis bila gagal."""
@@ -686,7 +704,8 @@ async def generate(kind, text, extra="", chat_id=None):
         premium = bool(chat_id) and is_premium(chat_id)
         return await ai_providers.generate(
             _prompt(kind, text, extra),
-            premium=premium, search=kind in _SEARCH_KINDS)
+            premium=premium, search=kind in _SEARCH_KINDS,
+            max_tokens=AI_KIND_MAXTOK.get(kind, 1200))
     except Exception as e:
         log.warning("generate %s gagal: %s", kind, e)
         return None

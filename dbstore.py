@@ -1,11 +1,20 @@
 """Lapisan penyimpanan JSON: file lokal ATAU Postgres, digerakkan env.
 
 Perilaku:
-- Bila env DATABASE_URL KOSONG (atau psycopg2 tak tersedia): 100% perilaku
-  lama, baca/tulis file JSON seperti kode aslinya (atomic write via .tmp).
+- Bila env DATABASE_URL KOSONG (atau psycopg2 tak tersedia): mode file,
+  100 persen sama seperti perilaku lama, baca/tulis file JSON seperti kode
+  aslinya (atomic write via .tmp). Tidak pernah melempar DBUnavailable.
 - Bila DATABASE_URL terisi: baca/tulis diarahkan ke Postgres (tabel kp_kv /
-  kp_unanswered). Kegagalan DB apa pun bersifat fail-safe: dicatat ke log
-  lalu fallback ke file, supaya request tidak pernah 500 gara-gara storage.
+  kp_unanswered).
+- TULISAN bersifat strict di mode Postgres: gagal DB (satu percobaan ulang
+  untuk menangani bangun-tidur Neon) -> lempar DBUnavailable, dicatat
+  ERROR, dan API menjawab 503. TIDAK ADA lagi penulisan diam-diam ke file
+  ephemeral yang akan hilang saat restart (S-2 audit 2026-10-17).
+- Pengecualian best-effort: save_json_best_effort() dan append_jsonl()
+  (log diagnostik) tetap fallback ke file saat DB mati, tetapi SELALU
+  mencatat ERROR divergensi agar terlihat di monitoring.
+- BACAAN tetap boleh fallback ke file saat DB mati (data mungkin basi,
+  tapi lebih baik daripada 500 untuk tampilan baca-saja).
 
 Satu tabel cukup karena semua state app berbentuk dokumen JSON arbitrer:
 
@@ -55,6 +64,8 @@ _KV_SAVE_SQL = ("INSERT INTO kp_kv (store, data, updated_at) VALUES (%s, %s, now
                 "ON CONFLICT (store) DO UPDATE SET data = EXCLUDED.data, "
                 "updated_at = now()")
 _LOG_SQL = "INSERT INTO kp_unanswered (entry) VALUES (%s)"
+_LOG_PRUNE_SQL = ("DELETE FROM kp_unanswered "
+                         "WHERE ts < now() - (%s || ' days')::interval")
 
 
 def _dsn():
@@ -119,6 +130,50 @@ def _pg_conn():
     except Exception as e:
         log.warning("dbstore: getconn gagal (%s); fallback file", e)
         return None
+
+
+class DBUnavailable(Exception):
+    """Postgres tidak bisa dihubungi (satu percobaan ulang sudah dilakukan).
+
+    Dilempar oleh save_json() di mode Postgres. Penangkap di lapisan Flask
+    mengubahnya menjadi 503, supaya tulisan TIDAK PERNAH jatuh diam-diam
+    ke file ephemeral lalu hilang saat restart (S-2 audit 2026-10-17).
+    """
+
+
+def _pool_reset():
+    """Buang pool yang rusak supaya percobaan berikut membangun ulang."""
+    global _pg_pool_obj
+    with _pool_lock:
+        p, _pg_pool_obj = _pg_pool_obj, None
+    if p is not None:
+        try:
+            p.closeall()
+        except Exception:
+            pass
+
+
+def _pg_conn_strict():
+    """Koneksi Postgres untuk TULISAN, atau lempar DBUnavailable.
+
+    Satu percobaan ulang dilakukan dulu (menangani bangun-tidur Neon /
+    koneksi basi). Mode file (tanpa DATABASE_URL) tidak pernah sampai sini.
+    """
+    global _pool_failed
+    if not _dsn():
+        return None
+    for attempt in (1, 2):
+        try:
+            p = _pool()
+            if p is None:
+                raise RuntimeError("pool tidak tersedia")
+            return p.getconn()
+        except Exception as e:
+            log.error("dbstore: koneksi Postgres gagal (percobaan %d): %s",
+                      attempt, e)
+            _pool_reset()
+    _pool_failed = True
+    raise DBUnavailable("Postgres tidak dapat dihubungi")
 
 
 def _pg_release(conn, ok=True):
@@ -224,38 +279,64 @@ def load_json(path, default=_NO_DEFAULT):
 
 
 def save_json(path, data):
-    """Simpan dokumen JSON. Fail-safe: gagal DB -> tulis file."""
+    """Simpan dokumen JSON. STRICT di mode Postgres.
+
+    Mode file: tulis file seperti biasa (tidak pernah melempar).
+    Mode Postgres: gagal DB (sudah termasuk satu percobaan ulang) ->
+    lempar DBUnavailable supaya API menjawab 503, bukan menulis diam-diam
+    ke file ephemeral (S-2 audit 2026-10-17).
+    """
     if not enabled():
         file_save(path, data)
         return
-    conn = _pg_conn()
-    if conn is None:
-        file_save(path, data)
-        return
     name = store_name(path)
+    conn = _pg_conn_strict()
     try:
         from psycopg2.extras import Json
         with conn.cursor() as cur:
             cur.execute(_KV_SAVE_SQL, (name, Json(data)))
         conn.commit()
+    except DBUnavailable:
+        raise
     except Exception as e:
-        log.warning("dbstore.save_json gagal (%s): %s; fallback file", name, e)
-        try:
-            conn.rollback()
-        except Exception:
-            pass
+        log.error("dbstore.save_json gagal (%s): %s", name, e)
+        _pg_release(conn, ok=False)
+        raise DBUnavailable("tulis ke Postgres gagal: %s" % name) from e
+    _pg_release(conn, ok=True)
+
+
+def save_json_best_effort(path, data):
+    """Simpan dokumen JSON best-effort: gagal DB -> tulis file + ERROR log.
+
+    Hanya untuk tulisan diagnostik/statistik yang kehilangan satu sampelnya
+    tidak merusak konsistensi (contoh: statistik pemakaian). JANGAN dipakai
+    untuk kuota, saldo, user, referral, redeem, atau pembayaran.
+    """
+    if not enabled():
         file_save(path, data)
-    finally:
-        _pg_release(conn, ok=True)
+        return
+    try:
+        save_json(path, data)
+    except DBUnavailable as e:
+        log.error("dbstore DIVERGENSI (best-effort): %s tidak tersimpan ke "
+                  "Postgres, jatuh ke file lokal: %s", path, e)
+        file_save(path, data)
 
 
 def append_jsonl(path, entry):
-    """Tambah satu baris log JSON (tanya_unanswered)."""
+    """Tambah satu baris log JSON (tanya_unanswered). Best-effort.
+
+    Log diagnostik: gagal DB -> tulis file + ERROR log divergensi, request
+    tetap jalan (kehilangan satu baris log tidak merusak konsistensi).
+    """
     if not enabled():
         file_append_jsonl(path, entry)
         return
-    conn = _pg_conn()
-    if conn is None:
+    try:
+        conn = _pg_conn_strict()
+    except DBUnavailable as e:
+        log.error("dbstore DIVERGENSI (append_jsonl): %s tidak tersimpan ke "
+                  "Postgres, jatuh ke file lokal: %s", path, e)
         file_append_jsonl(path, entry)
         return
     try:
@@ -264,11 +345,62 @@ def append_jsonl(path, entry):
             cur.execute(_LOG_SQL, (Json(entry),))
         conn.commit()
     except Exception as e:
-        log.warning("dbstore.append_jsonl gagal: %s; fallback file", e)
-        try:
-            conn.rollback()
-        except Exception:
-            pass
+        log.error("dbstore.append_jsonl gagal: %s; fallback file", e)
+        _pg_release(conn, ok=False)
         file_append_jsonl(path, entry)
-    finally:
-        _pg_release(conn, ok=True)
+        return
+    _pg_release(conn, ok=True)
+
+
+def prune_unanswered(max_age_days=30):
+    """Hapus entri tanya_unanswered lebih tua dari max_age_days (S-4).
+
+    Mode Postgres: DELETE ... WHERE ts < now() - interval.
+    Mode file: tulis ulang jsonl hanya dengan baris yang masih muda
+    (berdasarkan field ts epoch; baris tanpa ts dianggap muda = aman).
+    Kembalikan jumlah baris yang dihapus (0 bila tidak ada).
+    """
+    import time as _time
+    cutoff = _time.time() - max_age_days * 86400
+    if not enabled():
+        path = "data/tanya_unanswered.jsonl"
+        try:
+            with open(path, encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            return 0
+        keep, dropped = [], 0
+        for ln in lines:
+            try:
+                ts = json.loads(ln).get("ts")
+                if ts is not None and float(ts) < cutoff:
+                    dropped += 1
+                    continue
+            except Exception:
+                pass
+            keep.append(ln)
+        if dropped:
+            try:
+                tmp = path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    f.writelines(keep)
+                os.replace(tmp, path)
+            except Exception as e:
+                log.warning("prune_unanswered file gagal: %s", e)
+                return 0
+        return dropped
+    try:
+        conn = _pg_conn_strict()
+    except DBUnavailable:
+        return 0
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_LOG_PRUNE_SQL, (str(int(max_age_days)),))
+            n = cur.rowcount or 0
+        conn.commit()
+    except Exception as e:
+        log.warning("prune_unanswered PG gagal: %s", e)
+        _pg_release(conn, ok=False)
+        return 0
+    _pg_release(conn, ok=True)
+    return n

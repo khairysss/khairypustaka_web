@@ -27,6 +27,13 @@ log = logging.getLogger("jurnalbot")
 _DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 _FILE = os.path.join(_DIR, "redeem.json")
 _LOCK = threading.Lock()
+# S-7 (audit 2026-10-17) PERINGATAN SCALE-OUT: lock ini hanya melindungi
+# read-modify-write di DALAM satu proses. Aman hari ini (Render free =
+# 1 instance = 1 proses). Bila suatu hari scale ke >1 instance/proses,
+# PINDAHKAN operasi kritis ke primitif atomik Postgres (UPDATE ... WHERE
+# kondisional / advisory lock) SEBELUM menambah instance — kalau tidak,
+# double-redeem / kuota terlampaui / double-claim bisa terjadi.
+
 
 # alfabet tanpa karakter ambigu (0/O, 1/I/L)
 _ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"

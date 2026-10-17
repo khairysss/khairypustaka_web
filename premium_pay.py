@@ -45,6 +45,13 @@ def pay_enabled():
 
 # ---------------------------------------------------------- pending store
 _PENDING_LOCK = threading.Lock()
+# S-7 (audit 2026-10-17) PERINGATAN SCALE-OUT: lock ini (_PENDING_LOCK) hanya melindungi
+# read-modify-write di DALAM satu proses. Aman hari ini (Render free =
+# 1 instance = 1 proses). Bila suatu hari scale ke >1 instance/proses,
+# PINDAHKAN operasi kritis ke primitif atomik Postgres (UPDATE ... WHERE
+# kondisional / advisory lock) SEBELUM menambah instance — kalau tidak,
+# double-redeem / kuota terlampaui / double-claim bisa terjadi.
+
 
 
 def _load_pending():
@@ -101,6 +108,65 @@ def pending_drop(ref_id):
     d = _load_pending()
     if d.pop(ref_id, None) is not None:
         _save_pending(d)
+
+
+# S-6 (audit 2026-10-17): plafon pembuatan invoice per akun per hari.
+# Disimpan di dokumen pending yang sama di bawah kunci "_creates":
+# {"<uid>": {"2026-10-17": 3}}. Disapu ke 2 hari terakhir tiap tulis.
+_CREATES_KEY = "_creates"
+_INVOICE_HARIAN_MAX = 5
+
+
+def _today():
+    try:
+        from zoneinfo import ZoneInfo
+        from datetime import datetime
+        return datetime.now(ZoneInfo("Asia/Makassar")).date().isoformat()
+    except Exception:
+        from datetime import date
+        return date.today().isoformat()
+
+
+def creates_hari_ini(chat_id):
+    """Jumlah invoice yang dibuat uid ini hari ini (0 bila tak ada)."""
+    try:
+        return int((_load_pending().get(_CREATES_KEY, {})
+                    .get(str(chat_id), {}).get(_today(), 0) or 0)
+                   )
+    except Exception:
+        return 0
+
+
+def catat_create(chat_id):
+    """Catat satu pembuatan invoice. Return jumlah hari ini sesudah dicatat."""
+    today = _today()
+    uid = str(chat_id)
+    with _PENDING_LOCK:
+        d = _load_pending()
+        c = d.get(_CREATES_KEY)
+        if not isinstance(c, dict):
+            c = {}
+        u = c.get(uid)
+        if not isinstance(u, dict):
+            u = {}
+        n = int(u.get(today, 0) or 0) + 1
+        u[today] = n
+        # sapu hari lama (simpan 2 hari terakhir saja)
+        for k in [k for k in u.keys() if k != today]:
+            try:
+                from datetime import date as _date
+                if (_date.fromisoformat(today) -
+                        _date.fromisoformat(str(k))).days > 1:
+                    del u[k]
+            except ValueError:
+                del u[k]
+        if not u:
+            c.pop(uid, None)
+        else:
+            c[uid] = u
+        d[_CREATES_KEY] = c
+        _save_pending(d)
+    return n
 
 
 def pending_claim(ref_id):

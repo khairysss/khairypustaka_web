@@ -62,11 +62,20 @@ def parse_tanggal(text):
         return None
 
 
+# Batas anti-banjir (limits sweep audit 2026-10-17): 200 deadline per user.
+# Manusia normal tidak akan menyentuhnya; skrip iseng tidak bisa membengkakkan
+# dokumen tanpa batas.
+MAX_PER_USER = 200
+
+
 def add(user_id, nama, tanggal):
+    """Tambah deadline. Return jumlah item, atau None bila sudah penuh."""
     with _LOCK:
         d = _load()
         uid = str(user_id)
         items = d.get(uid, [])
+        if len(items) >= MAX_PER_USER:
+            return None
         items.append({"nama": nama.strip(), "tanggal": tanggal.isoformat(), "done": []})
         items.sort(key=lambda x: x["tanggal"])
         d[uid] = items

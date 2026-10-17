@@ -7,7 +7,10 @@ services:
     plan: free
     region: singapore
     buildCommand: pip install -r requirements.txt
-    startCommand: waitress-serve --listen=0.0.0.0:$PORT app:app
+    # T-2 (audit 2026-10-17): 8 thread (default 4) supaya segelintir request
+    # lambat tidak melumpuhkan seluruh situs; dilengkapi batas konkurensi
+    # per-IP + global untuk endpoint mahal di app.py (with_heavy).
+    startCommand: waitress-serve --listen=0.0.0.0:$PORT --threads=8 app:app
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:

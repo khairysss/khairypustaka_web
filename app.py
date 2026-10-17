@@ -79,6 +79,17 @@ AI_KINDS = ("kerangka", "abstrak", "kuesioner", "latarbelakang", "simpulan",
             "sidang", "kisi", "metode", "pembahasan", "bab2",
             "ringkas", "interpretasi")  # STRATEGI1: AI tempel
 
+# Ekonomi AI (audit 2026-10-17): batas input per kind di endpoint.
+# _prompt() di skripsi_ai memakai maksimal 1000 karakter teks/extra, jadi
+# batas di sini longgar di atas pemakaian nyata — hanya memotong input
+# raksasa yang tidak menambah kualitas jawaban.
+AI_KIND_INPUT_CAP = {
+    "kerangka": 2000, "abstrak": 2000, "kuesioner": 2000,
+    "latarbelakang": 2000, "simpulan": 2000, "sidang": 2000,
+    "kisi": 2000, "metode": 2000,
+    "pembahasan": 4000, "bab2": 4000, "ringkas": 4000, "interpretasi": 4000,
+}
+
 # peta bidang Indonesia -> Inggris untuk publisher internasional (dari bot.py)
 _BIDANG_EN = {
     "kesehatan": "health", "kedokteran": "medicine", "keperawatan": "nursing",
@@ -139,7 +150,9 @@ def track_penggunaan(tool):
             t["total"] = int(t.get("total", 0) or 0) + 1
             t["days"] = days
             d[name] = t
-            dbstore.save_json(_USAGE_PATH, d)
+            # S-2: statistik pemakaian = best-effort (kehilangan satu sampel
+            # tidak merusak konsistensi; divergensi tercatat ERROR di log).
+            dbstore.save_json_best_effort(_USAGE_PATH, d)
     except Exception as e:
         log.warning("track_penggunaan gagal: %s", e)
 
@@ -167,20 +180,60 @@ def pesan_ai_habis():
             "Besok reset lagi.")
 
 
+def _guest_prune(d, today):
+    """Buang entri tamu yang tidak aktif > 7 hari (S-3 audit 2026-10-17).
+
+    Dipanggil saat tulis bila dokumen membesar; mencegah pertumbuhan tanpa
+    batas (satu entri per identitas tamu selamanya). Entri rusak/tanpa
+    tanggal valid dianggap AKTIF (fail-safe: jangan hapus data meragukan).
+    """
+    from datetime import date as _date
+    try:
+        tgl = _date.fromisoformat(today)
+    except ValueError:
+        return d
+    buang = []
+    for uid, u in d.items():
+        if not isinstance(u, dict):
+            continue
+        termuda = None
+        for t in u.values():
+            if not isinstance(t, dict):
+                continue
+            for k in t.keys():
+                try:
+                    kk = _date.fromisoformat(str(k))
+                except ValueError:
+                    termuda = tgl  # tanggal tak dikenal -> anggap aktif
+                    break
+                if termuda is None or kk > termuda:
+                    termuda = kk
+            if termuda is not None and termuda >= tgl:
+                break
+        if termuda is not None and (tgl - termuda).days > 7:
+            buang.append(uid)
+    for uid in buang:
+        d.pop(uid, None)
+    if buang:
+        log.info("guest_usage: %d entri basi dibersihkan", len(buang))
+    return d
+
+
 def kuota_tamu(tool):
     """Batasi tamu 10x/hari per fitur non-AI.
 
     Kembalikan None bila lolos (sekaligus catat hit untuk tamu),
     atau tuple (response, 429) bila kuota tamu habis.
     Login = unlimited (langsung None, tanpa pencatatan).
-    Fail-safe: gagal baca/tulis -> lolos, tidak pernah 500.
+    S-2: tulisan ke DB yang gagal melempar DBUnavailable -> 503
+    (tidak ditelan menjadi fail-open diam-diam).
     """
+    name = (tool or "").strip().lower()
+    if not name or not _is_tamu():
+        return None
+    uid = g.uid
+    today = _today_wita()
     try:
-        name = (tool or "").strip().lower()
-        if not name or not _is_tamu():
-            return None
-        uid = g.uid
-        today = _today_wita()
         with _GUEST_USAGE_LOCK:
             d = dbstore.load_json(_GUEST_USAGE_PATH, {})
             if not isinstance(d, dict):
@@ -195,8 +248,12 @@ def kuota_tamu(tool):
                                 "pesan": "Jatah harian tamu untuk fitur ini habis (10x/hari). Login gratis biar pakai sepuasnya!"}), 429
             u[name] = {today: n + 1}
             d[uid] = u
+            if len(d) > 2000:
+                d = _guest_prune(d, today)
             dbstore.save_json(_GUEST_USAGE_PATH, d)
         return None
+    except dbstore.DBUnavailable:
+        raise
     except Exception as e:
         log.warning("kuota_tamu gagal: %s", e)
         return None
@@ -293,19 +350,71 @@ def rate_limited(ip):
         return False
 
 
-def _ip():
-    # Urutan kepercayaan: CF-Connecting-IP dulu — header ini di-set
-    # Cloudflare dari IP pengunjung asli dan tidak bisa di-spoof klien
-    # selama trafik lewat Cloudflare. (Cara lama mengambil entri TERAKHIR
-    # X-Forwarded-For = IP egress Cloudflare yang dipakai BERSAMA banyak
-    # pengguna, sehingga rate limit & kuota tamu ketukar antar pengguna.)
-    # Fallback XFF entri terakhir dipertahankan untuk jalur non-CF.
+# Rentang IP publik Cloudflare (sumber: https://www.cloudflare.com/ips,
+# disalin 2026-10-17). Header CF-Connecting-IP HANYA dipercaya bila TCP peer
+# (request.remote_addr) berasal dari rentang ini — yaitu koneksi langsung
+# dari edge Cloudflare. Koneksi dari IP privat/loopback (routing internal
+# Render) juga diterima karena di topologi Render container hanya bisa
+# dihubungi lewat router internal Render; Cloudflare menimpa header ini
+# dengan IP pengunjung asli selama proxying aktif, sehingga di domain
+# resmi nilainya benar. Peer internet lain yang mengirim header ini
+# manual -> DIABAIKAN (T-1 audit 2026-10-17).
+#
+# Catatan X-Forwarded-For: waitress >= 2.0 menghapus SEMUA header
+# X-Forwarded-* secara default (clear_untrusted_proxy_headers=True) kecuali
+# trusted_proxy dikonfigurasi — jadi kode di sini SENGAJA tidak membaca XFF
+# sama sekali (S-8 audit 2026-10-17: komentar lama yang mengklaim fallback
+# XFF sudah tidak akurat dan dihapus).
+_CF_NETWORKS = [
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22",
+    "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18",
+    "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22",
+    "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32",
+    "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29",
+    "2c0f:f248::/32",
+]
+
+
+def _cf_networks():
+    import ipaddress
+    if not hasattr(_cf_networks, "_nets"):
+        _cf_networks._nets = [ipaddress.ip_network(c) for c in _CF_NETWORKS]
+    return _cf_networks._nets
+
+
+def _peer_may_set_cf_header():
+    """True bila peer TCP boleh dipercaya memasang CF-Connecting-IP."""
+    import ipaddress
+    try:
+        peer = ipaddress.ip_address((request.remote_addr or "").strip())
+    except ValueError:
+        return False
+    if peer.is_private or peer.is_loopback:
+        return True  # routing internal (Render) / dev lokal
+    return any(peer in net for net in _cf_networks())
+
+
+def _cf_trusted_ip():
+    """Nilai CF-Connecting-IP bila peer-nya tepercaya, else None."""
     cf = (request.headers.get("CF-Connecting-IP") or "").strip()
-    if cf:
-        return cf
-    fwd = request.headers.get("X-Forwarded-For", "")
-    parts = [p.strip() for p in fwd.split(",") if p.strip()]
-    return (parts[-1] if parts else "") or request.remote_addr or "unknown"
+    if not cf:
+        return None
+    import ipaddress
+    try:
+        ipaddress.ip_address(cf)  # validasi format; nilai aneh -> tolak
+    except ValueError:
+        return None
+    return cf if _peer_may_set_cf_header() else None
+
+
+def _ip():
+    # Identitas klien untuk kuota tamu & rate limit. Header CF-Connecting-IP
+    # hanya dipakai bila peer TCP tepercaya (lihat _peer_may_set_cf_header);
+    # kalau tidak, pakai remote_addr apa adanya. X-Forwarded-For SENGAJA
+    # tidak dibaca (dihapus waitress; lihat catatan di atas).
+    return _cf_trusted_ip() or request.remote_addr or "unknown"
 
 
 def with_rl(view):
@@ -321,6 +430,56 @@ def with_rl(view):
 def _run(coro):
     """Jalankan coroutine async dari view Flask sync."""
     return asyncio.run(coro)
+
+
+# ------------------------------------------------- batas konkurensi berat
+# T-2 (audit 2026-10-17): endpoint mahal (AI & pencarian fan-out) bisa
+# menahan 1 thread waitress puluhan detik. Tanpa batas konkurensi,
+# segelintir request lambat melumpuhkan seluruh situs (DoS) sekaligus
+# membakar kredit AI. Penjaga ini menolak (429) BUKAN menggantung.
+_HEAVY = {}            # ip -> jumlah request mahal yang sedang berjalan
+_HEAVY_LOCK = threading.Lock()
+_HEAVY_GLOBAL = 0      # total request mahal yang sedang berjalan
+_HEAVY_PER_IP = 3      # longgar untuk manusia (3 tab bersamaan masih lolos)
+_HEAVY_GLOBAL_MAX = 5  # sisakan thread untuk endpoint murah & health check
+
+
+def _heavy_masuk():
+    global _HEAVY_GLOBAL
+    ip = _ip()
+    with _HEAVY_LOCK:
+        n_ip = _HEAVY.get(ip, 0)
+        if n_ip >= _HEAVY_PER_IP or _HEAVY_GLOBAL >= _HEAVY_GLOBAL_MAX:
+            return False
+        _HEAVY[ip] = n_ip + 1
+        _HEAVY_GLOBAL += 1
+        return True
+
+
+def _heavy_keluar():
+    global _HEAVY_GLOBAL
+    ip = _ip()
+    with _HEAVY_LOCK:
+        n_ip = _HEAVY.get(ip, 0)
+        if n_ip <= 1:
+            _HEAVY.pop(ip, None)
+        else:
+            _HEAVY[ip] = n_ip - 1
+        _HEAVY_GLOBAL = max(0, _HEAVY_GLOBAL - 1)
+
+
+def with_heavy(view):
+    """Tolak 429 bila terlalu banyak request mahal bersamaan (T-2)."""
+    def wrapped(*a, **kw):
+        if not _heavy_masuk():
+            return jsonify({"ok": False, "error": "server_sibuk",
+                            "pesan": "Server lagi sibuk, coba lagi sebentar ya."}), 429
+        try:
+            return view(*a, **kw)
+        finally:
+            _heavy_keluar()
+    wrapped.__name__ = view.__name__
+    return wrapped
 
 
 def _deadline_run(fn, secs):
@@ -394,6 +553,7 @@ def health():
 # ---------------------------------------------------------------- cari
 @app.post("/api/cari")
 @with_rl
+@with_heavy
 def cari():
     body = request.get_json(silent=True) or {}
     q = (body.get("q") or "").strip()
@@ -488,6 +648,7 @@ def sitasi():
 # ---------------------------------------------------------------- carifile
 @app.post("/api/carifile")
 @with_rl
+@with_heavy
 def carifile():
     body = request.get_json(silent=True) or {}
     teks = (body.get("teks") or "").strip()
@@ -662,6 +823,7 @@ def penulis():
 # ---------------------------------------------------------------- topik
 @app.post("/api/topik")
 @with_rl
+@with_heavy
 def topik():
     body = request.get_json(silent=True) or {}
     keyword = (body.get("keyword") or "").strip()
@@ -809,7 +971,8 @@ def deadline():
         return _qt
     track_penggunaan("deadline")
     if aksi == "tambah":
-        tenggat.add(uid, nama, tgl)
+        if tenggat.add(uid, nama, tgl) is None:
+            return _err("deadline sudah mencapai batas 200, hapus yang lama dulu ya", 400)
     elif aksi == "hapus":
         if tenggat.remove(uid, idx) is None:
             return _err("idx tidak ada")
@@ -949,6 +1112,7 @@ def jadwal():
 # ---------------------------------------------------------------- AI studio
 @app.post("/api/ai")
 @with_rl
+@with_heavy
 def ai():
     body = request.get_json(silent=True) or {}
     kind = (body.get("kind") or "").strip().lower()
@@ -957,8 +1121,9 @@ def ai():
     text = (body.get("text") or "").strip()
     if not text:
         return _err("text kosong")
-    if len(text) > 8000:
-        return _err("teks kepanjangan (maksimal 8000 karakter)", 400)
+    cap = AI_KIND_INPUT_CAP.get(kind, 2000)
+    if len(text) > cap:
+        return _err(f"teks kepanjangan (maksimal {cap} karakter)", 400)
     extra = (body.get("extra") or "").strip()
     pool = _ai_consume_uid(g.uid)
     if not pool:
@@ -984,6 +1149,7 @@ def ai():
 # ---------------------------------------------------------------- tanya
 @app.post("/api/tanya")
 @with_rl
+@with_heavy
 def tanya():
     body = request.get_json(silent=True) or {}
     q = (body.get("q") or "").strip()
@@ -1099,6 +1265,7 @@ def history_clear():
 
 # ---------------------------------------------------------------- kuota
 @app.get("/api/kuota")
+@with_rl  # R-2 (audit 2026-10-17)
 def kuota():
     harian, saldo = _ai_info_uid(g.uid)
     return jsonify({"sisa": harian, "saldo": saldo,
@@ -1108,6 +1275,7 @@ def kuota():
 
 # ---------------------------------------------------------------- topup jatah AI
 @app.get("/api/topup")
+@with_rl  # R-2 (audit 2026-10-17)
 def topup_info():
     harian, saldo = _ai_info_uid(g.uid)
     return jsonify({
@@ -1137,6 +1305,9 @@ def topup_create():
                         "need_login": True}), 401
     if ppay.pending_for_user(g.uid):
         return _err("kamu sudah punya kode bayar aktif", 409)
+    # S-6: plafon 5 invoice / akun / hari (di samping 1 pending / jam).
+    if ppay.creates_hari_ini(g.uid) >= ppay._INVOICE_HARIAN_MAX:
+        return _err("kamu sudah mencapai batas pembuatan kode bayar hari ini, coba lagi besok ya", 429)
     body = request.get_json(silent=True) or {}
     try:
         uses = int(body.get("uses") or 0)
@@ -1149,6 +1320,7 @@ def topup_create():
     if uses > max_uses:
         return _err(f"maksimal top-up {max_uses}x jatah AI per transaksi", 400)
     harga = uses * ppay.TOPUP_PRICE_PER_USE
+    ppay.catat_create(g.uid)  # S-6: hitung ke plafon harian
     inv = _run(ppay.create_invoice(
         harga, f"KhairyPustaka Web +{uses}x AI",
         g.uid, "web"))
@@ -1171,6 +1343,7 @@ def topup_create():
 
 
 @app.get("/api/topup/pending")
+@with_rl  # R-2 (audit 2026-10-17)
 def topup_pending():
     """Kembalikan invoice pending milik user (untuk resume bila tab tertutup).
 
@@ -1204,6 +1377,7 @@ _STATUS_THROTTLE_SECS = 10
 
 
 @app.get("/api/topup/status/<ref_id>")
+@with_rl  # R-2 (audit 2026-10-17)
 def topup_status(ref_id):
     if not ppay:
         return _err("pembayaran belum aktif", 503)
@@ -1233,6 +1407,34 @@ def topup_status(ref_id):
     return jsonify({"ok": True, "paid": False})
 
 
+# R-1 (audit 2026-10-17): perlambat tebakan kode redeem per akun.
+# Ruang kode 30^6 sudah besar, tapi pola ini menutup skrip yang menebak
+# beruntun dari satu akun curian/terbatas: 10x salah dalam 10 menit ->
+# jeda paksa (429) sampai jendela bergeser. Sukses me-reset hitungan.
+_REDEEM_FAIL = {}
+_REDEEM_FAIL_MAX, _REDEEM_FAIL_WINDOW = 10, 600
+
+
+def _redeem_gagal_terakhir(uid):
+    now = time.time()
+    lst = [t for t in _REDEEM_FAIL.get(uid, []) if now - t < _REDEEM_FAIL_WINDOW]
+    _REDEEM_FAIL[uid] = lst
+    return len(lst)
+
+
+def _redeem_cat_gagal(uid):
+    _REDEEM_FAIL.setdefault(uid, []).append(time.time())
+    if len(_REDEEM_FAIL) > 5000:
+        now = time.time()
+        for k in [k for k, v in _REDEEM_FAIL.items()
+                  if not v or now - v[-1] >= _REDEEM_FAIL_WINDOW]:
+            del _REDEEM_FAIL[k]
+
+
+def _redeem_reset(uid):
+    _REDEEM_FAIL.pop(uid, None)
+
+
 @app.post("/api/redeem")
 @with_rl
 def redeem():
@@ -1241,13 +1443,17 @@ def redeem():
     if not g.user:
         return jsonify({"error": "login dulu biar saldomu aman",
                         "need_login": True}), 401
+    if _redeem_gagal_terakhir(g.uid) >= _REDEEM_FAIL_MAX:
+        return _err("kebanyakan tebakan salah, coba lagi 10 menit ya", 429)
     body = request.get_json(silent=True) or {}
     kode = (body.get("kode") or "").strip()
     if not kode:
         return _err("kode kosong")
     ok, res = redmod.redeem(kode, g.uid)
     if not ok:
+        _redeem_cat_gagal(g.uid)
         return jsonify({"ok": False, "alasan": res})
+    _redeem_reset(g.uid)
     new_bal = sai.ai_topup(g.uid, res)
     return jsonify({"ok": True, "uses": res, "saldo": new_bal})
 
@@ -1263,16 +1469,20 @@ def _admin_usernames():
 
 
 def is_admin_user(user):
-    """True bila user cocok dengan salah satu nama di ADMIN_USERNAMES."""
+    """True bila user cocok dengan salah satu nama di ADMIN_USERNAMES.
+
+    Hanya pid (username ternormalisasi) yang dicocokkan. nama/email
+    SENGAJA tidak dipakai: kolom itu bebas diisi sehingga suatu hari bisa
+    dipakai eskalasi bila provider login nama-bebas diaktifkan
+    (S-1 audit 2026-10-17).
+    """
     if not user:
         return False
     allowed = _admin_usernames()
     if not allowed:
         return False
-    for cand in (user.get("pid"), user.get("nama"), user.get("email")):
-        if cand and str(cand).strip().lower() in allowed:
-            return True
-    return False
+    pid = str(user.get("pid") or "").strip().lower()
+    return bool(pid) and pid in allowed
 
 
 def _need_admin():
@@ -1494,6 +1704,7 @@ def admin_grant():
 
 
 @app.get("/api/kode-referral")
+@with_rl  # R-2 (audit 2026-10-17)
 def kode_referral():
     # Satukan hitungan referral lama ke identitas Telegram (idempoten;
     # menutup celah user yang login Telegram sebelum patch sync terpasang).
@@ -1512,7 +1723,17 @@ def kode_referral():
 @app.get("/api/ref")
 @with_rl
 def ref_register():
-    """Daftarkan kunjungan via link referral ?ref=KH-xxx (dipanggil JS sekali)."""
+    """Daftarkan referral ?ref=KP-XXXXXX.
+
+    K-1 (audit 2026-10-17): WAJIB login DAN email terverifikasi. Tamu
+    tidak pernah dihitung dan tidak pernah memicu reward — menutup
+    farming referral tanpa akun. Frontend menyimpan kode di localStorage
+    dan memanggil endpoint ini setelah user login/verifikasi.
+    """
+    if not g.user:
+        return jsonify({"ok": False, "need_login": True}), 401
+    if g.user.get("provider") != "password" or not g.user.get("email_verified"):
+        return jsonify({"ok": False, "perlu_verifikasi": True}), 403
     kode = (request.args.get("kode") or "").strip()
     if not kode:
         return jsonify({"ok": False})
@@ -1520,11 +1741,12 @@ def ref_register():
         rid, milestone = refmod.register(g.uid, kode)
     except Exception:
         return jsonify({"ok": False})
+    tercatat = rid is not None
     if milestone:
         new_bal = sai.ai_topup(rid, refmod.REWARD_USES)
-        return jsonify({"ok": True, "milestone": True,
+        return jsonify({"ok": True, "tercatat": tercatat, "milestone": True,
                         "reward": refmod.REWARD_USES, "saldo": new_bal})
-    return jsonify({"ok": True, "milestone": False})
+    return jsonify({"ok": True, "tercatat": tercatat, "milestone": False})
 
 
 # ------------------------------------------------------------------- auth
@@ -1571,14 +1793,9 @@ def auth_logout():
 
 
 def _pw_client_ip():
-    # Sama seperti _ip(): prioritaskan CF-Connecting-IP (IP pengunjung
-    # asli dari Cloudflare); fallback XFF entri terakhir untuk non-CF.
-    cf = (request.headers.get("CF-Connecting-IP") or "").strip()
-    if cf:
-        return cf
-    fwd = request.headers.get("X-Forwarded-For", "")
-    parts = [p.strip() for p in fwd.split(",") if p.strip()]
-    return (parts[-1] if parts else "") or request.remote_addr or "?"
+    # Sama seperti _ip() (CF-Connecting-IP hanya bila peer tepercaya,
+    # tanpa fallback X-Forwarded-For — lihat catatan di _ip).
+    return _cf_trusted_ip() or request.remote_addr or "?"
 
 
 @app.post("/api/auth/register")
@@ -1590,11 +1807,14 @@ def auth_register():
     body = request.get_json(silent=True) or {}
     uid, err = authmod.register_password(body.get("username"),
                                          body.get("password") or "",
-                                         body.get("email") or "")
+                                         body.get("email") or "",
+                                         ref_code=body.get("ref"))
     if err:
         return _err(err, 400)
     tok = authmod.issue_token(uid, "verify", authmod.VERIFY_TTL)
     user = authmod.get_user(uid)
+    if not _mail_addr_cek(user.get("email")):
+        return _err("batas pengiriman email ke alamat ini tercapai, coba lagi sejam ya", 429)
     ok, merr = mailmod.send_verify_email(user.get("email"), user.get("nama") or "kamu", tok)
     if not ok:
         log.warning("email verifikasi gagal untuk %s: %s", uid, merr)
@@ -1604,6 +1824,7 @@ def auth_register():
 
 
 @app.post("/api/auth/verifikasi")
+@with_rl  # R-2 (audit 2026-10-17)
 def auth_verifikasi():
     """Verifikasi email dari link. Langsung login setelah berhasil."""
     body = request.get_json(silent=True) or {}
@@ -1611,6 +1832,16 @@ def auth_verifikasi():
     if not uid:
         return _err("link verifikasi nggak valid / sudah kedaluwarsa 😅", 400)
     authmod.set_email_verified(uid)
+    # K-1: referral HANYA dihitung untuk akun yang emailnya terverifikasi.
+    # Kode yang dibawa saat daftar diproses tepat di titik ini (sekali saja).
+    try:
+        kode_ref = authmod.consume_pending_ref(uid)
+        if kode_ref:
+            rid, milestone = refmod.register(uid, kode_ref)
+            if milestone:
+                sai.ai_topup(rid, refmod.REWARD_USES)
+    except Exception as e:
+        log.warning("proses pending_ref gagal untuk %s: %s", uid, e)
     _do_login(uid, "web_" + g.sid if not g.user else g.uid)
     g.user = authmod.get_user(uid)
     g.uid = uid
@@ -1620,6 +1851,7 @@ def auth_verifikasi():
 
 
 @app.post("/api/auth/kirim-ulang")
+@with_rl  # R-2 (audit 2026-10-17)
 def auth_kirim_ulang():
     """Kirim ulang email verifikasi (rate-limited)."""
     ip = _pw_client_ip()
@@ -1632,6 +1864,8 @@ def auth_kirim_ulang():
     ident = body.get("email") or body.get("username") or body.get("identifier")
     uid, user = authmod.find_password_user_by_identifier(ident)
     if uid and not user.get("email_verified"):
+        if not _mail_addr_cek(user.get("email")):
+            return _err("batas pengiriman email ke alamat ini tercapai, coba lagi sejam ya", 429)
         tok = authmod.issue_token(uid, "verify", authmod.VERIFY_TTL)
         mailmod.send_verify_email(user.get("email"), user.get("nama") or "kamu", tok)
     return jsonify({"ok": True, "msg": "kalau email terdaftar & belum verifikasi, link dikirim 📧"})
@@ -1662,6 +1896,8 @@ def auth_ganti_email_pending():
         return _err(err, 400)
     _mail_hit(ip)
     user = authmod.get_user(uid) or {}
+    if not _mail_addr_cek(mail):
+        return _err("batas pengiriman email ke alamat ini tercapai, coba lagi sejam ya", 429)
     tok = authmod.issue_token(uid, "verify", authmod.VERIFY_TTL)
     ok, merr = mailmod.send_verify_email(mail, user.get("nama") or "kamu", tok)
     if not ok:
@@ -1684,8 +1920,11 @@ def auth_lupa():
     _mail_hit(ip)
     uid, user = authmod.find_password_user_by_email(body.get("email"))
     if uid:
-        tok = authmod.issue_token(uid, "reset", authmod.RESET_TTL)
-        mailmod.send_reset_email(user.get("email"), user.get("nama") or "kamu", tok)
+        # S-5: batas per alamat; bila tercapai, tetap balas OK generik
+        # (anti-enumerasi) tapi email tidak dikirim.
+        if _mail_addr_cek(user.get("email")):
+            tok = authmod.issue_token(uid, "reset", authmod.RESET_TTL)
+            mailmod.send_reset_email(user.get("email"), user.get("nama") or "kamu", tok)
     # selalu OK biar nggak bisa ditebak email siapa yang terdaftar
     return jsonify({"ok": True, "msg": "kalau email terdaftar, link reset dikirim 📧"})
 
@@ -1730,6 +1969,40 @@ def _mail_hit(ip):
             del _MAIL_ATTEMPTS[k]
 
 
+# S-5 (audit 2026-10-17): batas per ALAMAT TUJUAN — maks 3 email / jam /
+# alamat, di samping batas per IP. Menutup bom email reset ke satu korban
+# (rate limit per IP saja bisa diputar via T-1).
+_MAIL_BY_ADDR = {}
+_MAIL_ADDR_LIMIT, _MAIL_ADDR_WINDOW = 3, 3600
+
+
+def _mail_addr_allowed(addr):
+    now = time.time()
+    lst = [t for t in _MAIL_BY_ADDR.get((addr or "").lower(), [])
+           if now - t < _MAIL_ADDR_WINDOW]
+    _MAIL_BY_ADDR[(addr or "").lower()] = lst
+    return len(lst) < _MAIL_ADDR_LIMIT
+
+
+def _mail_addr_hit(addr):
+    _MAIL_BY_ADDR.setdefault((addr or "").lower(), []).append(time.time())
+    if len(_MAIL_BY_ADDR) > 5000:
+        now = time.time()
+        for k in [k for k, v in _MAIL_BY_ADDR.items()
+                  if not v or now - v[-1] >= _MAIL_ADDR_WINDOW]:
+            del _MAIL_BY_ADDR[k]
+
+
+def _mail_addr_cek(addr):
+    """True bila boleh kirim ke addr (sekaligus catat hit bila boleh)."""
+    if not _mail_addr_allowed(addr):
+        log.warning("batas email per alamat tercapai: %s",
+                    (addr or "")[:40])
+        return False
+    _mail_addr_hit(addr)
+    return True
+
+
 @app.post("/api/auth/login")
 def auth_login():
     """Masuk pakai username/email + password (rate-limited)."""
@@ -1762,6 +2035,7 @@ def _need_login():
 
 
 @app.post("/api/auth/ubah-password")
+@with_rl  # R-2 (audit 2026-10-17)
 def auth_ubah_password():
     """Ganti password (wajib tahu password lama)."""
     err = _need_login()
@@ -1776,6 +2050,7 @@ def auth_ubah_password():
 
 
 @app.post("/api/auth/ubah-username")
+@with_rl  # R-2 (audit 2026-10-17)
 def auth_ubah_username():
     """Ganti username."""
     err = _need_login()
@@ -1791,6 +2066,7 @@ def auth_ubah_username():
 
 
 @app.post("/api/auth/ubah-email")
+@with_rl  # R-2 (audit 2026-10-17)
 def auth_ubah_email():
     """Minta ganti email: kirim link verifikasi ke alamat BARU (rate-limited).
 
@@ -1814,6 +2090,8 @@ def auth_ubah_email():
     if msg:
         return _err(msg, 400)
     user = authmod.get_user(g.uid) or {}
+    if not _mail_addr_cek(mail):
+        return _err("batas pengiriman email ke alamat ini tercapai, coba lagi sejam ya", 429)
     ok, merr = mailmod.send_change_email(mail, user.get("nama") or "kamu", tok)
     if not ok:
         log.warning("email konfirmasi ubah-email gagal untuk %s: %s", g.uid, merr)
@@ -1823,6 +2101,7 @@ def auth_ubah_email():
 
 
 @app.post("/api/auth/ubah-avatar")
+@with_rl  # R-2 (audit 2026-10-17)
 def auth_ubah_avatar():
     """Pilih avatar maskot profil."""
     err = _need_login()
@@ -1838,6 +2117,7 @@ def auth_ubah_avatar():
 
 
 @app.get("/api/auth/konfirmasi-email")
+@with_rl  # R-2 (audit 2026-10-17)
 def auth_konfirmasi_email():
     """Konfirmasi ganti email dari link (token 'ubah_email')."""
     token = (request.args.get("token") or "").strip()
@@ -1856,6 +2136,15 @@ def _internal(e):
     return jsonify({"error": "kesalahan server"}), 500
 
 
+@app.errorhandler(dbstore.DBUnavailable)
+def _db_tidak_tersedia(e):
+    # S-2 (audit 2026-10-17): tulisan ke Postgres gagal -> 503 eksplisit,
+    # bukan 500 dan bukan penulisan diam-diam ke file ephemeral.
+    log.error("DBUnavailable di request %s: %s", request.path, e)
+    return jsonify({"ok": False, "error": "db_sibuk",
+                    "pesan": "Basis data sedang sibuk, coba lagi sebentar ya."}), 503
+
+
 # RENDER-FREE: layani file statis dari Flask (di produksi VPS ini ditangani
 # Caddy; di Render tidak ada reverse proxy, jadi Flask yang melayani SPA).
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -1866,6 +2155,20 @@ def _spa_root():
     return send_file(os.path.join(_STATIC_DIR, "index.html"))
 
 
+# R-3 (audit 2026-10-17): pola path yang jelas-jelas bukan rute SPA
+# (dotfile, .git, arsip data, suffix backup) menjawab 404 polos, bukan
+# 200 berisi index.html — supaya pemindai otomatis tidak salah sangka
+# ada sesuatu, dan tidak ada informasi yang bocor via fallback.
+# Segmen ".." (path traversal) SENGAJA tidak dicakup: ia sudah
+# dinetralkan pemeriksaan realpath di bawah dan tetap jatuh ke index.html
+# (perilaku lama, diuji test_fungsional_pasca_telegram).
+_SENSITIVE_PATH_RE = re.compile(
+    r"(^|/)\.(?!\.)"                 # segmen diawali SATU titik: .env, .git/...
+    r"|(^|/)data/"                   # arsip data internal
+    r"|\.(zip|tar\.gz|tgz|bak|old|sql|env|pem|key|sqlite3?)$",
+    re.IGNORECASE)
+
+
 @app.route("/<path:path>", methods=["GET", "HEAD", "POST", "PUT", "DELETE",
                                     "PATCH", "OPTIONS"])
 def _spa_static(path):
@@ -1873,6 +2176,8 @@ def _spa_static(path):
     # harus menjawab 404 JSON untuk method apa pun, bukan 405 HTML bawaan.
     if path.startswith("api/"):
         return jsonify({"error": "tidak ditemukan"}), 404
+    if _SENSITIVE_PATH_RE.search(path):
+        return "tidak ditemukan", 404
     # anti path traversal: hanya file DI DALAM static/ yang boleh diserve.
     # "../app.py", "%2e%2e/" dsb -> jatuh ke index.html, bukan ke source code.
     base = os.path.realpath(_STATIC_DIR)

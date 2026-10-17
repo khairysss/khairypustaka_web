@@ -35,6 +35,13 @@ _USERS_FILE = os.path.join(_DIR, "users.json")
 _TOKENS_FILE = os.path.join(_DIR, "tokens.json")
 _SECRET_FILE = os.path.join(_DIR, ".web_secret")
 _LOCK = threading.Lock()
+# S-7 (audit 2026-10-17) PERINGATAN SCALE-OUT: lock ini hanya melindungi
+# read-modify-write di DALAM satu proses. Aman hari ini (Render free =
+# 1 instance = 1 proses). Bila suatu hari scale ke >1 instance/proses,
+# PINDAHKAN operasi kritis ke primitif atomik Postgres (UPDATE ... WHERE
+# kondisional / advisory lock) SEBELUM menambah instance — kalau tidak,
+# double-redeem / kuota terlampaui / double-claim bisa terjadi.
+
 
 # masa berlaku token (detik)
 VERIFY_TTL = 24 * 3600   # link verifikasi email: 24 jam
@@ -305,10 +312,13 @@ def verify_password(pw, stored):
         return False
 
 
-def register_password(username, password, email):
+def register_password(username, password, email, ref_code=None):
     """Daftar akun baru. Return (uid, None) sukses / (None, pesan_error).
 
     Email wajib & harus diverifikasi sebelum bisa login.
+    ref_code (opsional): kode referral yang dibawa pendaftar; disimpan
+    sebagai pending_ref dan HANYA diproses saat email terverifikasi
+    (K-1 audit 2026-10-17: tamu/belum-verifikasi tidak pernah dihitung).
     """
     uname = valid_username(username)
     if not uname:
@@ -319,6 +329,7 @@ def register_password(username, password, email):
     perr = valid_password(password)
     if perr:
         return None, perr
+    pref = (ref_code or "").strip()[:24] or None
     with _LOCK:
         d = _load_users()
         for u in d.values():
@@ -340,8 +351,22 @@ def register_password(username, password, email):
             "pw_hash": hash_password(password),
             "created": int(time.time()),
         }
+        if pref:
+            d[uid]["pending_ref"] = pref
         _save_users(d)
     return uid, None
+
+
+def consume_pending_ref(uid):
+    """Ambil & hapus pending_ref user (dipakai sekali saat verifikasi email)."""
+    with _LOCK:
+        d = _load_users()
+        u = d.get(uid)
+        if not u:
+            return None
+        code = u.pop("pending_ref", None)
+        _save_users(d)
+        return code
 
 
 def find_password_user_by_email(email):

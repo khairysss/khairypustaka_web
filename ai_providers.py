@@ -81,9 +81,12 @@ def _premium_endpoints(search):
              {"key": key, "model": m}) for m in models if m]
 
 
-async def _openai_chat(base, key, model, prompt):
+async def _openai_chat(base, key, model, prompt, max_tokens=2000):
     """Satu panggilan chat/completions. Return str | None.
 
+    max_tokens membatasi panjang output di sisi provider (ekonomi AI,
+    T-2 audit 2026-10-17): tanpa ini model bisa mengembalikan puluhan ribu
+    token dan membakar kredit berbayar per request.
     None = gagal sementara (coba lagi / pindah endpoint).
     Raise RuntimeError("skip") = endpoint mati (404) -> langsung endpoint berikut.
     """
@@ -94,7 +97,7 @@ async def _openai_chat(base, key, model, prompt):
                 r = await cli.post(
                     base + "/chat/completions",
                     headers={"Authorization": f"Bearer {key}"},
-                    json={"model": model,
+                    json={"model": model, "max_tokens": int(max_tokens),
                           "messages": [{"role": "user", "content": prompt}]})
             if r.status_code == 404:
                 raise RuntimeError("skip")
@@ -123,16 +126,19 @@ async def _openai_chat(base, key, model, prompt):
     return None
 
 
-async def generate(prompt, premium=False, search=False, budget=75.0):
+async def generate(prompt, premium=False, search=False, budget=40.0,
+                   max_tokens=2000):
     """Generate teks via provider pertama yang berhasil. Return str | None.
 
     premium=True -> coba model berbayar (Haiku/Sonar) dulu, fallback ke
     rotasi gratis bila gagal. premium=False -> langsung rotasi gratis.
 
-    budget: batas total detik untuk seluruh rotasi (default 75). Tanpa ini,
-    request bisa menggantung bermenit-menit saat semua provider bermasalah
-    dan menahan worker Flask. Provider yang key-nya kena 429 dilewati
+    budget: batas total detik untuk seluruh rotasi (default 40; dulunya 75 —
+    diturunkan T-2 audit 2026-10-17 supaya request gagal tidak menahan
+    thread waitress bermenit-menit). Provider yang key-nya kena 429 dilewati
     model-model berikutnya (rate limit = key-level).
+    max_tokens: diteruskan ke semua provider (lihat _openai_chat dan
+    gemini_generate) untuk membatasi biaya output per panggilan.
     """
     t0 = time.monotonic()
 
@@ -143,7 +149,8 @@ async def generate(prompt, premium=False, search=False, budget=75.0):
         for name, base, cfg in _premium_endpoints(search):
             try:
                 out = await asyncio.wait_for(
-                    _openai_chat(base, cfg["key"], cfg["model"], prompt),
+                    _openai_chat(base, cfg["key"], cfg["model"], prompt,
+                                 max_tokens=max_tokens),
                     timeout=sisa())
             except (RuntimeError, _KeyRateLimited):
                 log.info("AI premium %s tidak ada/terbatas, lewati", cfg["model"])
@@ -168,7 +175,9 @@ async def generate(prompt, premium=False, search=False, budget=75.0):
                 try:
                     import tanya as tanya_mod
                     out = await asyncio.wait_for(
-                        tanya_mod.gemini_generate(prompt), timeout=sisa())
+                        tanya_mod.gemini_generate(
+                            prompt, max_output_tokens=max_tokens),
+                        timeout=sisa())
                 except Exception as e:
                     log.info("AI gemini gagal: %s", e)
                     continue
@@ -177,7 +186,8 @@ async def generate(prompt, premium=False, search=False, budget=75.0):
                 continue
             try:
                 out = await asyncio.wait_for(
-                    _openai_chat(base, cfg["key"], cfg["model"], prompt),
+                    _openai_chat(base, cfg["key"], cfg["model"], prompt,
+                                 max_tokens=max_tokens),
                     timeout=sisa())
             except _KeyRateLimited:
                 log.info("AI %s key kena 429, lewati model lain provider ini", name)
@@ -201,15 +211,14 @@ async def generate(prompt, premium=False, search=False, budget=75.0):
     out = await _coba_rotasi()
     if out:
         return out
-    # Semua provider gagal. Bila kegagalannya CEPAT (pola khas 429
-    # beruntun di free tier), jeda 3 detik lalu coba rotasi sekali lagi —
-    # limit provider gratis sering pulih dalam hitungan detik (kejadian
-    # 2026-10-14: Tanya AI & AI Studio 502 massal ~5 menit lalu pulih).
-    # Bila gagalnya karena timeout (elapsed mendekati budget), jangan
-    # ulangi: percuma dan request bisa menggantung.
-    if time.monotonic() - t0 < 35:
-        log.info("AI: rotasi pertama gagal cepat, jeda 3 dtk lalu coba lagi")
-        await asyncio.sleep(3)
+    # Semua provider gagal. Ulangi rotasi SEKALI saja dan hanya bila
+    # kegagalannya SANGAT cepat (pola khas 429 beruntun di free tier yang
+    # pulih dalam hitungan detik). Batas diperketat T-2 audit 2026-10-17:
+    # rotasi kedua menggandakan biaya & waktu request, jadi hanya untuk
+    # kegagalan di bawah 12 detik pertama.
+    if time.monotonic() - t0 < 12:
+        log.info("AI: rotasi pertama gagal cepat, jeda 2 dtk lalu coba lagi")
+        await asyncio.sleep(2)
         out = await _coba_rotasi()
         if out:
             return out
