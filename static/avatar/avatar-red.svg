@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Avatar maskot KhairyPustaka">
+<defs>
+<radialGradient id="apbg-red" cx="35%" cy="28%" r="95%">
+<stop offset="0%" stop-color="#fecaca"/><stop offset="100%" stop-color="#dc2626"/>
+</radialGradient>
+</defs>
+<style>
+.ap-bot{animation:apFloat 3.4s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.ap-mata{animation:apBlink 4.6s infinite;transform-box:fill-box;transform-origin:center}
+.ap-spark{animation:apTw 2.6s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.ap-spark.s2{animation-delay:.9s}.ap-spark.s3{animation-delay:1.7s}
+@keyframes apFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes apBlink{0%,91%,100%{transform:scaleY(1)}94.5%{transform:scaleY(.1)}}
+@keyframes apTw{0%,100%{opacity:.3;transform:scale(.65) rotate(0deg)}50%{opacity:1;transform:scale(1.1) rotate(20deg)}}
+@media (prefers-reduced-motion:reduce){.ap-bot,.ap-mata,.ap-spark{animation:none}}
+</style>
+<circle cx="48" cy="48" r="47" fill="url(#apbg-red)"/>
+<g class="ap-spark s1"><path d="M18 21l1.7 4.2 4.2 1.7-4.2 1.7-1.7 4.2-1.7-4.2-4.2-1.7 4.2-1.7z" fill="#fde68a"/></g>
+<g class="ap-spark s2"><circle cx="79" cy="30" r="2.6" fill="#fde68a"/></g>
+<g class="ap-spark s3"><circle cx="75" cy="67" r="2" fill="#fef3c7"/></g>
+<g class="ap-bot">
+<line x1="48" y1="27" x2="48" y2="16" stroke="#14343b" stroke-width="3" stroke-linecap="round"/>
+<circle cx="48" cy="13" r="4.6" fill="#fbbf24" stroke="#14343b" stroke-width="2.5"/>
+<rect x="20.5" y="36" width="7" height="15" rx="3.5" fill="#fee2e2" stroke="#14343b" stroke-width="2.5"/>
+<rect x="68.5" y="36" width="7" height="15" rx="3.5" fill="#fee2e2" stroke="#14343b" stroke-width="2.5"/>
+<rect x="27" y="26" width="42" height="33" rx="13" fill="#fee2e2" stroke="#14343b" stroke-width="3"/>
+<circle cx="40" cy="42" r="7.6" fill="rgba(255,255,255,.28)" stroke="#c97b2d" stroke-width="3"/>
+<circle cx="56" cy="42" r="7.6" fill="rgba(255,255,255,.28)" stroke="#c97b2d" stroke-width="3"/>
+<line x1="47" y1="42" x2="49" y2="42" stroke="#c97b2d" stroke-width="3"/>
+<line x1="32.6" y1="42" x2="28" y2="42" stroke="#c97b2d" stroke-width="3"/>
+<line x1="63.4" y1="42" x2="68" y2="42" stroke="#c97b2d" stroke-width="3"/>
+<g class="ap-mata">
+<circle cx="40" cy="42" r="2.7" fill="#14343b"/>
+<circle cx="56" cy="42" r="2.7" fill="#14343b"/>
+</g>
+<path d="M42 51 Q48 55.5 54 51" stroke="#14343b" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+<path d="M16 67 Q32 60 48 67 Q64 60 80 67 L80 83 Q64 76 48 83 Q32 76 16 83 Z" fill="#b91c1c" stroke="#14343b" stroke-width="3" stroke-linejoin="round"/>
+<path d="M22.5 69.5 Q34 64.5 46 69.5 L46 79.5 Q34 74.5 22.5 79.5 Z" fill="#fffbeb"/>
+<path d="M73.5 69.5 Q62 64.5 50 69.5 L50 79.5 Q62 74.5 73.5 79.5 Z" fill="#fffbeb"/>
+<line x1="48" y1="67" x2="48" y2="83" stroke="#14343b" stroke-width="2.5"/>
+</g>
+</svg>
