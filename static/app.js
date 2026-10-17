@@ -691,7 +691,7 @@ function pageAkun() {
       ? '<p class="pf-akun-info">👤 @' + esc(u.username || "") + "</p>" +
         '<p class="pf-akun-info">📧 ' + esc(u.email || "") + "</p>"
       : (via ? '<p class="muted">' + esc(via) + "</p>" : "")) +
-    '<a class="btn btn-primary btn-block" href="#/topup">⚡ Jatah AI</a>' +
+    (u.admin ? "" : '<a class="btn btn-primary btn-block" href="#/topup">⚡ Jatah AI</a>') +
     (u.admin ? '<a class="btn btn-block" href="#/admin">🛡️ Panel Admin</a>' : "") +
     '<button class="btn btn-block" id="btnLogout">🚪 Keluar</button></div>' +
     (!u.foto ?
@@ -2092,7 +2092,7 @@ function pageTopup() {
     "<h2>"+tic("bolt")+" Jatah AI</h2>" +
     '<div id="topInfo"><p class="loading">Lagi ngecek jatah AI... ⏳</p></div>' +
     '<div id="topPay"></div>' +
-    '<div class="card"><h3>Punya kode redeem? 🎟️</h3>' +
+    '<div class="card" id="redCard"><h3>Punya kode redeem? 🎟️</h3>' +
     '<label for="kodeRed">Kode redeem</label><input type="text" id="kodeRed" placeholder="Tempel kodemu di sini" autocomplete="off">' +
     '<button class="btn btn-accent btn-block" id="btnRedeem" style="margin-top:12px">🎟️ Redeem Sekarang</button></div>' +
     '<div class="card"><h3>Kode referralmu 🎁</h3><p class="muted tiny">Ajak teman pakai KhairyPustaka, tiap 3 teman dapat bonus jatah AI!</p>' +
@@ -2122,6 +2122,9 @@ function pageTopup() {
           '<button class="btn btn-primary btn-block" id="btnTopup">⚡ Top-up via QRIS</button></div>';
       }
       box.innerHTML = html;
+      // Admin: kartu redeem disembunyikan (kuota admin tanpa batas).
+      const redCard = $("#redCard");
+      if (redCard) redCard.style.display = isAdm ? "none" : "";
       const bt = $("#btnTopup");
       const inp = $("#topUses"), tot = $("#topTotal");
       function updTotal() {
