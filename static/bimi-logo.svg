@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" version="1.2" baseProfile="tiny-ps" viewBox="0 0 512 512">
+<title>KhairyPustaka</title>
+<rect x="0" y="0" width="512" height="512" fill="#559b97"/>
+<rect x="248" y="66" width="16" height="52" fill="#143b43"/>
+<circle cx="256" cy="52" r="24" fill="#ef9440" stroke="#143b43" stroke-width="8"/>
+<rect x="66" y="204" width="34" height="86" rx="14" fill="#237976" stroke="#143b43" stroke-width="8"/>
+<rect x="412" y="204" width="34" height="86" rx="14" fill="#237976" stroke="#143b43" stroke-width="8"/>
+<rect x="96" y="112" width="320" height="252" rx="72" fill="#8ec9c2" stroke="#143b43" stroke-width="10"/>
+<circle cx="194" cy="228" r="46" fill="#ffffff" stroke="#c98f2d" stroke-width="12"/>
+<circle cx="318" cy="228" r="46" fill="#ffffff" stroke="#c98f2d" stroke-width="12"/>
+<rect x="238" y="220" width="36" height="10" fill="#c98f2d"/>
+<circle cx="194" cy="232" r="13" fill="#143b43"/>
+<circle cx="318" cy="232" r="13" fill="#143b43"/>
+<path d="M214 296 Q256 326 298 296" fill="none" stroke="#143b43" stroke-width="10" stroke-linecap="round"/>
+<path d="M256 392 C214 366 152 360 106 376 L106 456 C152 440 214 446 256 472 Z" fill="#fff3d6" stroke="#143b43" stroke-width="8"/>
+<path d="M256 392 C298 366 360 360 406 376 L406 456 C360 440 298 446 256 472 Z" fill="#ffe9bd" stroke="#143b43" stroke-width="8"/>
+<path d="M256 392 L256 472" stroke="#143b43" stroke-width="8"/>
+<path d="M292 402 L316 402 L316 440 L304 428 L292 440 Z" fill="#ef9440"/>
+</svg>
