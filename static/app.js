@@ -904,7 +904,8 @@ function pageBeranda() {
     ["populer", tic("star")+" Populer", [
       ["#/statistik", "chart", "Statistik", "Panduan pilih uji statistik"],
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
-      ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"]
+      ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
+      ["#/ai", "spark", "AI Studio", "10 generator naskah tugas & skripsi"]
     ]],
     ["riset", tic("search")+" Riset", [
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
