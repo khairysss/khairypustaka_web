@@ -1919,17 +1919,39 @@ function pageKemiripan() {
     '<textarea id="kmNaskah" rows="7" placeholder="Tempel potongan naskahmu di sini (maks 10.000 karakter)..."></textarea>' +
     '<label for="kmSumber" style="margin-top:10px">Teks sumber yang kamu pakai</label>' +
     '<textarea id="kmSumber" rows="7" placeholder="Tempel teks asli dari jurnal/buku yang kamu parafrase di sini. Boleh gabung beberapa sumber sekaligus (maks 30.000 karakter)..."></textarea>' +
+    '<p class="muted" style="margin-top:12px">📎 Atau unggah file (boleh dicampur: satu sisi tempel teks, sisi lain file). File naskah maks 50.000 karakter, file sumber maks 150.000 karakter, ukuran file maks 2 MB.</p>' +
+    '<label for="kmFileNaskah">File naskah (.docx/.txt)</label>' +
+    '<input type="file" id="kmFileNaskah" accept=".docx,.txt,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">' +
+    '<label for="kmFileSumber" style="margin-top:8px">File sumber (.docx/.txt)</label>' +
+    '<input type="file" id="kmFileSumber" accept=".docx,.txt,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">' +
     '<button class="btn btn-primary btn-block" id="btnKm" style="margin-top:12px">🔍 Cek Kemiripan</button>' +
     '<p class="muted" style="margin-top:8px">Teksmu diproses seketika dan tidak disimpan. Tips parafrase: <a href="/panduan/cara-parafrase-yang-benar">panduan parafrase yang benar</a>.</p></div>' +
     '<div id="hasilKm"></div>';
   $("#btnKm").addEventListener("click", async () => {
     const naskah = ($("#kmNaskah").value || "").trim();
     const sumber = ($("#kmSumber").value || "").trim();
-    if (!naskah || !sumber) { toast("Isi naskah dan teks sumbernya dulu ya 😄"); return; }
+    const fNaskah = $("#kmFileNaskah").files[0];
+    const fSumber = $("#kmFileSumber").files[0];
+    if ((!naskah && !fNaskah) || (!sumber && !fSumber)) { toast("Isi naskah dan teks sumbernya dulu ya, tempel teks atau unggah file 😄"); return; }
     const box = $("#hasilKm");
     box.innerHTML = '<p class="loading">Lagi membandingkan kata per kata... ⏳</p>';
     const btn = $("#btnKm"); setLoading(btn, true, "Lagi mengecek...");
-    const res = await apiPOST("/kemiripan", { naskah: naskah, sumber: sumber });
+    let res;
+    if (fNaskah || fSumber) {
+      const fd = new FormData();
+      fd.append("naskah", naskah);
+      fd.append("sumber", sumber);
+      if (fNaskah) fd.append("file_naskah", fNaskah);
+      if (fSumber) fd.append("file_sumber", fSumber);
+      try {
+        const r = await fetch("/api/kemiripan-file", { method: "POST", body: fd });
+        res = { ok: r.ok, status: r.status, data: await r.json().catch(() => null) };
+      } catch (e) {
+        res = { ok: false, status: 0, data: null };
+      }
+    } else {
+      res = await apiPOST("/kemiripan", { naskah: naskah, sumber: sumber });
+    }
     setLoading(btn, false);
     if (!res.ok) { if (kuotaTamuBox(box, res)) return; netErr(box, res); return; }
     const h = (res.data || {}).hasil || {};
