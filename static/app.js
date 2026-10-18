@@ -1738,15 +1738,6 @@ function pageRiwayat() {
   muat();
 }
 
-/* ----- Favorit ----- */
-function pageFavorit() {
-  view().innerHTML =
-    "<h2>"+tic("star")+" Jurnal Favorit</h2>" +
-    '<div class="card"><h3>⭐ Jurnal Favorit</h3>' +
-    "<p class='muted'>Kumpulan jurnal yang kamu tandai favorit, biar gampang dibuka lagi kapan pun tanpa nyari ulang. ✨</p></div>" +
-    '<div class="card"><h3>Tips 💡</h3><p class="muted">Lagi baca abstrak yang pas banget sama topikmu? Tandai sebagai favorit biar tidak hilang saat ganti halaman. 📚</p></div>';
-}
-
 /* ----- Matriks ----- */
 function pageMatriks() {
   const arr = koleksiGet();
@@ -1901,39 +1892,6 @@ function pageParafrase() {
     // I4 (audit 2026-10-13): parafrase dicatat sebagai riwayat chat
     riwTamuCatat("chat", teks, { sumber: "parafrase", text: teks, hasil: hasil });
     $("#pfCopy").addEventListener("click", () => copyText(hasil));
-  });
-}
-
-/* ----- Jadwal ----- */
-function pageJadwal() {
-  view().innerHTML =
-    "<h2>"+tic("calendar")+" Jadwal Skripsi</h2>" +
-    '<div class="card"><p class="muted">Kasih tahu tanggal target sidang/wisudamu, aku bikinin timeline mundurnya. ⏪</p>' +
-    '<label for="jdTgl">Tanggal target</label><input type="date" id="jdTgl">' +
-    '<button class="btn btn-primary btn-block" id="btnJd" style="margin-top:12px">🗓️ Buatkan Timeline</button></div>' +
-    '<div id="hasilJd"></div>';
-  $("#btnJd").addEventListener("click", async () => {
-    const tanggal = $("#jdTgl").value || "";
-    if (!tanggal) { toast("Pilih dulu tanggalnya 😄"); return; }
-    const box = $("#hasilJd");
-    box.innerHTML = '<p class="loading">Lagi nyusun timeline... ⏳</p>';
-    const btn = $("#btnJd"); setLoading(btn, true, "Lagi nyusun...");
-    const res = await apiPOST("/jadwal", { tanggal: tanggal });
-    setLoading(btn, false);
-    if (!res.ok) { netErr(box, res); return; }
-    const d = res.data || {};
-    const tl = Array.isArray(d.timeline) ? d.timeline : (Array.isArray(d.jadwal) ? d.jadwal : []);
-    if (!tl.length) { box.innerHTML = '<div class="warn-box">Timelinenya kosong. 😅 Coba tanggal lain ya.</div>'; return; }
-    box.innerHTML = "<h3>Timeline menuju " + esc(fmtTanggal(tanggal)) + " 🗓️</h3>" +
-      '<ul class="timeline">' + tl.map(t => {
-        if (typeof t === "string") return "<li><div>" + esc(t) + "</div></li>";
-        const det = t.deskripsi || t.detail;
-        const cls = t.terlewat ? ' class="tl-lewat"' : (t.hari_h ? ' class="tl-harih"' : "");
-        const badge = t.terlewat ? ' <span class="tiny muted">(terlewat ⏰)</span>' : (t.hari_h ? ' <span class="tiny">🔥 hari-H!</span>' : "");
-        return '<li' + cls + '><span class="tgl">' + esc(t.tanggal_id || t.tanggal || t.date || "") + "</span><div><b>" +
-          esc(t.kegiatan || t.nama || t.judul || "") + "</b>" + badge +
-          (det ? '<br><span class="muted tiny">' + esc(det) + "</span>" : "") + "</div></li>";
-      }).join("") + "</ul>";
   });
 }
 
@@ -2312,12 +2270,10 @@ const ROUTES = {
   "/topik": pageTopik,
   "/koleksi": pageKoleksi,
   "/riwayat": pageRiwayat,
-  "/favorit": pageFavorit,
   "/matriks": pageMatriks,
   "/statistik": pageStatistik,
   "/template": pageTemplate,
   "/parafrase": pageParafrase,
-  "/jadwal": pageJadwal,
   "/ai": pageAI,
   "/tanya": pageTanya,
   "/topup": pageTopup,
