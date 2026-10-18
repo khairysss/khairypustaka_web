@@ -111,7 +111,12 @@ def _pesan_http(e):
         pass
     pesan_api = ""
     try:
-        pesan_api = (json.loads(isi).get("message") or "").strip()
+        _d = json.loads(isi)
+        # Body error asli berbentuk {"error": {"message": ...}} (tersarang),
+        # sebagian respons lain datar {"message": ...} — baca dua-duanya.
+        pesan_api = ((_d.get("message") or "")
+                     or ((_d.get("error") or {}).get("message") or "")
+                     ).strip()
     except Exception:
         pass
     log.warning("iLoveAPI HTTP %s: %s", e.code, pesan_api or isi[:120])
@@ -158,8 +163,19 @@ def _token():
 
 
 def _mulai(token, tool):
-    mentah = _panggil(f"{_API}/process/start/{tool}", token=token,
-                      timeout=15)
+    # Path yang benar: GET /v1/start/<tool> (BUKAN /v1/process/start/... —
+    # path lama menjawab 404 "This resource can't be found", terbukti dari
+    # log produksi 2026-10-19 05:56 + pola klien iLoveAPI yang berjalan).
+    try:
+        mentah = _panggil(f"{_API}/start/{tool}", token=token, timeout=15)
+    except ILoveError:
+        # Tool "pdfword" memang TIDAK ADA di daftar tool resmi iLoveAPI;
+        # kegagalan start untuk tool ini = tidak didukung -> app.py
+        # mengalihkan job ke mode lokal teks rapi.
+        if tool == _PDFWORD_TOOL:
+            raise ToolTidakDidukung(
+                "tool convert ini belum didukung iLoveAPI")
+        raise
     try:
         d = json.loads(mentah.decode("utf-8"))
         return d["server"], d["task"]
