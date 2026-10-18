@@ -2992,6 +2992,34 @@ function admKlikGlobal(e) {
   }
 }
 
+/* Pop up konfirmasi hapus akun di panel admin (perintah Sul 2026-10-19:
+   menggantikan pola klik dua kali yang membingungkan). */
+function popupKonfirmasiHapusAkun(uname, onYa) {
+  if (document.getElementById("kpHapusPopup")) return;
+  const el = document.createElement("div");
+  el.className = "modal";
+  el.id = "kpHapusPopup";
+  el.style.alignItems = "center";
+  el.style.padding = "16px";
+  el.innerHTML =
+    '<div class="modal-box" style="border-radius:20px;max-width:420px;text-align:center">' +
+      '<div style="font-size:40px">🗑️</div>' +
+      '<h3 style="margin:8px 0 0">Hapus akun @' + esc(uname) + "?</h3>" +
+      '<p class="muted" style="text-align:left">Akun ini akan dihapus <b>permanen</b> beserta data terkaitnya (token, kuota, koleksi, riwayat). Tindakan ini <b>tidak bisa dibatalkan</b>.</p>' +
+      '<button class="btn btn-danger btn-block" id="kpHapusYa" type="button">Ya, Hapus Permanen</button>' +
+      '<button class="btn btn-block" id="kpHapusBatal" type="button" style="margin-top:9px">Batal</button>' +
+    "</div>";
+  document.body.appendChild(el);
+  const tutup = () => { el.remove(); window.removeEventListener("hashchange", tutup); };
+  el.addEventListener("click", e => { if (e.target === el) tutup(); });
+  el.querySelector("#kpHapusBatal").addEventListener("click", tutup);
+  el.querySelector("#kpHapusYa").addEventListener("click", function() {
+    tutup();
+    onYa();
+  });
+  window.addEventListener("hashchange", tutup);
+}
+
 function pageAdmin() {
   if (!AUTH.login) {
     view().innerHTML =
@@ -3039,7 +3067,7 @@ function pageAdmin() {
     '<div class="card"><h3>🗑️ Hapus Akun</h3>' +
     '<p class="muted">Hapus permanen satu akun dari username-nya, misalnya akun uji. Data terkaitnya (token, kuota, koleksi, riwayat) ikut dibersihkan. Akun admin tidak bisa dihapus. Tindakan ini tidak bisa dibatalkan.</p>' +
     '<input type="text" id="admHapusUser" placeholder="username akun yang mau dihapus" autocomplete="off">' +
-    '<button class="btn btn-block" id="admHapusBtn">Hapus Akun Ini</button>' +
+    '<button class="btn btn-danger btn-block" id="admHapusBtn">Hapus Akun Ini</button>' +
     '<p class="pf-msg" id="admHapusMsg"></p></div>';
   admMuatStatistik();
   admMuatKode();
@@ -3077,22 +3105,19 @@ function pageAdmin() {
     const r = await apiDownload("/admin/backup", {}, "khairypustaka-backup.json");
     msg.textContent = r && r.ok ? "Backup terunduh. Simpan file-nya baik-baik ya. 💾" : "Gagal membuat backup. Coba lagi ya.";
   });
-  let admHapusArmed = "";
-  $("#admHapusBtn").addEventListener("click", async function() {
+  $("#admHapusBtn").addEventListener("click", function() {
     const msg = $("#admHapusMsg");
     const uname = ($("#admHapusUser").value || "").trim().toLowerCase();
     if (!uname) { msg.textContent = "Isi dulu username-nya."; return; }
-    if (admHapusArmed !== uname) {
-      admHapusArmed = uname;
-      msg.textContent = "Yakin mau menghapus permanen akun @" + uname + "? Klik tombol sekali lagi untuk benar-benar menghapus.";
-      return;
-    }
-    admHapusArmed = "";
-    const r = await apiPOST("/admin/hapus-user", { username: uname });
-    if (!r.ok) { msg.textContent = (r.data && (r.data.pesan || r.data.error)) || "Gagal menghapus."; return; }
-    msg.textContent = "Akun @" + uname + " sudah dihapus permanen. ✅";
-    $("#admHapusUser").value = "";
-    admMuatStatistik();
+    msg.textContent = "";
+    popupKonfirmasiHapusAkun(uname, async function() {
+      msg.textContent = "Menghapus akun @" + uname + "...";
+      const r = await apiPOST("/admin/hapus-user", { username: uname });
+      if (!r.ok) { msg.textContent = (r.data && (r.data.pesan || r.data.error)) || "Gagal menghapus."; return; }
+      msg.textContent = "Akun @" + uname + " sudah dihapus permanen. ✅";
+      $("#admHapusUser").value = "";
+      admMuatStatistik();
+    });
   });
 }
 
