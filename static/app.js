@@ -224,6 +224,7 @@ function kuotaTamuBox(box, res) {
   if (pesan != null) {
     box.innerHTML = '<div class="warn-box">' + esc(pesan || "Jatah harian tamu habis (10x/hari buat semua fitur).") +
       '<br><a class="btn btn-primary" style="margin-top:10px;display:inline-block" href="#/masuk">Masuk / Daftar — gratis! ✨</a></div>';
+    popupJatahHabis();
     return true;
   }
   return false;
@@ -232,6 +233,7 @@ function kuotaTamuToast(res) {
   const pesan = _kuotaTamuMatch(res);
   if (pesan != null) {
     toast("🔒 " + (pesan || "Jatah harian tamu habis (10x/hari buat semua fitur).") + " Login gratis biar sepuasnya! ✨");
+    popupJatahHabis();
     return true;
   }
   return false;
@@ -1051,7 +1053,7 @@ async function ringkasAI(item, btn) {
   const res = await apiPOST("/ai", { kind: "ringkas", text: teks.slice(0, 3000) });
   setLoading(btn, false);
   const d = res.data || {};
-  if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) { toast("Kuota AI harianmu habis 🥲 Login/besok reset ya"); return; }
+  if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) { popupJatahHabis(); return; }
   if (!res.ok) { toast("AI-nya lagi gangguan, coba lagi ya 😅"); return; }
   const hasil = d.hasil || d.result || d.text;
   if (!hasil) { toast("AI-nya bengong, coba lagi ya 😅"); return; }
@@ -1304,6 +1306,7 @@ function pageTopik() {
     const d = res.data || {};
     if (d.kuota_habis || d.error === "kuota_habis") {
       box.innerHTML = '<div class="warn-box">Yah, kuota AI harianmu habis. 🥲 Tenang, besok reset lagi kok! Sementara pakai fitur non-AI dulu ya. 💪</div>';
+      popupJatahHabis();
       return;
     }
     let html = "";
@@ -1834,7 +1837,7 @@ function statHasil(d) {
     const res = await apiPOST("/ai", { kind: "interpretasi", text: teks });
     setLoading(btnAi, false);
     const d = res.data || {};
-    if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) { out.innerHTML = kuotaHabisBox(); return; }
+    if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) { out.innerHTML = kuotaHabisBox(); popupJatahHabis(); return; }
     if (!res.ok) { out.innerHTML = ""; netErr(out, res); return; }
     const hasil = d.hasil || d.result || d.text;
     out.innerHTML = hasil ? '<div class="hasil-ai">' + mdRapi(hasil) + "</div>" : '<div class="warn-box">AI-nya bengong. 😅 Coba lagi ya.</div>';
@@ -1932,6 +1935,42 @@ function kuotaHabisBox() {
       : '<a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ✨') + '</div>';
 }
 
+/* Pop up jatah habis (disetujui Sul 2026-10-18, menggantikan sekadar
+   kotak peringatan): member diarahkan top up, tamu diarahkan daftar.
+   Muncul sekali per kejadian kuota habis; admin tidak pernah kena. */
+function popupJatahHabis() {
+  if (AUTH.admin) return;
+  if (document.getElementById("kpJatahPopup")) return;
+  const login = !!AUTH.login;
+  const el = document.createElement("div");
+  el.className = "modal";
+  el.id = "kpJatahPopup";
+  el.style.alignItems = "center";
+  el.style.padding = "16px";
+  el.innerHTML =
+    '<div class="modal-box" style="border-radius:20px;max-width:420px;text-align:center">' +
+      '<div style="width:52px;height:52px;margin:2px auto 0;border-radius:50%;background:#fdf0dc;display:flex;align-items:center;justify-content:center">' +
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="#e8873a" aria-hidden="true"><path d="M13 2 4.5 13.5H11L9.8 22 19 10h-6.5L13 2z"/></svg></div>' +
+      '<h3 style="margin:10px 0 0">' + (login ? "Jatah AI Harianmu Habis" : "Jatah Tamu Hari Ini Habis") + '</h3>' +
+      '<div style="margin-top:12px;background:#f7f1e3;border-radius:10px;padding:8px 10px;text-align:left">' +
+        '<div style="display:flex;justify-content:space-between;font-size:.8rem"><span>' + (login ? "Jatah gratis hari ini" : "Jatah tamu hari ini") + '</span><span><b>10 dari 10</b> terpakai</span></div>' +
+        '<div style="height:8px;background:#e7ddc9;border-radius:99px;margin-top:6px;overflow:hidden"><div style="width:100%;height:100%;background:#e8873a"></div></div></div>' +
+      (login
+        ? '<p class="muted" style="text-align:left">Jatah AI gratis memang cuma <b>10x per hari</b>. Tenang, jatahnya reset otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok bisa kamu pakai lagi seperti biasa.</p>' +
+          '<p class="muted" style="text-align:left">Tidak mau menunggu? Top up saja. Mulai <b>Rp5.000</b> kamu dapat <b>25x</b> jatah AI. Saldonya tidak hangus dan bisa dipakai kapan saja.</p>'
+        : '<p class="muted" style="text-align:left">Mode tamu jatahnya cuma <b>10x per hari</b> buat semua fitur, AI dan non-AI dihitung bareng. Jatahnya reset otomatis <b>tengah malam pukul 00.00 WITA</b>.</p>' +
+          '<p class="muted" style="text-align:left">Daftar gratis saja, tidak sampai semenit. Member bisa pakai fitur non-AI <b>sepuasnya</b>, jatah AI tetap 10x per hari, plus koleksi dan riwayatmu tersimpan aman di akun.</p>') +
+      '<a class="btn btn-primary btn-block" id="kpJatahCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "⚡ Top Up Jatah AI" : "🔑 Daftar Gratis") + '</a>' +
+      '<button class="btn btn-block" id="kpJatahTutup" type="button" style="margin-top:9px">Nanti Saja</button>' +
+    '</div>';
+  document.body.appendChild(el);
+  const tutup = () => { el.remove(); window.removeEventListener("hashchange", tutup); };
+  el.addEventListener("click", e => { if (e.target === el) tutup(); });
+  el.querySelector("#kpJatahTutup").addEventListener("click", tutup);
+  el.querySelector("#kpJatahCta").addEventListener("click", tutup);
+  window.addEventListener("hashchange", tutup);
+}
+
 function pageAI() {
   view().innerHTML =
     "<h2>"+tic("spark")+" AI Studio</h2>" +
@@ -1969,13 +2008,13 @@ function pageAI() {
     // 429 kuota_habis harus dicek SEBELUM !res.ok (apiJSON memetakan semua
     // non-2xx ke ok:false, jadi cabang ini mati bila ditaruh setelahnya)
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
-      out.innerHTML = kuotaHabisBox();
+      out.innerHTML = kuotaHabisBox(); popupJatahHabis();
       kuotaBadgeUpdate(0);
       return;
     }
     if (!res.ok) { out.innerHTML = ""; netErr(out, res); return; }
     if (d.error === "kuota_habis" || d.kuota_habis) {
-      out.innerHTML = kuotaHabisBox();
+      out.innerHTML = kuotaHabisBox(); popupJatahHabis();
       kuotaBadgeUpdate(0);
       return;
     }
@@ -2025,12 +2064,12 @@ function pageTanya() {
     const d = res.data || {};
     // 429 kuota_habis harus dicek SEBELUM !res.ok (lihat pageAI)
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
-      tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
+      popupJatahHabis(); tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
     } else if (!res.ok) {
       tanyaRiwayat.push({ dari: "bot", teks: (d.pesan || d.error) ? String(d.pesan || d.error) : "Waduh koneksinya bermasalah. 😭 Coba kirim lagi ya!" });
     } else {
       if (d.error === "kuota_habis" || d.kuota_habis) {
-        tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
+        popupJatahHabis(); tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
       } else {
         // kontrak backend: {tipe:"panduan"|"ai", jawaban, judul, terkait:[{id,title}]}
         let teks = d.jawaban || d.hasil || d.text || "Hmm, aku nggak nemu jawabannya. 😅 Coba tanya dengan kata lain ya.";
