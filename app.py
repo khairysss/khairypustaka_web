@@ -1010,15 +1010,33 @@ def kemiripan():
 
 
 def _teks_dari_file(fs):
-    """Ekstrak teks dari file unggahan (.docx/.txt). File TIDAK disimpan:
-    dibaca di memori lalu dibuang. Return (teks, None) / (None, pesan)."""
+    """Ekstrak teks dari file unggahan (.docx/.txt/.pdf). File TIDAK
+    disimpan: dibaca di memori lalu dibuang. Return (teks, None) /
+    (None, pesan)."""
     nama = (fs.filename or "").lower()
     raw = fs.read()
     if len(raw) > 2 * 1024 * 1024:
         return None, "ukuran file maksimal 2 MB ya"
     if nama.endswith(".pdf") or raw[:4] == b"%PDF":
-        return None, ("file PDF belum didukung. Simpan dulu sebagai "
-                      ".docx/.txt, atau salin teksnya lalu tempel manual ya")
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(BytesIO(raw))
+            if reader.is_encrypted:
+                return None, ("PDF-nya terkunci kata sandi, jadi teksnya "
+                              "tidak bisa dibaca. Lepas kuncinya dulu ya")
+            bagian = [(hal.extract_text() or "")
+                      for hal in reader.pages[:200]]
+            teks = "\n".join(bagian)
+        except Exception:
+            return None, ("file PDF-nya tidak bisa dibaca, mungkin rusak. "
+                          "Coba file lain, atau salin teksnya lalu tempel "
+                          "manual ya")
+        if kemiripan_mod.jumlah_kata(teks) < 10:
+            return None, ("teks di PDF ini tidak terbaca, kemungkinan PDF "
+                          "hasil pindai atau gambar tanpa lapisan teks. "
+                          "Salin teksnya manual, atau pakai versi "
+                          ".docx/.txt-nya ya")
+        return teks, None
     if nama.endswith(".docx") or raw[:2] == b"PK":
         try:
             from docx import Document
