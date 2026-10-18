@@ -126,8 +126,9 @@ let AUTH = { login: false };
 let AUTH_SIAP = false; // R2 (audit 2026-10-13): true setelah /auth/status pertama resolve
 let _riwAntre = [];    // R2: entri tamu yang dicatat sebelum status auth pasti
 
-/* Jatah AI gratis harian sesuai status login: tamu 5x, login 10x. */
-function aiHarian() { return AUTH.login ? 10 : 5; }
+/* Jatah harian: tamu = ember gabungan 10x/hari buat semua fitur
+   (AI + non-AI, keputusan Sul 2026-10-18); login = jatah AI 10x/hari. */
+function aiHarian() { return 10; }
 
 /* ---------- Avatar maskot ---------- */
 const AVATAR_PILIHAN = ["teal", "orange", "navy", "red", "purple"];
@@ -221,7 +222,7 @@ function _kuotaTamuMatch(res) {
 function kuotaTamuBox(box, res) {
   const pesan = _kuotaTamuMatch(res);
   if (pesan != null) {
-    box.innerHTML = '<div class="warn-box">' + esc(pesan || "Jatah harian tamu untuk fitur ini habis (10x/hari).") +
+    box.innerHTML = '<div class="warn-box">' + esc(pesan || "Jatah harian tamu habis (10x/hari buat semua fitur).") +
       '<br><a class="btn btn-primary" style="margin-top:10px;display:inline-block" href="#/masuk">Masuk / Daftar — gratis! ✨</a></div>';
     return true;
   }
@@ -230,7 +231,7 @@ function kuotaTamuBox(box, res) {
 function kuotaTamuToast(res) {
   const pesan = _kuotaTamuMatch(res);
   if (pesan != null) {
-    toast("🔒 " + (pesan || "Jatah harian tamu habis (10x/hari).") + " Login gratis biar sepuasnya! ✨");
+    toast("🔒 " + (pesan || "Jatah harian tamu habis (10x/hari buat semua fitur).") + " Login gratis biar sepuasnya! ✨");
     return true;
   }
   return false;
@@ -1974,7 +1975,7 @@ function kuotaHabisBox() {
   return '<div class="warn-box">Yah, kuota AI harianmu habis (' + aiHarian() + 'x/hari). 🥲 ' +
     (AUTH.login
       ? 'Besok reset otomatis kok. Semangat ngerjainnya! 💪'
-      : '<a href="#/masuk">Login gratis</a> biar dapat 10x/hari! ✨') + '</div>';
+      : '<a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ✨') + '</div>';
 }
 
 function pageAI() {
@@ -1983,7 +1984,7 @@ function pageAI() {
     '<p><span class="kuota" id="kuotaBadge">cek kuota... ⏳</span></p>' +
     '<p class="muted tiny">' + (AUTH.login
       ? 'Gratis <b>10x/hari</b> buat akun login. Pakai bijak ya! 😉'
-      : 'Gratis <b>5x/hari</b> buat tamu — <a href="#/masuk">login gratis</a> biar dapat 10x/hari! 😉') + '</p>' +
+      : 'Tamu dapat <b>10x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! 😉') + '</p>' +
     '<div class="ai-grid">' + AI_KINDS.map((k, i) =>
       '<div class="card ai-card"><h3>' + tic(k.ico) + " " + esc(k.nama) + "</h3>" +
       '<p class="muted tiny">' + esc(k.desc) + "</p>" +
@@ -2070,12 +2071,12 @@ function pageTanya() {
     const d = res.data || {};
     // 429 kuota_habis harus dicek SEBELUM !res.ok (lihat pageAI)
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
-      tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar dapat 10x/hari! ✨") });
+      tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
     } else if (!res.ok) {
       tanyaRiwayat.push({ dari: "bot", teks: (d.pesan || d.error) ? String(d.pesan || d.error) : "Waduh koneksinya bermasalah. 😭 Coba kirim lagi ya!" });
     } else {
       if (d.error === "kuota_habis" || d.kuota_habis) {
-        tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar dapat 10x/hari! ✨") });
+        tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
       } else {
         // kontrak backend: {tipe:"panduan"|"ai", jawaban, judul, terkait:[{id,title}]}
         let teks = d.jawaban || d.hasil || d.text || "Hmm, aku nggak nemu jawabannya. 😅 Coba tanya dengan kata lain ya.";
@@ -2114,7 +2115,7 @@ function pageTopup() {
       "<h2>" + tic("bolt") + " Jatah AI</h2>" +
       '<div class="card"><h3>Sisa jatahmu</h3>' +
       '<p>🎁 Gratis hari ini: <b id="tamuSisa">' + aiHarian() + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
-      '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Login gratis biar jatah AI naik jadi <b>10x/hari</b>, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman. 🔐</p></div>' +
+      '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Jatah tamu 10x/hari itu gabungan semua fitur (AI dan non-AI). Login gratis biar fitur non-AI sepuasnya, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman. 🔐</p></div>' +
       '<div class="card center"><a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk / Daftar — gratis!</a></div>';
     // Samakan angka dengan sisa asli dari server (tamu bisa sudah memakai sebagian).
     apiJSON("/topup").then(res => {
@@ -2284,7 +2285,7 @@ function pageTopup() {
 function pageBantuan() {
   const faq = [
     ["KhairyPustaka itu apa? ❓", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, sampai 10 generator AI naskah. Gratis! 🎓"],
-    ["Beneran gratis? 💰", "Iya! Fitur AI gratis " + aiHarian() + "x/hari" + (AUTH.login ? "." : " buat tamu (login gratis biar dapat 10x/hari).") + " Fitur non-AI gratis tiap hari: tamu 10x/hari per fitur, login sepuasnya. 😉"],
+    ["Beneran gratis? 💰", "Iya! Buat tamu, semua fitur berbagi jatah gabungan " + aiHarian() + "x/hari (AI dan non-AI dihitung bareng). Login gratis bikin fitur non-AI sepuasnya, jatah AI tetap 10x/hari, dan datamu tersimpan. 😉"],
     ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage). Buat tamu, koleksi otomatis terhapus setelah 24 jam; login gratis biar tidak kena batas waktu itu. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang, jadi rajin-rajin export ya!"],
     ["Sitasi gaya apa aja yang didukung? 📑", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
     ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Groq, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp200/x, minimal 25x (Rp5.000), nggak hangus."],
