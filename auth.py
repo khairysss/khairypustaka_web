@@ -317,6 +317,25 @@ def valid_username(name):
     return None
 
 
+# Username terlarang (perintah Sul 2026-10-19): semua username yang
+# mengandung unsur "admin" dilarang, termasuk varian huruf ganda (aadmin),
+# angka pengganti huruf (4dm1n), dan pemisah titik/underscore (ad.min,
+# ad_min). Berlaku persis seperti perintahnya: rangkaian "admin" di posisi
+# mana pun di dalam username = ditolak.
+_LEET_MAP = str.maketrans({"4": "a", "1": "i", "0": "o", "3": "e",
+                            "5": "s", "7": "t", "@": "a", "$": "s"})
+_KATA_TERLARANG_USERNAME = ("admin",)
+PESAN_USERNAME_TERLARANG = "username tidak boleh mengandung kata 'admin' ya 🙏"
+
+
+def username_terlarang(uname):
+    """True bila username mengandung kata terlarang (sesudah normalisasi
+    leetspeak + buang pemisah)."""
+    n = (uname or "").lower().translate(_LEET_MAP)
+    n = _re.sub(r"[^a-z0-9]", "", n)
+    return any(k in n for k in _KATA_TERLARANG_USERNAME)
+
+
 _EMAIL_RE = _re.compile(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")
 
 
@@ -364,6 +383,8 @@ def register_password(username, password, email, ref_code=None):
     uname = valid_username(username)
     if not uname:
         return None, "username 3–20 karakter: huruf, angka, titik, underscore"
+    if username_terlarang(uname):
+        return None, PESAN_USERNAME_TERLARANG
     mail = valid_email(email)
     if not mail:
         return None, "email nggak valid, cek lagi ya 📧"
@@ -612,6 +633,8 @@ def change_username(uid, new_uname):
     uname = valid_username(new_uname)
     if not uname:
         return "username 3–20 karakter: huruf kecil, angka, titik, underscore"
+    if username_terlarang(uname):
+        return PESAN_USERNAME_TERLARANG
     with _LOCK:
         d = _load_users()
         u = d.get(uid)
