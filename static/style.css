@@ -549,3 +549,22 @@ ol.langkah,ul.bersih{padding-left:20px}
 .chip-tunggu{background:#fef9c3;color:#854d0e}
 .adm-jml{padding:8px;border:1px solid #e5d9bd;border-radius:10px;background:#fff}
 .badge-admin{display:inline-block;background:#7c3aed;color:#fff;font-size:11px;font-weight:700;padding:2px 9px;border-radius:999px;vertical-align:middle;margin-left:6px;letter-spacing:.6px}
+
+/* Pemilih model AI (Sul 2026-10-19) */
+.model-picker{margin:10px 0}
+.model-btn{background:var(--card);border:1.5px solid #e5d9bd;border-radius:12px;padding:9px 14px;font-size:.9rem;color:var(--ink);cursor:pointer;width:100%;text-align:left}
+.model-btn b{color:var(--teal-dark)}
+.model-list{margin-top:6px;border:1.5px solid #e5d9bd;border-radius:12px;overflow:hidden;background:var(--card)}
+.model-opt{display:flex;flex-direction:column;gap:1px;width:100%;text-align:left;padding:9px 14px;background:var(--card);border:none;border-bottom:1px solid #f3ead6;cursor:pointer;color:var(--ink)}
+.model-opt:last-child{border-bottom:none}
+.model-opt:hover{background:#fdf6e7}
+.model-opt.aktif{background:#eafaf7}
+.mo-n{font-weight:700;font-size:.9rem}
+.mo-d{font-size:.76rem;color:var(--muted)}
+.prem-badge{display:inline-block;background:linear-gradient(90deg,#b8860b,#e0a81c);color:#fff;font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;vertical-align:middle;letter-spacing:.5px;margin-left:5px}
+.model-label{margin-top:10px;font-size:.78rem;color:var(--muted);background:#f4efe3;border-radius:9px;padding:7px 10px}
+.model-label b{color:var(--teal-dark)}
+.model-label.warn{background:#fdf0dc;color:#8a5a12}
+.model-label.warn b{color:#8a5a12}
+.model-label.prem{background:#f7ecd2;color:#7a5b00}
+.model-label.prem b{color:#7a5b00}

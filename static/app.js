@@ -1370,15 +1370,20 @@ function pageTopik() {
     '<div class="card"><p class="muted">Buntu ide? Kasih keyword, aku kasih tren publikasi + saran topik &amp; research gap. 🧠</p>' +
     '<label for="kwTopik">Keyword</label>' +
     '<input type="text" id="kwTopik" placeholder="cth: kecerdasan buatan pendidikan">' +
+    pickerHTML("tp") +
     '<button class="btn btn-primary btn-block" id="btnTopik" style="margin-top:12px">💡 Kasih Ide Dong</button></div>' +
     '<div id="hasilTopik"></div>';
-  $("#btnTopik").addEventListener("click", async () => {
+  pickerPasang("tp");
+  ambilInfoKuota().then(() => pickerSegarkan("tp"));
+  const kirimTopik = async (modelKey) => {
     const keyword = ($("#kwTopik").value || "").trim();
     if (!keyword) { toast("Isi dulu keywordnya 😄"); return; }
+    const mk = modelKey || modelPilihan();
+    if (premiumTerkunci(mk)) { popupPremiumTopup(); return; }
     const box = $("#hasilTopik");
     box.innerHTML = '<p class="loading">Lagi ngulik tren publikasi... ⏳</p>';
     const btn = $("#btnTopik"); setLoading(btn, true, "Lagi ngulik...");
-    const res = await apiPOST("/topik", { keyword: keyword });
+    const res = await apiPOST("/topik", { keyword: keyword, model: mk });
     setLoading(btn, false);
     if (!res.ok) { netErr(box, res); return; }
     const d = res.data || {};
@@ -1394,15 +1399,28 @@ function pageTopik() {
     // alternatif (sering [] kosong yang truthy!) — render ide TERPISAH agar
     // tidak tertutup array kosong.
     if (typeof d.ide === "string" && d.ide)
-      html += '<div class="card"><h3>Ide judul dari AI 💡</h3><div>' + mdRapi(d.ide) + "</div></div>";
+      html += '<div class="card"><h3>Ide judul dari AI 💡</h3><div>' + mdRapi(d.ide) + "</div>" + labelModelHTML(d) + "</div>";
     const saran = (Array.isArray(d.saran) && d.saran.length) ? d.saran : (d.topik || []);
     if (Array.isArray(saran) && saran.length)
       html += '<div class="card"><h3>Saran topik &amp; research gap 💡</h3><ul class="bersih">' + saran.map(s => "<li>" + esc(typeof s === "string" ? s : (s.judul || s.topik || JSON.stringify(s))) + "</li>").join("") + "</ul></div>";
+    if (d.premium_terkunci) {
+      html += '<div class="warn-box">Model premium memakai saldo top up, jadi ide AI-nya belum bisa dibuat. Tren dan saran di atas tetap bisa kamu pakai. 🙏</div>';
+      popupPremiumTopup();
+    } else if (d.premium_gagal) {
+      html += kartuPremiumGagalHTML(mk);
+    }
     if (!html) html = '<div class="warn-box">Belum ada ide yang keluar. 😅 Coba keyword lain ya.</div>';
     box.innerHTML = html;
+    box.querySelectorAll("[data-premact]").forEach(b => b.addEventListener("click", () => {
+      const tujuan = modelDariAksi(mk, b.dataset.premact);
+      if (premiumTerkunci(tujuan)) { popupPremiumTopup(); return; }
+      kirimTopik(tujuan);
+    }));
+    if (d.ide) ambilInfoKuota().then(() => pickerSegarkan("tp"));
     // R5 (audit 2026-10-13): jangan catat entri zonk
     if (d.ide || saran.length) riwTamuCatat("topik", keyword, { keyword: keyword, ide: d.ide, saran: saran, gaps: d.gaps });
-  });
+  };
+  $("#btnTopik").addEventListener("click", () => kirimTopik(null));
 }
 
 /* Render tren publikasi sebagai daftar bar terbaca (BUKAN JSON mentah).
@@ -2258,6 +2276,124 @@ function popupJatahHabis() {
   window.addEventListener("hashchange", tutup);
 }
 
+/* ----- Pemilih model AI (keputusan Sul 2026-10-19) -----
+   Satu komponen yang sama di AI Studio, Tanya AI, dan Ide Topik.
+   Pilihan terakhir disimpan (kp_model). Model premium terkunci untuk
+   tamu dan member bersaldo 0; gerbang sebenarnya tetap di server. */
+const MODEL_OPSI = [
+  { k: "auto",   n: "Otomatis",        d: "Rekomendasi. Sistem pilihkan model terbaik yang lagi sehat.", prem: false },
+  { k: "gptoss", n: "GPT-OSS 120B",    d: "Cepat dan serba bisa buat nulis dan analisis.", prem: false },
+  { k: "qwen",   n: "Qwen 3.8 27B",    d: "Kuat di penalaran dan bahasa.", prem: false },
+  { k: "gemini", n: "Gemini",          d: "Model Google, enak buat tanya jawab.", prem: false },
+  { k: "llama",  n: "Llama 3.3 70B",   d: "Model Meta, gaya jawaban natural.", prem: false },
+  { k: "claude", n: "Claude Haiku 4.5", d: "Bagus buat menulis. Memakai 1x saldo top up.", prem: true },
+  { k: "sonar",  n: "Perplexity Sonar", d: "Bagus buat riset dengan sumber. Memakai 1x saldo top up.", prem: true }
+];
+let KP_INFO = { sisa: null, saldo: 0, admin: false };
+async function ambilInfoKuota() {
+  const res = await apiJSON("/kuota");
+  if (res.ok && res.data) KP_INFO = { sisa: res.data.sisa, saldo: Number(res.data.saldo || 0), admin: !!res.data.admin };
+  return KP_INFO;
+}
+function modelPilihan() {
+  try { const k = localStorage.getItem("kp_model"); return MODEL_OPSI.some(o => o.k === k) ? k : "auto"; }
+  catch (e) { return "auto"; }
+}
+function modelSimpan(k) { try { localStorage.setItem("kp_model", k); } catch (e) {} }
+function modelOp(k) { return MODEL_OPSI.find(o => o.k === k) || MODEL_OPSI[0]; }
+function premiumTerkunci(k) {
+  const o = modelOp(k);
+  if (!o.prem || KP_INFO.admin || AUTH.admin) return false;
+  if (!AUTH.login) return true;
+  return (KP_INFO.saldo || 0) <= 0;
+}
+function popupPremiumTopup() {
+  if (document.getElementById("kpPremPopup")) return;
+  const login = !!AUTH.login;
+  const el = document.createElement("div");
+  el.className = "modal";
+  el.id = "kpPremPopup";
+  el.style.alignItems = "center";
+  el.style.padding = "16px";
+  el.innerHTML =
+    '<div class="modal-box" style="border-radius:20px;max-width:420px;text-align:center">' +
+      '<div style="width:52px;height:52px;margin:2px auto 0;border-radius:50%;background:#f7ecd2;display:flex;align-items:center;justify-content:center;font-size:24px">⭐</div>' +
+      '<h3 style="margin:10px 0 0">' + (login ? "Model Premium Perlu Saldo Top Up" : "Model Premium Khusus Member") + '</h3>' +
+      (login
+        ? '<p class="muted" style="text-align:left">Claude Haiku 4.5 dan Perplexity Sonar adalah model premium. Sekali pakai memotong <b>1x saldo top up</b>, dan saldonya hanya terpotong kalau modelnya berhasil menjawab.</p>' +
+          '<p class="muted" style="text-align:left">Saldo kamu sekarang <b>0x</b>. Top up mulai <b>Rp5.000</b> dapat <b>25x</b>, saldonya tidak hangus dan bisa dipakai kapan saja.</p>'
+        : '<p class="muted" style="text-align:left">Claude Haiku 4.5 dan Perplexity Sonar adalah model premium yang memakai <b>saldo top up</b>. Mode tamu belum punya saldo, jadi daftar gratis dulu yuk, tidak sampai semenit.</p>') +
+      '<a class="btn btn-primary btn-block" id="kpPremCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "⚡ Top Up Sekarang" : "🔑 Daftar Gratis") + '</a>' +
+      '<button class="btn btn-block" id="kpPremTutup" type="button" style="margin-top:9px">Nanti Saja</button>' +
+    '</div>';
+  document.body.appendChild(el);
+  const tutup = () => { el.remove(); window.removeEventListener("hashchange", tutup); };
+  el.addEventListener("click", e => { if (e.target === el) tutup(); });
+  el.querySelector("#kpPremTutup").addEventListener("click", tutup);
+  el.querySelector("#kpPremCta").addEventListener("click", tutup);
+  window.addEventListener("hashchange", tutup);
+}
+function pickerListHTML() {
+  const aktif = modelPilihan();
+  return MODEL_OPSI.map(o => {
+    const lock = premiumTerkunci(o.k);
+    return '<button type="button" class="model-opt' + (o.k === aktif ? " aktif" : "") + '" data-model="' + o.k + '">' +
+      '<span class="mo-n">' + esc(o.n) + (o.prem ? '<span class="prem-badge">PREMIUM</span>' : "") + (lock ? " 🔒" : "") + '</span>' +
+      '<span class="mo-d">' + esc(o.d) + '</span></button>';
+  }).join("");
+}
+function pickerHTML(prefix) {
+  const cur = modelOp(modelPilihan());
+  return '<div class="model-picker" id="' + prefix + 'Picker">' +
+    '<button type="button" class="model-btn" id="' + prefix + 'Btn">Model: <b>' + esc(cur.n) + '</b>' + (cur.prem ? '<span class="prem-badge">PREMIUM</span>' : "") + ' ▾</button>' +
+    '<div class="model-list" id="' + prefix + 'List" style="display:none">' + pickerListHTML() + '</div></div>';
+}
+function pickerSegarkan(prefix) {
+  const list = document.getElementById(prefix + "List");
+  if (list) list.innerHTML = pickerListHTML();
+  const btn = document.getElementById(prefix + "Btn");
+  if (btn) {
+    const cur = modelOp(modelPilihan());
+    btn.innerHTML = 'Model: <b>' + esc(cur.n) + '</b>' + (cur.prem ? '<span class="prem-badge">PREMIUM</span>' : "") + ' ▾';
+  }
+}
+function pickerPasang(prefix) {
+  const btn = document.getElementById(prefix + "Btn");
+  const list = document.getElementById(prefix + "List");
+  if (!btn || !list) return;
+  btn.addEventListener("click", () => { list.style.display = list.style.display === "none" ? "block" : "none"; });
+  list.addEventListener("click", e => {
+    const b = e.target.closest("[data-model]");
+    if (!b) return;
+    const k = b.dataset.model;
+    if (premiumTerkunci(k)) { popupPremiumTopup(); return; }
+    modelSimpan(k);
+    list.style.display = "none";
+    pickerSegarkan(prefix);
+  });
+}
+function labelModelHTML(d) {
+  if (!d || !d.model_label) return "";
+  if (d.premium) return '<div class="model-label prem">Dijawab oleh <b>' + esc(d.model_label) + '</b> lewat jalur premium. Saldo terpakai 1x.</div>';
+  if (d.dialihkan) return '<div class="model-label warn">Model pilihanmu mengalami kendala saat generate, hasil ini dibuat dengan <b>' + esc(d.model_label) + '</b>.</div>';
+  return '<div class="model-label">Dijawab oleh <b>' + esc(d.model_label) + '</b></div>';
+}
+function kartuPremiumGagalHTML(modelKey) {
+  const o = modelOp(modelKey);
+  const lain = modelKey === "claude" ? modelOp("sonar") : modelOp("claude");
+  return '<div class="warn-box"><b>' + esc(o.n) + ' lagi bermasalah saat ini.</b><br>' +
+    'Kamu bisa coba lagi beberapa saat, atau pakai ' + esc(lain.n) + ' sebagai gantinya. Saldo kamu tidak terpotong kok.' +
+    '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">' +
+    '<button class="btn btn-primary" type="button" data-premact="lagi">Coba Lagi</button>' +
+    '<button class="btn" type="button" data-premact="ganti">Pakai ' + esc(lain.n) + '</button>' +
+    '<button class="btn" type="button" data-premact="reguler">Pakai Model Reguler</button></div></div>';
+}
+function modelDariAksi(modelKey, act) {
+  if (act === "lagi") return modelKey;
+  if (act === "ganti") return modelKey === "claude" ? "sonar" : "claude";
+  return "auto";
+}
+
 function pageAI() {
   view().innerHTML =
     "<h2>"+tic("spark")+" AI Studio</h2>" +
@@ -2265,6 +2401,7 @@ function pageAI() {
     '<p class="muted tiny">' + (AUTH.login
       ? 'Gratis <b>10x/hari</b> buat akun login. Pakai bijak ya! 😉'
       : 'Tamu dapat <b>10x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! 😉') + '</p>' +
+    pickerHTML("ai") +
     '<div class="ai-grid">' + AI_KINDS.map((k, i) =>
       '<div class="card ai-card"><h3>' + tic(k.ico) + " " + esc(k.nama) + "</h3>" +
       '<p class="muted tiny">' + esc(k.desc) + "</p>" +
@@ -2276,6 +2413,8 @@ function pageAI() {
     ).join("") + "</div>";
 
   ambilKuota().then(kuotaBadgeUpdate);
+  pickerPasang("ai");
+  ambilInfoKuota().then(() => pickerSegarkan("ai"));
 
   $$(".aiFile", view()).forEach(inp => inp.addEventListener("change", async () => {
     const i = parseInt(inp.dataset.aii, 10);
@@ -2294,27 +2433,39 @@ function pageAI() {
     inp.value = "";
   }));
 
-  $$("[data-aigen]", view()).forEach(btn => btn.addEventListener("click", async () => {
-    const i = parseInt(btn.dataset.aigen, 10);
+  const kirimAI = async (i, modelKey, btn) => {
     const k = AI_KINDS[i];
     const teks = ($("#aiIn" + i).value || "").trim();
     if (!teks) { toast("Isi dulu inputnya 😄"); return; }
+    const mk = modelKey || modelPilihan();
+    if (premiumTerkunci(mk)) { popupPremiumTopup(); return; }
     const out = $("#aiOut" + i);
     out.innerHTML = '<p class="loading">AI lagi nulis... sabar ya ⏳</p>';
-    setLoading(btn, true, "AI lagi nulis...");
-    const body = { kind: k.kind, text: teks };
+    if (btn) setLoading(btn, true, "AI lagi nulis...");
+    const body = { kind: k.kind, text: teks, model: mk };
     if (k.kind === "abstrak") {
       const judul = ($("#aiJudul" + i) || {}).value;
       if (judul && judul.trim()) body.extra = judul.trim();
     }
     const res = await apiPOST("/ai", body);
-    setLoading(btn, false);
+    if (btn) setLoading(btn, false);
     const d = res.data || {};
     // 429 kuota_habis harus dicek SEBELUM !res.ok (apiJSON memetakan semua
     // non-2xx ke ok:false, jadi cabang ini mati bila ditaruh setelahnya)
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
       out.innerHTML = kuotaHabisBox(); popupJatahHabis();
       kuotaBadgeUpdate(0);
+      return;
+    }
+    if (!res.ok && d.error === "premium_terkunci") { popupPremiumTopup(); out.innerHTML = ""; return; }
+    if (!res.ok && d.error === "premium_gagal") {
+      // Model premium error: JANGAN auto rotasi, member memilih dulu.
+      out.innerHTML = kartuPremiumGagalHTML(mk);
+      out.querySelectorAll("[data-premact]").forEach(b => b.addEventListener("click", () => {
+        const tujuan = modelDariAksi(mk, b.dataset.premact);
+        if (premiumTerkunci(tujuan)) { popupPremiumTopup(); return; }
+        kirimAI(i, tujuan, btn);
+      }));
       return;
     }
     if (!res.ok) { out.innerHTML = ""; netErr(out, res); return; }
@@ -2326,11 +2477,16 @@ function pageAI() {
     const hasil = d.hasil || d.result || d.text;
     if (!hasil) { out.innerHTML = '<div class="warn-box">AI-nya bengong, nggak ngasih hasil. 😅 Coba lagi ya.</div>'; return; }
     const hid = "aiCopy" + i;
-    out.innerHTML = '<div class="hasil-ai">' + mdRapi(hasil) + '</div><button class="btn" id="' + hid + '" style="margin-top:8px">📋 Salin Hasil</button>';
+    out.innerHTML = '<div class="hasil-ai">' + mdRapi(hasil) + '</div>' + labelModelHTML(d) + '<button class="btn" id="' + hid + '" style="margin-top:8px">📋 Salin Hasil</button>';
     riwTamuCatat("chat", teks, { sumber: "ai", kind: k.kind, text: teks, hasil: hasil });
     $("#" + hid).addEventListener("click", () => copyText(hasil));
     ambilKuota().then(kuotaBadgeUpdate);
+    ambilInfoKuota().then(() => pickerSegarkan("ai"));
     toast("Jadi! Scroll dikit buat lihat hasilnya. ✨");
+  };
+
+  $$("[data-aigen]", view()).forEach(btn => btn.addEventListener("click", () => {
+    kirimAI(parseInt(btn.dataset.aigen, 10), null, btn);
   }));
 }
 
@@ -2341,6 +2497,7 @@ function pageTanya() {
     "<h2>"+tic("chat")+" Tanya AI</h2>" +
     '<p class="muted">Tanya apa aja soal tugas & skripsi — dari sitasi sampai sidang. Dijawab AI + panduan. 🤖</p>' +
     '<div class="chat" id="chatBox"></div>' +
+    pickerHTML("ty") +
     '<div class="chat-form"><input type="text" id="tanyaIn" placeholder="Ketik pertanyaanmu..." autocomplete="off">' +
     '<button class="btn btn-primary" id="tanyaBtn">Kirim</button></div>';
 
@@ -2349,27 +2506,32 @@ function pageTanya() {
     if (!tanyaRiwayat.length) {
       box.innerHTML = '<div class="bubble bot">Halo! 👋 Aku AI-nya KhairyPustaka. Tanya apa aja soal tugas & skripsi — sitasi, metode, Bab 2, persiapan sidang, gas! 🚀</div>';
     } else {
-      box.innerHTML = tanyaRiwayat.map(m => '<div class="bubble ' + m.dari + '">' + (m.html ? richText(m.teks) : (m.md ? mdRapi(m.teks) : esc(m.teks))) + "</div>").join("");
+      box.innerHTML = tanyaRiwayat.map(m => '<div class="bubble ' + m.dari + '">' + (m.prem ? kartuPremiumGagalHTML(m.prem) : (m.html ? richText(m.teks) : (m.md ? mdRapi(m.teks) : esc(m.teks)))) + "</div>").join("");
     }
     box.scrollTop = box.scrollHeight;
   };
 
-  const kirimTanya = async () => {
-    const inp = $("#tanyaIn");
-    const q = (inp.value || "").trim();
-    if (!q) return;
-    tanyaRiwayat.push({ dari: "user", teks: q });
-    inp.value = "";
+  let tanyaTerkini = "";
+  let tanyaPremModel = "";
+  const prosesTanya = async (q, mk) => {
+    tanyaTerkini = q;
     tanyaRiwayat.push({ dari: "bot", teks: "Lagi mikir... ⏳" });
     render();
     const btn = $("#tanyaBtn"); setLoading(btn, true, "...");
-    const res = await apiPOST("/tanya", { q: q });
+    const res = await apiPOST("/tanya", { q: q, model: mk });
     setLoading(btn, false);
     tanyaRiwayat.pop();
     const d = res.data || {};
     // 429 kuota_habis harus dicek SEBELUM !res.ok (lihat pageAI)
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
       popupJatahHabis(); tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
+    } else if (!res.ok && d.error === "premium_terkunci") {
+      popupPremiumTopup();
+      tanyaRiwayat.push({ dari: "bot", teks: "Model premium itu memakai saldo top up. Saldo kamu belum ada, jadi belum bisa dipakai. 🙏" });
+    } else if (!res.ok && d.error === "premium_gagal") {
+      // Model premium error: JANGAN auto rotasi, member memilih dulu.
+      tanyaPremModel = mk;
+      tanyaRiwayat.push({ dari: "bot", prem: mk });
     } else if (!res.ok) {
       tanyaRiwayat.push({ dari: "bot", teks: (d.pesan || d.error) ? String(d.pesan || d.error) : "Waduh koneksinya bermasalah. 😭 Coba kirim lagi ya!" });
     } else {
@@ -2381,8 +2543,14 @@ function pageTanya() {
         const isPanduan = d.tipe === "panduan";
         if (isPanduan) teks += "\n\n(dari panduan 📚)";
         if (d.judul) teks = d.judul + "\n\n" + teks;
+        if (!isPanduan && d.model_label) {
+          if (d.premium) teks += "\n\n• Dijawab oleh " + d.model_label + " lewat jalur premium, saldo terpakai 1x.";
+          else if (d.dialihkan) teks += "\n\n• Model pilihanmu mengalami kendala saat generate, jawaban ini dibuat dengan " + d.model_label + ".";
+          else teks += "\n\n• Dijawab oleh " + d.model_label + ".";
+        }
         tanyaRiwayat.push({ dari: "bot", teks: teks, html: isPanduan, md: !isPanduan });
         riwTamuCatat("chat", q, { sumber: "tanya", q: q, jawaban: teks });
+        if (d.premium || d.model_label) ambilInfoKuota().then(() => pickerSegarkan("ty"));
         const rel = Array.isArray(d.terkait) ? d.terkait : [];
         if (rel.length) tanyaRiwayat.push({ dari: "bot", teks: "Mungkin kamu juga mau tanya:\n" + rel.slice(0, 4).map(r => "- " + (r && r.title ? r.title : r)).join("\n") });
       }
@@ -2390,7 +2558,27 @@ function pageTanya() {
     render();
   };
 
+  const kirimTanya = async () => {
+    const inp = $("#tanyaIn");
+    const q = (inp.value || "").trim();
+    if (!q) return;
+    const mk = modelPilihan();
+    if (premiumTerkunci(mk)) { popupPremiumTopup(); return; }
+    tanyaRiwayat.push({ dari: "user", teks: q });
+    inp.value = "";
+    await prosesTanya(q, mk);
+  };
+
   render();
+  pickerPasang("ty");
+  ambilInfoKuota().then(() => pickerSegarkan("ty"));
+  $("#chatBox").addEventListener("click", e => {
+    const b = e.target.closest("[data-premact]");
+    if (!b || !tanyaTerkini) return;
+    const tujuan = modelDariAksi(tanyaPremModel, b.dataset.premact);
+    if (premiumTerkunci(tujuan)) { popupPremiumTopup(); return; }
+    prosesTanya(tanyaTerkini, tujuan);
+  });
   $("#tanyaBtn").addEventListener("click", kirimTanya);
   $("#tanyaIn").addEventListener("keydown", e => { if (e.key === "Enter") kirimTanya(); });
   // lanjutan dari halaman Riwayat: tampilkan Q&A tersimpan sebagai bubble
