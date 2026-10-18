@@ -914,7 +914,8 @@ function pageBeranda() {
       ["#/rekomendasi", "target", "Rekomendasi Jurnal", "Jurnal buat publikasi"],
       ["#/publisher", "building", "Publisher", "Jelajahi penerbit & jurnal"],
       ["#/penulis", "person", "Info Penulis", "H-index, karya, afiliasi"],
-      ["#/matriks", "grid", "Matriks", "Tabel sintesis literatur"]
+      ["#/matriks", "grid", "Matriks", "Tabel sintesis literatur"],
+      ["#/koleksi", "books", "Koleksiku", "Simpan & export referensi"]
     ]],
     ["ai", tic("spark")+" AI", [
       ["#/ai", "spark", "AI Studio", "10 generator naskah tugas & skripsi"],
@@ -926,11 +927,6 @@ function pageBeranda() {
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
       ["#/template", "layout", "Template", "Template proposal & skripsi"],
       ["#/statistik", "chart", "Statistik", "Panduan pilih uji statistik"]
-    ]],
-    ["kelola", tic("folder")+" Kelola", [
-      ["#/koleksi", "books", "Koleksiku", "Simpan & export referensi"],
-      ["#/favorit", "star", "Favorit", "Pantau jurnal favoritmu"],
-      ["#/jadwal", "calendar", "Jadwal", "Timeline mundur skripsi"]
     ]],
     ["akun", tic("bolt")+" Akun", [
       ["#/akun", "usercard", "Akun Saya", "Login & profil"],
