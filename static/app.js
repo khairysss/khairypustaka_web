@@ -1147,7 +1147,7 @@ async function terjemahAbstrak(item, btn) {
   btn.innerHTML = "↩️ Lihat Asli";
   btn.dataset.mode = "asli";
   det.open = true;
-  toast(d.sumber === "mymemory" ? "Diterjemahkan 🤖 (terjemahan mesin)" : "Diterjemahkan 🤖 (terjemahan offline)");
+  toast(d.sumber === "argos" ? "Diterjemahkan 🤖 (terjemahan offline)" : "Diterjemahkan 🤖 (terjemahan mesin)");
 }
 
 function wireKartu(scope) {
