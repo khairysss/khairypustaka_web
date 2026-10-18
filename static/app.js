@@ -910,7 +910,8 @@ function pageBeranda() {
       ["#/statistik", "chart", "Statistik", "Panduan pilih uji statistik"],
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
-      ["#/ai", "spark", "AI Studio", "10 generator naskah tugas & skripsi"]
+      ["#/ai", "spark", "AI Studio", "10 generator naskah tugas & skripsi"],
+      ["#/kemiripan", "check", "Cek Plagiarisme", "Cek kemiripan naskah vs sumbermu"]
     ]],
     ["riset", tic("search")+" Riset", [
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
@@ -929,6 +930,7 @@ function pageBeranda() {
     ]],
     ["nulis", tic("pencil")+" Nulis", [
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
+      ["#/kemiripan", "check", "Cek Plagiarisme", "Cek kemiripan naskah vs sumbermu"],
       ["#/template", "layout", "Template", "Template proposal & skripsi"],
       ["#/statistik", "chart", "Statistik", "Panduan pilih uji statistik"]
     ]],
@@ -1900,6 +1902,60 @@ function pageParafrase() {
   });
 }
 
+/* ----- Cek Plagiarisme (kemiripan vs sumber, Jalur A) ----- */
+function pageKemiripan() {
+  view().innerHTML =
+    "<h2>" + tic("check") + " Cek Plagiarisme</h2>" +
+    '<div class="warn-box" style="border:2px solid #f0b429;background:#fff7dd;font-size:1rem;line-height:1.65">' +
+    "<b>⚠️ Baca Dulu Sebelum Pakai, Penting Banget</b><br>" +
+    "Alat ini membandingkan naskahmu <b>hanya dengan teks sumber yang kamu tempel di halaman ini</b>. Alat ini tidak memindai internet, tidak terhubung ke database Turnitin mana pun, dan tidak bisa melihat skripsi atau tugas mahasiswa lain.<br><br>" +
+    "Kalau skormu rendah di sini, artinya naskahmu sudah cukup berbeda dari sumber yang kamu tempel itu. <b>Skor ini bukan jaminan lolos cek Turnitin di kampusmu</b>, karena hasil Turnitin juga dipengaruhi sumber lain yang tidak kamu tempel di sini.<br><br>" +
+    "Pakai alat ini buat memastikan hasil parafrasemu sudah aman dari sumber aslinya, dan jangan pernah lupa mencantumkan sitasi. Parafrase yang baik plus sitasi yang benar adalah cara paling aman menghindari plagiarisme.</div>" +
+    '<div class="card">' +
+    '<label for="kmNaskah">Naskahmu</label>' +
+    '<textarea id="kmNaskah" rows="7" placeholder="Tempel potongan naskahmu di sini (maks 10.000 karakter)..."></textarea>' +
+    '<label for="kmSumber" style="margin-top:10px">Teks sumber yang kamu pakai</label>' +
+    '<textarea id="kmSumber" rows="7" placeholder="Tempel teks asli dari jurnal/buku yang kamu parafrase di sini. Boleh gabung beberapa sumber sekaligus (maks 30.000 karakter)..."></textarea>' +
+    '<button class="btn btn-primary btn-block" id="btnKm" style="margin-top:12px">🔍 Cek Kemiripan</button>' +
+    '<p class="muted" style="margin-top:8px">Teksmu diproses seketika dan tidak disimpan. Tips parafrase: <a href="/panduan/cara-parafrase-yang-benar">panduan parafrase yang benar</a>.</p></div>' +
+    '<div id="hasilKm"></div>';
+  $("#btnKm").addEventListener("click", async () => {
+    const naskah = ($("#kmNaskah").value || "").trim();
+    const sumber = ($("#kmSumber").value || "").trim();
+    if (!naskah || !sumber) { toast("Isi naskah dan teks sumbernya dulu ya 😄"); return; }
+    const box = $("#hasilKm");
+    box.innerHTML = '<p class="loading">Lagi membandingkan kata per kata... ⏳</p>';
+    const btn = $("#btnKm"); setLoading(btn, true, "Lagi mengecek...");
+    const res = await apiPOST("/kemiripan", { naskah: naskah, sumber: sumber });
+    setLoading(btn, false);
+    if (!res.ok) { if (kuotaTamuBox(box, res)) return; netErr(box, res); return; }
+    const h = (res.data || {}).hasil || {};
+    const skor = (h.skor != null ? h.skor : 0);
+    const skorTampil = String(skor).replace(".", ",");
+    let warna = "#2e7d32";
+    if (skor >= 40) warna = "#c62828"; else if (skor >= 25) warna = "#e65100";
+    let kalimatHTML = (h.kalimat || []).map(k => {
+      if (k.level === "tinggi") return '<span style="background:#ffd9d0;border-radius:4px;padding:1px 2px">' + esc(k.teks) + "</span> <b style='color:#c62828'>(" + k.skor + "%)</b>";
+      if (k.level === "sedang") return '<span style="background:#ffedb3;border-radius:4px;padding:1px 2px">' + esc(k.teks) + "</span> <b style='color:#e65100'>(" + k.skor + "%)</b>";
+      return esc(k.teks);
+    }).join(" ");
+    let catatan;
+    if (skor < 25) {
+      catatan = "Hasilmu <b>" + skorTampil + "%</b> terhadap sumber yang kamu tempel. Angka ini tidak menjamin hasil yang sama di Turnitin, karena Turnitin membandingkan naskahmu dengan jauh lebih banyak sumber, termasuk arsip tugas mahasiswa dari berbagai kampus. Kalau kampusmu memakai Turnitin sebagai standar, tetap lakukan pengecekan resmi lewat kampusmu sebelum mengumpulkan. Alat ini membantumu memastikan parafrasemu aman dari sumber yang kamu pakai, bukan menggantikan pengecekan resmi.";
+    } else {
+      catatan = "Hasilmu <b>" + skorTampil + "%</b> terhadap sumber yang kamu tempel, dan itu masih tergolong tinggi. Perbaiki dulu kalimat yang disorot di atas dengan parafrase ulang: tutup sumbernya, tulis kembali dari pemahamanmu, lalu cek lagi di sini sampai turun. Setelah itu pun tetap verifikasi lewat jalur resmi kampusmu bila tersedia, karena standar akhir yang menentukan adalah standar kampusmu.";
+    }
+    box.innerHTML =
+      '<div class="card"><p class="muted" style="margin:0">Skor kemiripan terhadap sumber yang kamu tempel:</p>' +
+      '<p style="font-size:2.4rem;font-weight:800;margin:2px 0;color:' + warna + '">' + skorTampil + '%</p>' +
+      '<p class="muted" style="margin:0 0 10px"><b>Ini bukan skor Turnitin.</b> Dari ' + (h.total_kata || 0) + ' kata naskahmu, ' + (h.kata_mirip || 0) + ' kata berada dalam rangkaian yang sama persis dengan sumber.</p>' +
+      '<p style="line-height:1.8">' + kalimatHTML + "</p>" +
+      '<p class="muted">Kalimat berwarna <span style="background:#ffd9d0;padding:0 6px;border-radius:4px">merah</span> kemiripannya tinggi, <span style="background:#ffedb3;padding:0 6px;border-radius:4px">kuning</span> sedang. Angka di belakang kalimat adalah persen kemiripan kalimat itu dengan sumber.</p></div>' +
+      '<div class="warn-box" style="border:2px solid #f0b429;background:#fff7dd;line-height:1.65">' + catatan + "</div>";
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 /* ----- AI Studio ----- */
 const AI_KINDS = [
   { kind: "kerangka",      ico: "layout", nama: "Kerangka",        desc: "Outline bab 1-5 biar nulisnya nggak ngawang.", ph: "cth: Pengaruh literasi digital terhadap prestasi mahasiswa..." },
@@ -2315,6 +2371,7 @@ const ROUTES = {
   "/statistik": pageStatistik,
   "/template": pageTemplate,
   "/parafrase": pageParafrase,
+  "/kemiripan": pageKemiripan,
   "/ai": pageAI,
   "/tanya": pageTanya,
   "/topup": pageTopup,
