@@ -1740,7 +1740,8 @@ def redeem():
     if _redeem_gagal_terakhir(g.uid) >= _REDEEM_FAIL_MAX:
         return _err("kebanyakan tebakan salah, coba lagi 10 menit ya", 429)
     body = request.get_json(silent=True) or {}
-    kode = (body.get("kode") or "").strip()
+    _kode = body.get("kode")
+    kode = _kode.strip() if isinstance(_kode, str) else ""
     if not kode:
         return _err("kode kosong")
     ok, res = redmod.redeem(kode, g.uid)
@@ -2365,18 +2366,21 @@ def auth_ganti_email_pending():
     token verifikasi lama dibatalkan dan link baru dikirim ke alamat baru.
     """
     ip = _pw_client_ip()
-    if not authmod.login_allowed(ip):
-        return _err("kebanyakan percobaan, coba lagi 10 menit ya", 429)
     if not _mail_allowed(ip):
         return _err("kebanyakan permintaan email, coba lagi 10 menit ya", 429)
     if not mailmod.mail_configured():
         return _err("email belum dikonfigurasi admin", 503)
     body = request.get_json(silent=True) or {}
     ident = body.get("username") or body.get("email") or body.get("identifier")
+    if not authmod.login_allowed(ip) or \
+            not authmod.login_user_allowed(ident):
+        return _err("kebanyakan percobaan, coba lagi 10 menit ya", 429)
     uid = authmod.login_password(ident, body.get("password") or "")
     if not uid:
         authmod.login_hit(ip)
+        authmod.login_user_hit(ident)
         return _err("username/email atau password salah", 401)
+    authmod.login_user_clear(ident)
     mail, err = authmod.replace_unverified_email(uid, body.get("email_baru") or "")
     if err:
         return _err(err, 400)
@@ -2493,14 +2497,17 @@ def _mail_addr_cek(addr):
 def auth_login():
     """Masuk pakai username/email + password (rate-limited)."""
     ip = _pw_client_ip()
-    if not authmod.login_allowed(ip):
-        return _err("kebanyakan percobaan, coba lagi 10 menit ya", 429)
     body = request.get_json(silent=True) or {}
+    if not authmod.login_allowed(ip) or \
+            not authmod.login_user_allowed(body.get("username")):
+        return _err("kebanyakan percobaan, coba lagi 10 menit ya", 429)
     uid = authmod.login_password(body.get("username"), body.get("password"))
     if not uid:
         # catat HANYA saat gagal: login sukses beruntun tidak boleh kena 429
         authmod.login_hit(ip)
+        authmod.login_user_hit(body.get("username"))
         return _err("username/email atau password salah", 401)
+    authmod.login_user_clear(body.get("username"))
     user = authmod.get_user(uid) or {}
     if (user.get("provider") == "password" and user.get("email")
             and not user.get("email_verified")):
