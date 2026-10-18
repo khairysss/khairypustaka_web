@@ -79,28 +79,71 @@ def _plain_citation(work, style):
     return re.sub(r"\*([^*]+)\*", r"\1", cite_in(work, style)).strip()
 
 
+_NUMERIC_STYLES = ("vancouver", "ieee")
+
+
+def _sort_key(w):
+    """Kunci urut A-Z: nama keluarga penulis pertama, tahun, judul."""
+    authors = w.get("authors") or []
+    fam = ""
+    if authors:
+        a0 = str(authors[0])
+        fam = (a0.split(",")[0] if "," in a0 else a0.strip().split()[-1])
+        fam = re.sub(r"[^a-z]", "", fam.lower())
+    return (fam, str(w.get("year") or ""), (w.get("title") or "").lower())
+
+
+def _ordered_items(items, style):
+    """Gaya numerik (Vancouver/IEEE) mempertahankan urutan koleksi;
+    gaya lain diurutkan alfabet sesuai kaidah daftar pustaka."""
+    if style in _NUMERIC_STYLES:
+        return list(items)
+    return sorted(items, key=_sort_key)
+
+
 def export_txt(user_id, style="harvard"):
     """Return isi daftar pustaka format teks polos."""
-    items = list_all(user_id)
+    items = _ordered_items(list_all(user_id), style)
     lines = [f"DAFTAR PUSTAKA ({style_label(style)})", ""]
     for i, w in enumerate(items, 1):
-        lines.append(f"[{i}] {_plain_citation(w, style)}")
+        prefix = f"[{i}] " if style in _NUMERIC_STYLES else ""
+        lines.append(f"{prefix}{_plain_citation(w, style)}")
         lines.append("")
     return "\n".join(lines).strip() + "\n"
 
 
-def export_docx(user_id, style="harvard"):
-    """Return bytes file .docx daftar pustaka."""
-    from docx import Document
+def _add_citation_runs(p, text, size_pt):
+    """Tulis teks sitasi ke paragraf; penanda *...* jadi run italic."""
     from docx.shared import Pt
 
-    items = list_all(user_id)
+    for j, part in enumerate(text.split("*")):
+        if not part:
+            continue
+        run = p.add_run(part)
+        run.font.size = Pt(size_pt)
+        if j % 2 == 1:
+            run.italic = True
+
+
+def export_docx(user_id, style="harvard"):
+    """Return bytes file .docx daftar pustaka: urut sesuai kaidah gaya,
+    hanging indent 1,27 cm, dan cetak miring asli dari penanda sitasi."""
+    from docx import Document
+    from docx.shared import Pt, Cm
+
+    items = _ordered_items(list_all(user_id), style)
     doc = Document()
     doc.add_heading(f"Daftar Pustaka ({style_label(style)})", level=1)
     for i, w in enumerate(items, 1):
         p = doc.add_paragraph()
-        run = p.add_run(f"[{i}] {_plain_citation(w, style)}")
-        run.font.size = Pt(11)
+        pf = p.paragraph_format
+        pf.left_indent = Cm(1.27)
+        pf.first_line_indent = Cm(-1.27)
+        pf.space_after = Pt(6)
+        text = cite_in(w, style)
+        if style in _NUMERIC_STYLES:
+            text = f"[{i}] " + text
+        _add_citation_runs(p, text, 11)
     buf = BytesIO()
     doc.save(buf)
     return buf.getvalue()
