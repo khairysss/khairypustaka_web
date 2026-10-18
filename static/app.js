@@ -2595,7 +2595,16 @@ function pageAdmin() {
     '<input type="text" id="admCari" placeholder="ketik username, nama, atau email" autocomplete="off">' +
     '<button class="btn btn-block" id="admCariBtn">Cari Member</button>' +
     '<div id="admCariHasil"></div>' +
-    '<p class="pf-msg" id="admGrantMsg"></p></div>';
+    '<p class="pf-msg" id="admGrantMsg"></p></div>' +
+    '<div class="card"><h3>💾 Backup Data</h3>' +
+    '<p class="muted">Unduh seluruh data aplikasi (member, kuota, koleksi, riwayat, kode) sebagai satu file JSON. Simpan di tempat aman sebagai cadangan.</p>' +
+    '<button class="btn btn-block" id="admBackupBtn">⬇️ Download Backup Sekarang</button>' +
+    '<p class="pf-msg" id="admBackupMsg"></p></div>' +
+    '<div class="card"><h3>🗑️ Hapus Akun</h3>' +
+    '<p class="muted">Hapus permanen satu akun dari username-nya, misalnya akun uji. Data terkaitnya (token, kuota, koleksi, riwayat) ikut dibersihkan. Akun admin tidak bisa dihapus. Tindakan ini tidak bisa dibatalkan.</p>' +
+    '<input type="text" id="admHapusUser" placeholder="username akun yang mau dihapus" autocomplete="off">' +
+    '<button class="btn btn-block" id="admHapusBtn">Hapus Akun Ini</button>' +
+    '<p class="pf-msg" id="admHapusMsg"></p></div>';
   admMuatStatistik();
   admMuatKode();
   $$("#admNomChips .chip").forEach(function(c) {
@@ -2626,6 +2635,29 @@ function pageAdmin() {
   });
   $("#admKodeRefresh").addEventListener("click", admMuatKode);
   $("#admCariBtn").addEventListener("click", admCariMember);
+  $("#admBackupBtn").addEventListener("click", async function() {
+    const msg = $("#admBackupMsg");
+    msg.textContent = "Menyiapkan backup...";
+    const r = await apiDownload("/admin/backup", {}, "khairypustaka-backup.json");
+    msg.textContent = r && r.ok ? "Backup terunduh. Simpan file-nya baik-baik ya. 💾" : "Gagal membuat backup. Coba lagi ya.";
+  });
+  let admHapusArmed = "";
+  $("#admHapusBtn").addEventListener("click", async function() {
+    const msg = $("#admHapusMsg");
+    const uname = ($("#admHapusUser").value || "").trim().toLowerCase();
+    if (!uname) { msg.textContent = "Isi dulu username-nya."; return; }
+    if (admHapusArmed !== uname) {
+      admHapusArmed = uname;
+      msg.textContent = "Yakin mau menghapus permanen akun @" + uname + "? Klik tombol sekali lagi untuk benar-benar menghapus.";
+      return;
+    }
+    admHapusArmed = "";
+    const r = await apiPOST("/admin/hapus-user", { username: uname });
+    if (!r.ok) { msg.textContent = (r.data && (r.data.pesan || r.data.error)) || "Gagal menghapus."; return; }
+    msg.textContent = "Akun @" + uname + " sudah dihapus permanen. ✅";
+    $("#admHapusUser").value = "";
+    admMuatStatistik();
+  });
 }
 
 function page404() {
