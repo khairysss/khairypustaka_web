@@ -814,6 +814,24 @@ async def gemini_answer(q, premium=False):
                                        max_tokens=1000)
 
 
+async def gemini_answer_pilihan(q, pilihan="auto"):
+    """Seperti gemini_answer tapi dengan pemilih model (Sul 2026-10-19).
+
+    Return (jawaban, info) — info dari ai_providers.generate_pilihan.
+    """
+    import ai_providers
+    prompt = (
+        "Kamu asisten skripsi/tugas akhir untuk mahasiswa Indonesia semua jurusan. "
+        "Jawab dalam Bahasa Indonesia yang santai tapi jelas, maksimal 250 kata, "
+        "netral jurusan, beri contoh konkret bila membantu. "
+        "Jika pertanyaan di luar topik skripsi/akademik, tolak dengan sopan dan "
+        "arahkan kembali ke topik skripsi.\n\nPertanyaan: " + q
+    )
+    info = await ai_providers.generate_pilihan(prompt, pilihan=pilihan,
+                                               max_tokens=1000)
+    return (info.get("teks") or None), info
+
+
 _UNANSWERED_PRUNE_AT = 0.0
 
 

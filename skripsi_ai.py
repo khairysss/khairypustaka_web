@@ -540,6 +540,43 @@ def ai_refund(chat_id, pool=None):
         _save(d)
 
 
+def ai_try_consume_saldo(chat_id):
+    """Reservasi 1x KHUSUS dari saldo top-up (jalur premium pemilih model).
+
+    Atomik di bawah _LOCK yang sama dengan ai_try_consume. Return "saldo"
+    bila saldo > 0 dan berhasil direservasi, None bila saldo kosong.
+    Jatah harian TIDAK pernah disentuh fungsi ini — gerbang premium di
+    app.py memakai ini agar model premium mustahil terlayani dari jatah
+    gratis. Kembalikan reservasi gagal pakai ai_refund(chat_id, "saldo").
+    """
+    pid = _tg_pid(chat_id)
+    if pid:
+        _ensure_tg_migrated(chat_id, pid)
+    with _LOCK:
+        if pid:
+            try:
+                bd = _bot_load()
+                if bd is None:
+                    return None
+                bb = bd.setdefault("ai_balance", {})
+                saldo = int(bb.get(pid, 0) or 0)
+                if saldo > 0:
+                    bb[pid] = saldo - 1
+                    _bot_save(bd)
+                    return "saldo"
+            except Exception as e:
+                log.warning("pakai saldo premium bot gagal: %s", e)
+            return None
+        d = _load()
+        bal = d.setdefault("ai_balance", {})
+        saldo = int(bal.get(str(chat_id), 0) or 0)
+        if saldo > 0:
+            bal[str(chat_id)] = saldo - 1
+            _save(d)
+            return "saldo"
+        return None
+
+
 def ai_balance(chat_id):
     """Saldo jatah AI hasil top-up/bonus (tidak hangus).
 
@@ -936,3 +973,23 @@ async def generate(kind, text, extra="", chat_id=None):
     except Exception as e:
         log.warning("generate %s gagal: %s", kind, e)
         return None
+
+
+
+async def generate_pilihan(kind, text, extra="", chat_id=None,
+                           pilihan="auto"):
+    """Generate AI Studio dengan pemilih model (Sul 2026-10-19).
+
+    Return (hasil, info) — info dict dari ai_providers.generate_pilihan
+    (label model sebenarnya, dialihkan, status). Akuntansi kuota/saldo
+    diatur pemanggil (app.py): fungsi ini murni generate.
+    """
+    try:
+        info = await ai_providers.generate_pilihan(
+            _prompt(kind, text, extra), pilihan=pilihan,
+            max_tokens=AI_KIND_MAXTOK.get(kind, 1200))
+        return (info.get("teks") or None), info
+    except Exception as e:
+        log.warning("generate_pilihan %s gagal: %s", kind, e)
+        return None, {"teks": None, "label": None, "dialihkan": False,
+                      "status": "gagal"}

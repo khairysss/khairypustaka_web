@@ -42,23 +42,28 @@ def _endpoints():
             if m:
                 eps.append((name, base, {"key": key, "model": m.strip()}))
 
-    # STRATEGI1: Cerebras BERBAYAR (kredit $250) paling depan; model pertama
-    # gpt-oss-120b yang terbukti tersedia untuk key ini (llama-3.3-70b &
-    # qwen-3-32b balas 404 di log 2026-10-14). Cadangan gratis berlapis.
+    # STRATEGI1: Cerebras BERBAYAR (kredit $250) paling depan. Daftar model
+    # diperbarui dari TES LIVE 2026-10-19: key Cerebras hanya bisa
+    # gpt-oss-120b + qwen-3.8-27b (llama-3.3-70b & qwen-3-32b = 404);
+    # katalog Groq sekarang openai/gpt-oss-120b + qwen/qwen3.8-27b
+    # (llama-3.3-70b-versatile & llama-3.1-8b-instant sudah pensiun);
+    # varian :free OpenRouter dihentikan, jadi OpenRouter keluar dari
+    # rotasi reguler (hanya jalur premium + pilihan Llama eksplisit),
+    # kecuali OPENROUTER_MODEL diisi manual via env.
     add("cerebras", "https://api.cerebras.ai/v1",
         os.environ.get("CEREBRAS_API_KEY"),
         [os.environ.get("CEREBRAS_MODEL") or "gpt-oss-120b",
-         "llama-3.3-70b", "qwen-3-32b"])
+         "qwen-3.8-27b"])
     if os.environ.get("GEMINI_API_KEY", "").strip():
         eps.append(("gemini", None, None))
     add("groq", "https://api.groq.com/openai/v1",
         os.environ.get("GROQ_API_KEY"),
-        [os.environ.get("GROQ_MODEL") or "llama-3.3-70b-versatile",
-         "llama-3.1-8b-instant"])
-    add("openrouter", "https://openrouter.ai/api/v1",
-        os.environ.get("OPENROUTER_API_KEY"),
-        [os.environ.get("OPENROUTER_MODEL") or
-         "meta-llama/llama-3.3-70b-instruct:free"])
+        [os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b",
+         "qwen/qwen3.8-27b"])
+    if (os.environ.get("OPENROUTER_MODEL") or "").strip():
+        add("openrouter", "https://openrouter.ai/api/v1",
+            os.environ.get("OPENROUTER_API_KEY"),
+            [os.environ.get("OPENROUTER_MODEL")])
     return eps
 
 
@@ -224,3 +229,219 @@ async def generate(prompt, premium=False, search=False, budget=40.0,
             return out
     log.warning("AI: semua provider gagal")
     return None
+
+
+# ================================================================ PEMILIH MODEL
+# Fitur pemilih model (keputusan Sul 2026-10-19): pengguna memilih model di
+# AI Studio / Chat Tanya / Ide Topik. Kunci pilihan dari frontend SELALU
+# divalidasi app.py terhadap daftar putih; fungsi di sini hanya menerima
+# kunci yang sudah sah: auto, gptoss, qwen, gemini, llama, claude, sonar.
+
+MODEL_LABELS = {
+    "gpt-oss-120b": "GPT-OSS 120B",
+    "openai/gpt-oss-120b": "GPT-OSS 120B",
+    "qwen-3.8-27b": "Qwen 3.8 27B",
+    "qwen/qwen3.8-27b": "Qwen 3.8 27B",
+    "meta-llama/llama-3.3-70b-instruct": "Llama 3.3 70B",
+    "anthropic/claude-haiku-4.5": "Claude Haiku 4.5",
+    "perplexity/sonar": "Perplexity Sonar",
+}
+
+PILIHAN_LABEL = {
+    "auto": "Otomatis",
+    "gptoss": "GPT-OSS 120B",
+    "qwen": "Qwen 3.8 27B",
+    "gemini": "Gemini",
+    "llama": "Llama 3.3 70B",
+    "claude": "Claude Haiku 4.5",
+    "sonar": "Perplexity Sonar",
+}
+
+PILIHAN_PREMIUM = {"claude", "sonar"}
+
+# Cap output jalur premium (ekonomi: biaya terburuk per pakai terkunci;
+# harga jual Rp200/pakai, lihat rancangan Sul 2026-10-19).
+PREMIUM_MAKS_TOKEN = 1500
+
+_MODEL_PREMIUM_ID = {
+    "claude": (os.environ.get("OPENROUTER_MODEL_PREMIUM") or
+               "anthropic/claude-haiku-4.5"),
+    "sonar": (os.environ.get("OPENROUTER_MODEL_PREMIUM_SEARCH") or
+              "perplexity/sonar"),
+}
+
+
+def _label_model(model, nama=""):
+    if nama == "gemini":
+        return "Gemini"
+    return MODEL_LABELS.get(model or "", model or "AI")
+
+
+def _sasaran_pilihan(pilihan):
+    """Endpoint sasaran untuk pilihan model reguler spesifik.
+
+    Return list bentuk _endpoints(): (nama, base, cfg); base None = Gemini.
+    Model yang sama dicoba lewat dua pintu berbeda dulu (mis. GPT-OSS via
+    Cerebras lalu via Groq) sebelum sistem mengalihkan ke model lain.
+    """
+    cb = (os.environ.get("CEREBRAS_API_KEY") or "").strip()
+    gq = (os.environ.get("GROQ_API_KEY") or "").strip()
+    orr = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+    eps = []
+    if pilihan == "gptoss":
+        if cb:
+            eps.append(("cerebras", "https://api.cerebras.ai/v1",
+                        {"key": cb, "model": "gpt-oss-120b"}))
+        if gq:
+            eps.append(("groq", "https://api.groq.com/openai/v1",
+                        {"key": gq, "model": "openai/gpt-oss-120b"}))
+    elif pilihan == "qwen":
+        if cb:
+            eps.append(("cerebras", "https://api.cerebras.ai/v1",
+                        {"key": cb, "model": "qwen-3.8-27b"}))
+        if gq:
+            eps.append(("groq", "https://api.groq.com/openai/v1",
+                        {"key": gq, "model": "qwen/qwen3.8-27b"}))
+    elif pilihan == "gemini":
+        if (os.environ.get("GEMINI_API_KEY") or "").strip():
+            eps.append(("gemini", None, None))
+    elif pilihan == "llama":
+        if orr:
+            eps.append(("openrouter", "https://openrouter.ai/api/v1",
+                        {"key": orr,
+                         "model": "meta-llama/llama-3.3-70b-instruct"}))
+    return eps
+
+
+async def _coba_eps(eps, prompt, max_tokens, sisa):
+    """Coba daftar endpoint berurutan. Return (teks, label) atau (None, None).
+
+    Semantik sama dengan rotasi lama: 404 = lewati model, 429 = lewati
+    seluruh provider itu (key-level), timeout budget = berhenti.
+    """
+    skip_provider = set()
+    for name, base, cfg in eps:
+        if name in skip_provider:
+            continue
+        if sisa() <= 0.5:
+            break
+        if name == "gemini":
+            try:
+                import tanya as tanya_mod
+                out = await asyncio.wait_for(
+                    tanya_mod.gemini_generate(
+                        prompt, max_output_tokens=max_tokens),
+                    timeout=sisa())
+            except Exception as e:
+                log.info("AI pilihan gemini gagal: %s", e)
+                continue
+            if out:
+                return out, "Gemini"
+            continue
+        try:
+            out = await asyncio.wait_for(
+                _openai_chat(base, cfg["key"], cfg["model"], prompt,
+                             max_tokens=max_tokens),
+                timeout=sisa())
+        except _KeyRateLimited:
+            log.info("AI pilihan %s key kena 429, lewati provider", name)
+            skip_provider.add(name)
+            continue
+        except RuntimeError:
+            log.info("AI pilihan %s model %s tidak ada (404), lewati",
+                     name, cfg["model"])
+            continue
+        except asyncio.TimeoutError:
+            log.info("AI pilihan %s/%s kehabisan budget", name, cfg["model"])
+            break
+        except Exception as e:
+            log.info("AI pilihan %s gagal: %s", name, e)
+            continue
+        if out:
+            return out, _label_model(cfg["model"], name)
+    return None, None
+
+
+async def generate_pilihan(prompt, pilihan="auto", budget=40.0,
+                           max_tokens=2000):
+    """Generate dengan pilihan model eksplisit (fitur pemilih model).
+
+    Return dict:
+      teks       : str | None
+      label      : label model yang BENAR-BENAR menjawab (utk ditampilkan)
+      dialihkan  : True bila yang menjawab bukan model pilihan (reguler)
+      status     : "ok" | "premium_gagal" | "gagal"
+
+    Aturan (keputusan Sul 2026-10-19):
+    - Premium (claude/sonar): HANYA model itu yang dicoba. Gagal =
+      "premium_gagal" TANPA fallback; pemanggil (app.py) menampilkan
+      kartu pilihan ke member dan tidak memotong saldo.
+    - Reguler spesifik: model pilihan dicoba dulu (semua pintunya), lalu
+      otomatis dialihkan ke rotasi penuh bila gagal; label = pemenang
+      sebenarnya dan dialihkan=True bila beda dari pilihan.
+    - auto: rotasi reguler biasa, dialihkan selalu False.
+    """
+    t0 = time.monotonic()
+
+    def sisa():
+        return max(0.5, budget - (time.monotonic() - t0))
+
+    pilihan = (pilihan or "auto").strip().lower()
+    if pilihan in PILIHAN_PREMIUM:
+        key = (os.environ.get("OPENROUTER_API_KEY") or "").strip()
+        model = _MODEL_PREMIUM_ID[pilihan].strip()
+        if not key or not model:
+            return {"teks": None, "label": PILIHAN_LABEL[pilihan],
+                    "dialihkan": False, "status": "premium_gagal"}
+        cap = min(int(max_tokens or 2000), PREMIUM_MAKS_TOKEN)
+        for percobaan in (1, 2):
+            try:
+                out = await asyncio.wait_for(
+                    _openai_chat("https://openrouter.ai/api/v1", key, model,
+                                 prompt, max_tokens=cap),
+                    timeout=sisa())
+            except Exception as e:
+                log.info("AI premium pilihan %s gagal (%d): %s",
+                         model, percobaan, e)
+                out = None
+            if out:
+                return {"teks": out, "label": _label_model(model),
+                        "dialihkan": False, "status": "ok"}
+            if percobaan == 1 and sisa() > 6:
+                await asyncio.sleep(3)
+        return {"teks": None, "label": PILIHAN_LABEL[pilihan],
+                "dialihkan": False, "status": "premium_gagal"}
+
+    if pilihan != "auto":
+        sasaran = _sasaran_pilihan(pilihan)
+        if sasaran:
+            out, label = await _coba_eps(sasaran, prompt, max_tokens, sisa)
+            if out:
+                return {"teks": out, "label": label, "dialihkan": False,
+                        "status": "ok"}
+        # Model pilihan gagal total -> alihkan ke rotasi penuh.
+        eps = _endpoints()
+        sudah = {(c or {}).get("model") for _, _, c in sasaran}
+        eps = [e for e in eps
+               if ((e[2] or {}).get("model") if e[2] else "gemini")
+               not in sudah | {None}] if eps else []
+        if pilihan == "gemini":
+            eps = [e for e in eps if e[0] != "gemini"]
+        out, label = await _coba_eps(eps, prompt, max_tokens, sisa)
+        if out:
+            return {"teks": out, "label": label,
+                    "dialihkan": label != PILIHAN_LABEL.get(pilihan),
+                    "status": "ok"}
+        return {"teks": None, "label": None, "dialihkan": False,
+                "status": "gagal"}
+
+    out, label = await _coba_eps(_endpoints(), prompt, max_tokens, sisa)
+    if not out and time.monotonic() - t0 < 12:
+        # Pola lama rotasi: gagal sangat cepat -> ulangi sekali setelah jeda.
+        await asyncio.sleep(2)
+        out, label = await _coba_eps(_endpoints(), prompt, max_tokens, sisa)
+    if out:
+        return {"teks": out, "label": label, "dialihkan": False,
+                "status": "ok"}
+    return {"teks": None, "label": None, "dialihkan": False,
+            "status": "gagal"}

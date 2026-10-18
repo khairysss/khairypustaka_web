@@ -119,3 +119,37 @@ async def ide_topik_ai(keyword, top, gaps, premium=False):
     except Exception as e:
         log.warning("ide topik AI gagal: %s", e)
         return None
+
+
+async def ide_topik_ai_pilihan(keyword, top, gaps, pilihan="auto"):
+    """Seperti ide_topik_ai tapi dengan pemilih model (Sul 2026-10-19).
+
+    Return (ide, info) — info dari ai_providers.generate_pilihan.
+    """
+    try:
+        import ai_providers
+        tren = ""
+        if top:
+            tren = ("Data tren publikasi 2023-sekarang untuk topik ini:\n" +
+                    "\n".join(f"- {n} ({c} publikasi)" for n, c in top[:8]))
+            if gaps:
+                tren += ("\nTopik yang masih jarang diteliti: " +
+                         ", ".join(n for n, _ in gaps[:5]))
+        prompt = (
+            "Kamu asisten skripsi untuk mahasiswa Indonesia semua jurusan. "
+            "Buatkan 5 ide topik/judul penelitian dari minat berikut.\n\n"
+            f"Minat: {keyword[:300]}\n{tren}\n\n"
+            "Jawab dalam Bahasa Indonesia, maksimal 350 kata, dengan format:\n"
+            "Untuk tiap ide (1-5): tulis judul yang spesifik, lalu 1 baris "
+            "menjelaskan variabel/fokusnya (variabel X dan Y untuk kuantitatif, "
+            "atau fokus penelitian untuk kualitatif), dan 1 baris sudut kebaruan/gap-nya. "
+            "Variasikan: campur ide kuantitatif dan kualitatif. "
+            "Akhiri dengan 1 baris tips memilih topik yang paling feasible.")
+        info = await ai_providers.generate_pilihan(
+            prompt, pilihan=pilihan, max_tokens=1200)
+        teks = (info.get("teks") or "").strip()
+        return (teks or None), info
+    except Exception as e:
+        log.warning("ide topik AI pilihan gagal: %s", e)
+        return None, {"teks": None, "label": None, "dialihkan": False,
+                      "status": "gagal"}

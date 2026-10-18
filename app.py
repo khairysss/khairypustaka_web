@@ -793,20 +793,39 @@ def topik():
         log.warning("topik tren gagal: %s", e)
         return _err("gagal mengambil tren publikasi", 502)
     ide, kuota_habis = None, False
-    pool = _ai_consume_uid(g.uid)
-    if pool:
-        try:
-            ide = _run(topik_mod.ide_topik_ai(
-                keyword, top, gaps, premium=_ai_premium_uid(g.uid)))
-        except Exception as e:
-            log.warning("topik ide gagal: %s", e)
-            ide = None
-        if not ide:
-            _ai_refund_uid(g.uid, pool)
+    pilihan = _pilihan_model(body)
+    info, premium_gagal, premium_terkunci = {}, False, False
+    if pilihan in _MODEL_PREMIUM:
+        poolp, errp = _gerbang_premium(g.uid)
+        if errp:
+            premium_terkunci = True
         else:
-            sai.track_tool("topik", g.uid)
+            try:
+                ide, info = _run(topik_mod.ide_topik_ai_pilihan(
+                    keyword, top, gaps, pilihan=pilihan))
+            except Exception as e:
+                log.warning("topik ide premium gagal: %s", e)
+                ide, info = None, {}
+            if not ide:
+                _refund_premium(g.uid, poolp)
+                premium_gagal = True
+            else:
+                sai.track_tool("topik", g.uid)
     else:
-        kuota_habis = True
+        pool = _ai_consume_uid(g.uid)
+        if pool:
+            try:
+                ide, info = _run(topik_mod.ide_topik_ai_pilihan(
+                    keyword, top, gaps, pilihan=pilihan))
+            except Exception as e:
+                log.warning("topik ide gagal: %s", e)
+                ide, info = None, {}
+            if not ide:
+                _ai_refund_uid(g.uid, pool)
+            else:
+                sai.track_tool("topik", g.uid)
+        else:
+            kuota_habis = True
     saran = [] if ide else topik_mod.topic_suggestions(keyword, top, gaps)
     # R5 (audit 2026-10-13): jangan catat entri zonk (ide None dan saran kosong)
     if g.user and (ide or saran):
@@ -816,6 +835,12 @@ def topik():
     return jsonify({
         "tren": top, "gaps": gaps, "ide": ide, "saran": saran,
         "kuota_habis": kuota_habis,
+        "premium_gagal": premium_gagal,
+        "premium_terkunci": premium_terkunci,
+        "premium": bool(ide) and pilihan in _MODEL_PREMIUM,
+        "model_label": info.get("label") if ide else None,
+        "dialihkan": bool(info.get("dialihkan")) if ide else False,
+        "model_pilihan": _MODEL_LABEL[pilihan],
         "sisa": _ai_left_uid(g.uid),
     })
 
@@ -1335,15 +1360,42 @@ def ai():
     if len(text) > cap:
         return _err(f"teks kepanjangan (maksimal {cap} karakter)", 400)
     extra = (body.get("extra") or "").strip()
+    pilihan = _pilihan_model(body)
+    if pilihan in _MODEL_PREMIUM:
+        poolp, errp = _gerbang_premium(g.uid)
+        if errp:
+            return errp
+        try:
+            hasil, info = _run(sai.generate_pilihan(
+                kind, text, extra, chat_id=g.uid, pilihan=pilihan))
+        except Exception as e:
+            log.warning("ai premium %s error: %s", kind, e)
+            hasil, info = None, {}
+        if not hasil:
+            _refund_premium(g.uid, poolp)
+            return jsonify({
+                "error": "premium_gagal", "model": _MODEL_LABEL[pilihan],
+                "pesan": _MODEL_LABEL[pilihan] + " lagi bermasalah saat "
+                         "ini. Saldo kamu tidak terpotong."}), 503
+        sai.track_tool("ai", g.uid)
+        if g.user:
+            histmod.catat(g.uid, "chat", text,
+                          {"sumber": "ai", "kind": kind,
+                           "text": text[:2000], "hasil": hasil})
+        return jsonify({"hasil": hasil, "kind": kind, "premium": True,
+                        "model_label": info.get("label"),
+                        "saldo": sai.ai_balance(g.uid),
+                        "sisa": _ai_left_uid(g.uid)})
     pool = _ai_consume_uid(g.uid)
     if not pool:
         return jsonify({"error": "kuota_habis",
                         "pesan": pesan_ai_habis()}), 429
     try:
-        hasil = _run(sai.generate(kind, text, extra, chat_id=g.uid))
+        hasil, info = _run(sai.generate_pilihan(
+            kind, text, extra, chat_id=g.uid, pilihan=pilihan))
     except Exception as e:
         log.warning("ai %s error: %s", kind, e)
-        hasil = None
+        hasil, info = None, {}
     if not hasil:
         _ai_refund_uid(g.uid, pool)
         return _err("AI-nya lagi gangguan, coba lagi bentar ya", 502)
@@ -1353,6 +1405,9 @@ def ai():
                       {"sumber": "ai", "kind": kind,
                        "text": text[:2000], "hasil": hasil})
     return jsonify({"hasil": hasil, "kind": kind,
+                    "model_label": info.get("label"),
+                    "dialihkan": bool(info.get("dialihkan")),
+                    "model_pilihan": _MODEL_LABEL[pilihan],
                     "sisa": _ai_left_uid(g.uid)})
 
 
@@ -1379,16 +1434,42 @@ def tanya():
             "terkait": [{"id": e["id"], "title": e["title"]}
                         for e in tanya_mod.related(entry)],
         })
+    pilihan = _pilihan_model(body)
+    if pilihan in _MODEL_PREMIUM:
+        poolp, errp = _gerbang_premium(g.uid)
+        if errp:
+            return errp
+        try:
+            jawaban, info = _run(tanya_mod.gemini_answer_pilihan(
+                q[:500], pilihan=pilihan))
+        except Exception as e:
+            log.warning("tanya premium error: %s", e)
+            jawaban, info = None, {}
+        if not jawaban:
+            _refund_premium(g.uid, poolp)
+            return jsonify({
+                "error": "premium_gagal", "model": _MODEL_LABEL[pilihan],
+                "pesan": _MODEL_LABEL[pilihan] + " lagi bermasalah saat "
+                         "ini. Saldo kamu tidak terpotong."}), 503
+        sai.track_tool("tanya", g.uid)
+        if g.user:
+            histmod.catat(g.uid, "chat", q,
+                          {"sumber": "tanya", "tipe_jawab": "ai",
+                           "q": q[:500], "jawaban": jawaban})
+        return jsonify({"tipe": "ai", "jawaban": jawaban, "premium": True,
+                        "model_label": info.get("label"),
+                        "saldo": sai.ai_balance(g.uid),
+                        "sisa": _ai_left_uid(g.uid)})
     pool = _ai_consume_uid(g.uid)
     if not pool:
         return jsonify({"error": "kuota_habis",
                         "pesan": pesan_ai_habis()}), 429
     try:
-        jawaban = _run(tanya_mod.gemini_answer(
-            q[:500], premium=_ai_premium_uid(g.uid)))
+        jawaban, info = _run(tanya_mod.gemini_answer_pilihan(
+            q[:500], pilihan=pilihan))
     except Exception as e:
         log.warning("tanya ai error: %s", e)
-        jawaban = None
+        jawaban, info = None, {}
     if not jawaban:
         _ai_refund_uid(g.uid, pool)
         tanya_mod.log_unanswered(q[:500])
@@ -1399,6 +1480,9 @@ def tanya():
                       {"sumber": "tanya", "tipe_jawab": "ai",
                        "q": q[:500], "jawaban": jawaban})
     return jsonify({"tipe": "ai", "jawaban": jawaban,
+                    "model_label": info.get("label"),
+                    "dialihkan": bool(info.get("dialihkan")),
+                    "model_pilihan": _MODEL_LABEL[pilihan],
                     "sisa": _ai_left_uid(g.uid)})
 
 
@@ -1767,6 +1851,55 @@ def _ai_info_uid(uid):
 def _ai_premium_uid(uid):
     """Admin web diperlakukan premium, seperti owner di bot Telegram."""
     return _is_web_admin() or sai.is_premium(uid)
+
+
+# ------------------------------------------------------------ pemilih model
+# Fitur pemilih model (keputusan Sul 2026-10-19). Kunci pilihan dari klien
+# divalidasi terhadap daftar putih ini; nilai apa pun di luar daftar
+# diperlakukan sebagai "auto" dan TIDAK PERNAH bisa menjadi premium.
+_MODEL_PILIHAN = {"auto", "gptoss", "qwen", "gemini", "llama",
+                  "claude", "sonar"}
+_MODEL_PREMIUM = {"claude", "sonar"}
+_MODEL_LABEL = {"auto": "Otomatis", "gptoss": "GPT-OSS 120B",
+                "qwen": "Qwen 3.8 27B", "gemini": "Gemini",
+                "llama": "Llama 3.3 70B", "claude": "Claude Haiku 4.5",
+                "sonar": "Perplexity Sonar"}
+
+
+def _pilihan_model(body):
+    v = str((body or {}).get("model") or "auto").strip().lower()
+    return v if v in _MODEL_PILIHAN else "auto"
+
+
+def _gerbang_premium(uid):
+    """Gerbang server jalur premium. Return (pool, err_response).
+
+    Lolos -> pool "saldo" (1x saldo SUDAH direservasi atomik) atau "admin"
+    (tanpa potongan). Gagal -> err_response 403 premium_terkunci.
+    Ini SATU-SATUNYA pintu model premium: wajib login + saldo top-up > 0.
+    Reservasi dikembalikan pemanggil via _refund_premium bila generate
+    premium gagal, jadi saldo hanya terpotong bila premium benar-benar
+    berhasil melayani.
+    """
+    if _is_web_admin():
+        return "admin", None
+    if not g.user or _tamu_web_uid(uid):
+        return None, (jsonify({
+            "error": "premium_terkunci",
+            "pesan": "Model premium khusus member yang punya saldo top-up. "
+                     "Login dulu yuk."}), 403)
+    pool = sai.ai_try_consume_saldo(uid)
+    if not pool:
+        return None, (jsonify({
+            "error": "premium_terkunci",
+            "pesan": "Saldo top-up kamu kosong. Top up dulu buat pakai "
+                     "model premium ya."}), 403)
+    return pool, None
+
+
+def _refund_premium(uid, pool):
+    if pool == "saldo":
+        sai.ai_refund(uid, "saldo")
 
 
 def _wita_midnight_ts():
