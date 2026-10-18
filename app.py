@@ -2098,6 +2098,22 @@ def _spa_root():
     return send_file(os.path.join(_STATIC_DIR, "index.html"))
 
 
+# PWA (2026-10-18): manifest + service worker wajib MIME benar, dan
+# sw.js tidak boleh di-cache lama supaya pembaruannya cepat menyebar.
+@app.get("/manifest.webmanifest")
+def _pwa_manifest():
+    return send_file(os.path.join(_STATIC_DIR, "manifest.webmanifest"),
+                     mimetype="application/manifest+json")
+
+
+@app.get("/sw.js")
+def _pwa_sw():
+    res = send_file(os.path.join(_STATIC_DIR, "sw.js"),
+                    mimetype="application/javascript")
+    res.headers["Cache-Control"] = "no-cache"
+    return res
+
+
 # R-3 (audit 2026-10-17): pola path yang jelas-jelas bukan rute SPA
 # (dotfile, .git, arsip data, suffix backup) menjawab 404 polos, bukan
 # 200 berisi index.html — supaya pemindai otomatis tidak salah sangka
