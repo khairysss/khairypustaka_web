@@ -42,7 +42,8 @@ import tanya as tanya_mod
 import history as histmod
 from cite import STYLE_ORDER, cite_in, style_label
 from citefind import parse_citation, split_citations, title_match
-from metafetch import fetch_metadata_from_url
+from metafetch import fetch_metadata_from_url, doi_in_text
+import impor_ref
 from translate import looks_indonesian, paraphrase_id, translate_en_id
 from publisher import aggregate_publishers, enrich_journal_profiles
 from search_id import (
@@ -1096,6 +1097,182 @@ def kemiripan_file():
         log.warning("kemiripan-file gagal: %s", e)
         return _err("pengecekan gagal, coba lagi nanti", 502)
     return jsonify({"hasil": hasil})
+
+
+# ------------------------------------------------- unggah file (umum)
+@app.post("/api/ekstrak-teks")
+@with_rl
+def ekstrak_teks():
+    """Ekstrak teks dari file .docx/.txt/.pdf untuk diisikan ke kolom
+    fitur lain (Cari dari Sitasi, AI Studio, Terjemah Abstrak, dsb).
+    File dibaca di memori dan TIDAK disimpan; pemakaian fitur tujuan
+    yang menghitung kuota, bukan ekstraksinya."""
+    fs = request.files.get("file")
+    if not fs or not fs.filename:
+        return _err("pilih file-nya dulu ya")
+    teks, errm = _teks_dari_file(fs)
+    if errm:
+        return _err(errm, 422)
+    teks = (teks or "").strip()
+    if not teks:
+        return _err("teks di file itu kosong", 422)
+    terpotong = False
+    if len(teks) > 150000:
+        teks = teks[:150000]
+        terpotong = True
+    track_penggunaan("ekstrak")
+    return jsonify({
+        "teks": teks,
+        "nama": fs.filename,
+        "karakter": len(teks),
+        "kata": kemiripan_mod.jumlah_kata(teks),
+        "terpotong": terpotong,
+    })
+
+
+# ------------------------------------------------- impor BibTeX / RIS
+@app.post("/api/koleksi-impor")
+@with_rl
+def koleksi_impor():
+    """Impor referensi massal dari file .bib / .ris (ekspor Mendeley,
+    Zotero, Google Scholar). Hasil parse dikembalikan sebagai daftar
+    work format web; penyimpanan ke Koleksi dilakukan frontend
+    (localStorage), sama seperti hasil pencarian."""
+    fs = request.files.get("file")
+    if not fs or not fs.filename:
+        return _err("pilih file .bib atau .ris-nya dulu ya")
+    nama = fs.filename.lower()
+    if not (nama.endswith(".bib") or nama.endswith(".ris")
+            or nama.endswith(".txt")):
+        return _err("format file-nya .bib atau .ris ya "
+                    "(hasil ekspor Mendeley/Zotero/Google Scholar)", 422)
+    raw = fs.read()
+    if len(raw) > 2 * 1024 * 1024:
+        return _err("ukuran file maksimal 2 MB ya", 422)
+    try:
+        teks = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        teks = raw.decode("latin-1", errors="replace")
+    works, fmt = impor_ref.parse_referensi(teks, fs.filename)
+    if fmt is None:
+        return _err("isi file-nya tidak dikenali sebagai BibTeX atau RIS. "
+                    "Pastikan file hasil ekspor dari Mendeley, Zotero, "
+                    "atau Google Scholar ya", 422)
+    if not works:
+        return _err("tidak ada referensi berjudul yang ketemu di file itu",
+                    422)
+    if len(works) > 500:
+        works = works[:500]
+    track_penggunaan("impor")
+    return jsonify({
+        "items": [to_web_work(w) for w in works],
+        "jumlah": len(works),
+        "format": fmt,
+    })
+
+
+# ------------------------------------------ sitasi dari file jurnal
+def _tebak_meta_pdf(teks):
+    """Tebak judul/penulis/tahun/jurnal dari teks halaman pertama.
+    Hanya dipakai bila DOI tidak ketemu; hasilnya WAJIB dicek pengguna
+    (frontend menampilkan label peringatan). Return work / None."""
+    head = (teks or "")[:3500]
+    mentah = [ln.strip() for ln in head.splitlines()]
+    lines = [ln for ln in mentah if len(ln) >= 3]
+
+    def _sampah(ln):
+        low = ln.lower()
+        return any(k in low for k in (
+            "issn", "http", "www.", "@", "copyright", "doi:",
+            "p-issn", "e-issn", "available online", "received",
+            "accepted", "published", "license", "creative commons",
+            "keywords", "kata kunci", "abstract", "abstrak"))
+
+    cand = [ln for ln in lines[:16] if not _sampah(ln)]
+    # Judul dicari di baris-baris awal saja; kalimat isi (umumnya
+    # berakhir titik) disingkirkan lebih dulu, lalu ambil yang terpanjang.
+    judul, idx_judul = None, -1
+    for i, ln in enumerate(cand[:6]):
+        if ln.endswith("."):
+            continue
+        if len(ln.split()) >= 3 and (judul is None or len(ln) > len(judul)):
+            judul, idx_judul = ln, i
+    if not judul:
+        return None
+    # Judul kadang terpotong dua baris lebih: sambung selama baris
+    # berikutnya bukan baris penulis (tanpa koma), bukan kalimat isi
+    # (tanpa titik akhir), dan tidak memuat tahun.
+    while 0 <= idx_judul < len(cand) - 1:
+        samb = cand[idx_judul + 1]
+        if ("," in samb or samb.endswith(".")
+                or re.search(r"\b(19|20)\d{2}\b", samb)
+                or len(samb.split()) < 3
+                or len(judul) + len(samb) >= 280):
+            break
+        judul = judul + " " + samb
+        idx_judul += 1
+    penulis = []
+    for ln in cand[idx_judul + 1:idx_judul + 4]:
+        low = ln.lower()
+        if any(k in low for k in ("universitas", "institut", "fakultas",
+                                  "departemen", "department", "indonesia",
+                                  "university", "prodi", "program studi")):
+            continue
+        if ":" in ln:
+            continue
+        if "," in ln or " dan " in low or "&" in ln:
+            bersih = re.sub(r"[*†\d]+", " ", ln)
+            penulis = [p.strip(" .") for p in re.split(
+                r",|&|\sdan\s+", bersih, flags=re.I)
+                if 3 <= len(p.strip(" .")) <= 60]
+            if penulis:
+                break
+    tahun = None
+    head_tanpa_doi = re.sub(r"10\.\d{4,9}/[^\s]+", " ", head)
+    ym = re.search(r"\b(19|20)\d{2}\b", head_tanpa_doi)
+    if ym:
+        tahun = int(ym.group(0))
+    jurnal = None
+    for ln in lines[:6]:
+        if (re.search(r"jurnal|journal", ln, flags=re.I)
+                and len(ln) <= 120 and ln != judul):
+            jurnal = ln
+            break
+    return {"title": judul, "authors": penulis, "year": tahun,
+            "journal": jurnal, "doi": None, "url": None,
+            "abstract": None, "volume": None, "issue": None,
+            "pages": None, "is_oa": False, "pdf_url": None}
+
+
+@app.post("/api/sitasi-pdf")
+@with_rl
+def sitasi_pdf():
+    """Buat Sitasi dari file jurnal: cari DOI di teks file lalu ambil
+    metadata akurat dari database jurnal; bila DOI tidak ada, tebak
+    metadata dari halaman pertama (hasilnya dilabeli perlu dicek)."""
+    fs = request.files.get("file")
+    if not fs or not fs.filename:
+        return _err("pilih file jurnalnya dulu ya")
+    teks, errm = _teks_dari_file(fs)
+    if errm:
+        return _err(errm, 422)
+    work, sumber = None, "teks"
+    doi = doi_in_text(teks or "")
+    if doi:
+        try:
+            w = fetch_by_doi(doi)
+        except Exception as e:
+            log.warning("sitasi-pdf doi gagal: %s", e)
+            w = None
+        if w and w.get("title"):
+            work, sumber = w, "doi"
+    if not work:
+        work = _tebak_meta_pdf(teks or "")
+    if not work or not work.get("title"):
+        return _err("judulnya tidak ketemu dari file itu, "
+                    "isi manual saja ya", 422)
+    track_penggunaan("sitasi-pdf")
+    return jsonify({"work": to_web_work(work), "sumber": sumber})
 
 
 # ---------------------------------------------------------------- terjemah
