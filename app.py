@@ -215,7 +215,12 @@ def kuota_tamu(tool):
 
 
 # ---------------------------------------------------------------- sesi
-_SID_RE = re.compile(r"^[0-9a-f]{32}$")
+# Format sid tamu yang sah: uuid 32 hex ATAU sid per-IP "ip"+32 hex.
+# (Perbaikan audit fungsi 2026-10-19: pola lama hanya menerima 32 hex,
+# sehingga cookie tamu per-IP yang diterbitkan server sendiri SELALU
+# ditolak dan identitas tamu dihitung ulang dari IP tiap request —
+# job convert tamu lalu "tidak ditemukan" saat IP klien berubah.)
+_SID_RE = re.compile(r"^(?:[0-9a-f]{32}|ip[0-9a-f]{32})$")
 
 
 @app.before_request
