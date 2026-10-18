@@ -1366,10 +1366,12 @@ function pageKoleksi() {
       ? '<p class="muted">Tersimpan di browser HP-mu. Total: <b>' + arr.length + "</b> referensi.</p>"
       : '<p class="muted">⏰ Mode tamu: koleksi tersimpan di browser HP-mu maksimal <b>24 jam</b>, setelah itu otomatis terhapus. 🛟 Amankan koleksimu: pakai tombol <b>Export</b> di bawah buat simpan jadi file, atau <a href="#/masuk"><b>login gratis</b></a> biar tidak kena batas waktu. Total: <b>' + arr.length + "</b> referensi.</p>") +
     (arr.length ?
-      '<div class="card"><h3>Export ⬇️</h3><p class="tiny muted">Pilih format, filenya langsung keunduh.</p>' +
-      '<button class="btn" data-exp="txt">TXT</button>' +
+      '<div class="card"><h3>Export Daftar Pustaka ⬇️</h3><p class="tiny muted">Pilih gaya sitasi & format, filenya langsung keunduh. Urutan entri otomatis sesuai kaidah gaya (A-Z untuk APA/Harvard/MLA/Chicago).</p>' +
+      '<label class="muted" for="expGaya">Gaya sitasi</label>' +
+      '<select id="expGaya"><option value="apa">APA 7</option><option value="harvard">Harvard</option><option value="mla">MLA 9</option><option value="chicago">Chicago</option><option value="vancouver">Vancouver</option><option value="ieee">IEEE</option></select>' +
+      '<div style="margin-top:10px"><button class="btn" data-exp="txt">TXT</button>' +
       '<button class="btn" data-exp="docx">DOCX</button>' +
-      '<button class="btn" data-exp="bibtex">BibTeX</button></div>' : "") +
+      '<button class="btn" data-exp="bibtex">BibTeX</button></div></div>' : "") +
     '<div id="listKoleksi">' +
       (arr.length ? arr.map((it, i) =>
         '<div class="card hasil"><h3>' + esc(it.judul || "(tanpa judul)") + "</h3>" +
@@ -1389,11 +1391,12 @@ function pageKoleksi() {
     const format = b.dataset.exp;
     setLoading(b, true, "Lagi nyiapin file...");
     const ext = format === "docx" ? "docx" : (format === "bibtex" ? "bib" : "txt");
+    const gayaEl = $("#expGaya");
     const res = await apiDownload("/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: koleksiGet(), format: format })
-    }, "koleksi-khairypustaka." + ext);
+      body: JSON.stringify({ items: koleksiGet(), format: format, style: gayaEl ? gayaEl.value : "apa" })
+    }, "daftar-pustaka-khairypustaka." + ext);
     setLoading(b, false);
     toast(res.ok ? "File keunduh! Cek folder download ya. ⬇️" : "Gagal export, coba lagi ya. 😅");
   }));
