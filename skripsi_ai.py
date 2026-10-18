@@ -413,10 +413,12 @@ def ai_quota_info_guest(uid, ip):
 
 # ------------------------------------------- kuota gabungan tamu (AI + non-AI)
 # Keputusan Sul 2026-10-18: tamu web dapat SATU ember gabungan
-# 10x/hari untuk SEMUA fitur (AI dan non-AI dihitung bareng).
+# untuk SEMUA fitur (AI dan non-AI dihitung bareng).
 # Menggantikan skema lama: AI 5x/hari sendiri + non-AI 10x/hari per fitur.
+# REVISI Sul 2026-10-19: ember tamu diturunkan 10 -> 5x/hari supaya
+# pengunjung terdorong bikin akun (member: AI 10x/hari, non-AI sepuasnya).
 # Member login TIDAK lewat sini (AI 10x/hari, non-AI sepuasnya).
-GUEST_ALL_DAILY_LIMIT = 10   # per identitas tamu, gabungan semua fitur
+GUEST_ALL_DAILY_LIMIT = 5   # per identitas tamu, gabungan semua fitur
 GUEST_ALL_IP_DAILY_CAP = 50  # plafon gabungan per alamat IP (lintas browser)
 
 
