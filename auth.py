@@ -357,6 +357,18 @@ def register_password(username, password, email, ref_code=None):
     return uid, None
 
 
+def delete_user(uid):
+    """Hapus akun dari users.json (dipakai panel admin, mis. akun uji).
+    Return True bila ada yang terhapus."""
+    with _LOCK:
+        d = _load_users()
+        if uid not in d:
+            return False
+        del d[uid]
+        _save_users(d)
+    return True
+
+
 def consume_pending_ref(uid):
     """Ambil & hapus pending_ref user (dipakai sekali saat verifikasi email)."""
     with _LOCK:

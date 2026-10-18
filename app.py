@@ -1679,6 +1679,107 @@ def admin_grant():
                     "nama": u.get("nama") or ""})
 
 
+# ------------------------------------------------- admin: backup & hapus
+_BACKUP_STORES = ("users.json", "tokens.json", "ai_quota.json", "usage.json",
+                  "guest_usage.json", "koleksi.json", "riwayat.json",
+                  "referral.json", "redeem.json", "favorit.json",
+                  "pantau.json", "premium_pending.json", "deadline.json",
+                  "homepages.json")
+
+
+@app.get("/api/admin/backup")
+@with_rl
+def admin_backup():
+    """Unduh seluruh data aplikasi sebagai satu file JSON (khusus admin).
+    Cadangan manual; pasangan backup otomatis mingguan via GitHub Action."""
+    err = _need_admin()
+    if err:
+        return err
+    sentinel = object()
+    isi = {}
+    for name in _BACKUP_STORES:
+        try:
+            doc = dbstore.load_json("data/" + name, sentinel)
+        except Exception:
+            doc = sentinel
+        if doc is not sentinel and doc is not None:
+            isi["data/" + name] = doc
+    paket = {"aplikasi": "KhairyPustaka", "versi_backup": 1,
+             "dibuat": _today_wita(), "data": isi}
+    return send_file(
+        BytesIO(json.dumps(paket, ensure_ascii=False, indent=1).encode()),
+        mimetype="application/json", as_attachment=True,
+        download_name="khairypustaka-backup-%s.json" % _today_wita())
+
+
+def _sweep_uid(doc, uid, depth=0):
+    """Hapus semua entri berkunci uid dari dokumen (rekursif maks 2 lapis).
+    Return True bila ada perubahan."""
+    berubah = False
+    if isinstance(doc, dict):
+        if uid in doc:
+            del doc[uid]
+            berubah = True
+        if depth < 2:
+            for v in list(doc.values()):
+                if isinstance(v, dict) and _sweep_uid(v, uid, depth + 1):
+                    berubah = True
+    return berubah
+
+
+@app.post("/api/admin/hapus-user")
+@with_rl
+def admin_hapus_user():
+    """Hapus permanen satu akun password dari username-nya (khusus admin).
+    Membersihkan juga token login serta entri berkunci uid di store lain.
+    Akun admin dan akun sendiri tidak bisa dihapus."""
+    err = _need_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    uname = (body.get("username") or "").strip().lower()
+    if not uname:
+        return _err("username wajib diisi", 400)
+    users = authmod.list_users() or {}
+    target_uid, target = None, None
+    for uid, u in users.items():
+        if isinstance(u, dict) and u.get("provider") == "password" \
+                and (u.get("pid") or "").lower() == uname:
+            target_uid, target = uid, u
+            break
+    if not target_uid:
+        return _err("akun dengan username itu tidak ditemukan", 404)
+    if is_admin_user(target):
+        return _err("akun admin tidak boleh dihapus", 403)
+    if target_uid == getattr(g, "login_uid", None):
+        return _err("tidak bisa menghapus akun sendiri", 403)
+    dibersihkan = []
+    # token login/verifikasi milik uid ini
+    try:
+        tok = dbstore.load_json(authmod._TOKENS_FILE, {})
+        if isinstance(tok, dict):
+            sisa = {k: v for k, v in tok.items()
+                    if not (isinstance(v, dict) and v.get("uid") == target_uid)}
+            if len(sisa) != len(tok):
+                dbstore.save_json(authmod._TOKENS_FILE, sisa)
+                dibersihkan.append("tokens")
+    except Exception as e:
+        log.warning("hapus-user: sapu token gagal: %s", e)
+    for name in ("ai_quota.json", "referral.json", "riwayat.json",
+                 "koleksi.json", "favorit.json"):
+        try:
+            doc = dbstore.load_json("data/" + name, {})
+            if isinstance(doc, dict) and _sweep_uid(doc, target_uid):
+                dbstore.save_json("data/" + name, doc)
+                dibersihkan.append(name)
+        except Exception as e:
+            log.warning("hapus-user: sapu %s gagal: %s", name, e)
+    if not authmod.delete_user(target_uid):
+        return _err("gagal menghapus akun, coba lagi", 502)
+    return jsonify({"ok": True, "username": uname, "uid": target_uid,
+                    "dibersihkan": dibersihkan})
+
+
 @app.get("/api/kode-referral")
 @with_rl  # R-2 (audit 2026-10-17)
 def kode_referral():
