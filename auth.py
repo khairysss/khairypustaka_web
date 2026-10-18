@@ -274,6 +274,41 @@ def login_hit(ip):
     _LOGIN_ATTEMPTS.setdefault(ip, []).append(time.time())
 
 
+# rate limit login PER IDENTITAS (username/email yang diketik, ternormalisasi):
+# {identitas: [timestamp, ...]} — pertahanan utama dari menebak password,
+# karena kunci IP terbukti tidak stabil di belakang router Render (alamat
+# internal berganti antar request sehingga penghitung per-IP tidak pernah
+# terkumpul; temuan tes serang 2026-10-19: 32x login gagal tanpa kunci).
+_LOGIN_USER_ATTEMPTS = {}
+
+
+def _ident_key(ident):
+    if not isinstance(ident, str):
+        return ""
+    return ident.strip().lower()
+
+
+def login_user_allowed(ident):
+    key = _ident_key(ident)
+    if not key:
+        return True
+    now = time.time()
+    lst = [t for t in _LOGIN_USER_ATTEMPTS.get(key, [])
+           if now - t < _LOGIN_WINDOW]
+    _LOGIN_USER_ATTEMPTS[key] = lst
+    return len(lst) < _LOGIN_MAX
+
+
+def login_user_hit(ident):
+    key = _ident_key(ident)
+    if key:
+        _LOGIN_USER_ATTEMPTS.setdefault(key, []).append(time.time())
+
+
+def login_user_clear(ident):
+    _LOGIN_USER_ATTEMPTS.pop(_ident_key(ident), None)
+
+
 def valid_username(name):
     """Kembalikan username ternormalisasi (lowercase) atau None."""
     n = (name or "").strip().lower()
@@ -320,6 +355,12 @@ def register_password(username, password, email, ref_code=None):
     sebagai pending_ref dan HANYA diproses saat email terverifikasi
     (K-1 audit 2026-10-17: tamu/belum-verifikasi tidak pernah dihitung).
     """
+    if not isinstance(username, str):
+        username = ""
+    if not isinstance(password, str):
+        password = ""
+    if not isinstance(email, str):
+        email = ""
     uname = valid_username(username)
     if not uname:
         return None, "username 3–20 karakter: huruf, angka, titik, underscore"
@@ -481,6 +522,10 @@ def login_password(ident, password):
 
     ident bisa username ATAU email.
     """
+    if not isinstance(ident, str):
+        ident = ""
+    if not isinstance(password, str):
+        password = ""
     key = (ident or "").strip().lower()
     found = None
     for uid, u in _load_users().items():
