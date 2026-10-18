@@ -2125,6 +2125,10 @@ _PANDUAN_PAGES = {
     "panduan/cara-membuat-sitasi-apa-7": "panduan-sitasi-apa-7.html",
     "panduan/cara-memilih-uji-statistik": "panduan-uji-statistik.html",
     "panduan/cara-mencari-research-gap": "panduan-research-gap.html",
+    "panduan/cara-parafrase-yang-benar": "panduan-parafrase.html",
+    "panduan/contoh-latar-belakang-skripsi": "panduan-latar-belakang.html",
+    "panduan/beda-sempro-dan-sidang": "panduan-sempro-sidang.html",
+    "panduan/cara-membuat-daftar-pustaka-otomatis": "panduan-daftar-pustaka.html",
 }
 
 
