@@ -82,6 +82,14 @@ def _split_chunks(text, limit=450):
     return chunks
 
 
+_UA_BROWSER = {"User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/124.0 Safari/537.36")}
+# Email pemilik situs (sudah publik di record DMARC domain) — MyMemory
+# memberi kuota harian jauh lebih besar bila param "de" diisi.
+_MYMEMORY_DE = "admin.khairys@gmail.com"
+
+
 def _mymemory_translate(text, langpair="en|id"):
     """Fallback via MyMemory (gratis, ada batas harian).
 
@@ -95,8 +103,9 @@ def _mymemory_translate(text, langpair="en|id"):
     for chunk in _split_chunks(text):
         try:
             r = httpx.get("https://api.mymemory.translated.net/get",
-                          params={"q": chunk, "langpair": langpair},
-                          timeout=25)
+                          params={"q": chunk, "langpair": langpair,
+                                  "de": _MYMEMORY_DE},
+                          headers=_UA_BROWSER, timeout=25)
             r.raise_for_status()
             t = (r.json().get("responseData") or {}).get("translatedText")
         except Exception as e:
@@ -115,6 +124,57 @@ def _mymemory_translate(text, langpair="en|id"):
         return None
     return out
 
+
+def _google_translate(text, from_code="en", to_code="id"):
+    """Fallback terakhir: endpoint publik Google Translate (gtx).
+
+    Dipakai karena IP server (Render) kerap kena kuota MyMemory.
+    Balikan: gabungan segmen data[0][i][0]. Gagal total -> None.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    out_parts = []
+    for chunk in _split_chunks(text):
+        try:
+            r = httpx.get(
+                "https://translate.googleapis.com/translate_a/single",
+                params={"client": "gtx", "sl": from_code, "tl": to_code,
+                        "dt": "t", "q": chunk},
+                headers=_UA_BROWSER, timeout=25)
+            r.raise_for_status()
+            data = r.json()
+            segs = data[0] or []
+            t = "".join((s[0] or "") for s in segs if s).strip()
+        except Exception as e:
+            log.warning("Google gtx gagal: %s", e)
+            return None
+        if not t:
+            return None
+        out_parts.append(t)
+    out = " ".join(out_parts).strip()
+    if not out or out.lower() == text.lower():
+        return None
+    return out
+
+
+def _terjemahkan(text, from_code, to_code):
+    """Rantai penerjemah: Argos offline -> MyMemory -> Google gtx."""
+    try:
+        out = _argos_translate(text, from_code, to_code)
+        if out:
+            return out, "argos"
+    except Exception as e:
+        log.warning("Argos gagal: %s", e)
+    out = _mymemory_translate(text, f"{from_code}|{to_code}")
+    if out:
+        return out, "mymemory"
+    out = _google_translate(text, from_code, to_code)
+    if out:
+        return out, "google"
+    return None, None
+
+
 def translate_en_id(text):
     """Terjemahkan abstrak EN->ID.
 
@@ -127,16 +187,7 @@ def translate_en_id(text):
     if looks_indonesian(text):
         return None, "sudah_indonesia"
     text = text[:2500]
-    try:
-        out = _argos_translate(text)
-        if out:
-            return out, "argos"
-    except Exception as e:
-        log.warning("Argos gagal: %s", e)
-    out = _mymemory_translate(text)
-    if out:
-        return out, "mymemory"
-    return None, None
+    return _terjemahkan(text, "en", "id")
 
 
 def paraphrase_id(text):
@@ -153,23 +204,11 @@ def paraphrase_id(text):
     if not looks_indonesian(text):
         return None, "Kirim teks berbahasa Indonesia ya."
     # ID -> EN
-    en = None
-    try:
-        en = _argos_translate(text, "id", "en")
-    except Exception as e:
-        log.warning("Argos id->en gagal: %s", e)
-    if not en:
-        en = _mymemory_translate(text, "id|en")
+    en, _s1 = _terjemahkan(text, "id", "en")
     if not en:
         return None, "Gagal menerjemahkan (ID→EN). Coba lagi ya."
     # EN -> ID
-    back = None
-    try:
-        back = _argos_translate(en, "en", "id")
-    except Exception as e:
-        log.warning("Argos en->id gagal: %s", e)
-    if not back:
-        back = _mymemory_translate(en, "en|id")
+    back, _s2 = _terjemahkan(en, "en", "id")
     if not back:
         return None, "Gagal menerjemahkan (EN→ID). Coba lagi ya."
     if back.strip().lower() == text.lower():
