@@ -1907,7 +1907,7 @@ const AI_KINDS = [
   { kind: "kuesioner",     ico: "clipboard", nama: "Kuesioner",       desc: "Draf item kuesioner dari variabelmu.", ph: "cth: Variabel X: motivasi belajar (5 indikator)..." },
   { kind: "latarbelakang", ico: "spark", nama: "Latar Belakang",  desc: "Draf latar belakang Bab 1.", ph: "cth: Topik: stunting di Manado, fenomena: ..." },
   { kind: "simpulan",      ico: "check", nama: "Simpulan",        desc: "Merangkum hasil jadi simpulan Bab 5.", ph: "Tempel hasil penelitianmu..." },
-  { kind: "sidang",        ico: "chat", nama: "Simulasi Sidang", desc: "Prediksi pertanyaan dosen penguji + bocoran jawaban.", ph: "cth: Judul skripsi + ringkasan tiap bab..." },
+  { kind: "sidang",        ico: "chat", nama: "Simulasi Sidang", desc: "Prediksi pertanyaan per bab + contoh jawaban.", ph: "Tempel judul + abstrak atau ringkasan tiap bab skripsimu..." },
   { kind: "kisi",          ico: "grid", nama: "Kisi-kisi",       desc: "Kisi-kisi instrumen penelitian.", ph: "cth: Topik/materi yang mau diukur..." },
   { kind: "metode",        ico: "chart", nama: "Metode",          desc: "Draf Bab 3: desain, populasi, teknik analisis.", ph: "cth: Kuantitatif, populasi mahasiswa..." },
   { kind: "pembahasan",    ico: "quote", nama: "Pembahasan",      desc: "Bantu ngebahas hasil penelitianmu.", ph: "Tempel hasil + teori pendukung..." },
