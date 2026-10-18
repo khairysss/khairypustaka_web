@@ -277,12 +277,30 @@ async function copyText(teks) {
 
 /* ---------- Koleksi (localStorage fase 1) ---------- */
 const KOLEKSI_KEY = "kp_koleksi_v1";
-function koleksiGet() { const v = store.get(KOLEKSI_KEY, []); return Array.isArray(v) ? v : []; }
+/* Tamu: koleksi hanya disimpan maks 24 jam lalu otomatis terhapus
+   (keputusan Sul 2026-10-18). Member login tidak kena batas ini. */
+const KOLEKSI_TTL_TAMU = 24 * 60 * 60 * 1000;
+function koleksiGet() {
+  const v = store.get(KOLEKSI_KEY, []);
+  const arr = Array.isArray(v) ? v : [];
+  if (!AUTH_SIAP || AUTH.login) return arr; // TTL hanya berlaku untuk tamu
+  const kini = Date.now();
+  let berubah = false;
+  const bersih = arr.filter(x => {
+    if (!x || typeof x !== "object") { berubah = true; return false; }
+    if (!x.ts) { x.ts = kini; berubah = true; return true; } // data lama: hitung 24 jam mulai sekarang
+    if (kini - x.ts >= KOLEKSI_TTL_TAMU) { berubah = true; return false; }
+    return true;
+  });
+  if (berubah) koleksiSet(bersih);
+  return bersih;
+}
 function koleksiSet(arr) { return store.set(KOLEKSI_KEY, arr); }
 function koleksiTambah(item) {
   const arr = koleksiGet();
   const judul = (item.judul || "").trim().toLowerCase();
   if (judul && arr.some(x => (x.judul || "").trim().toLowerCase() === judul)) return "duplikat";
+  item.ts = Date.now(); // cap waktu simpan (dasar TTL 24 jam untuk tamu)
   arr.unshift(item);
   return koleksiSet(arr) ? "ok" : "gagal";
 }
@@ -886,7 +904,6 @@ function pageBeranda() {
     ["populer", tic("star")+" Populer", [
       ["#/statistik", "chart", "Statistik", "Panduan pilih uji statistik"],
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
-      ["#/deadline", "alarm", "Deadline", "Catat tenggat tugas & skripsimu"],
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"]
     ]],
     ["riset", tic("search")+" Riset", [
@@ -911,7 +928,6 @@ function pageBeranda() {
     ["kelola", tic("folder")+" Kelola", [
       ["#/koleksi", "books", "Koleksiku", "Simpan & export referensi"],
       ["#/favorit", "star", "Favorit", "Pantau jurnal favoritmu"],
-      ["#/deadline", "alarm", "Deadline", "Catat tenggat tugas & skripsimu"],
       ["#/jadwal", "calendar", "Jadwal", "Timeline mundur skripsi"]
     ]],
     ["akun", tic("bolt")+" Akun", [
@@ -1341,7 +1357,9 @@ function pageKoleksi() {
   const arr = koleksiGet();
   view().innerHTML =
     "<h2>"+tic("books")+" Koleksiku</h2>" +
-    '<p class="muted">Tersimpan di browser HP-mu (tanpa login). Total: <b>' + arr.length + "</b> referensi.</p>" +
+    (AUTH.login
+      ? '<p class="muted">Tersimpan di browser HP-mu. Total: <b>' + arr.length + "</b> referensi.</p>"
+      : '<p class="muted">⏰ Mode tamu: koleksi tersimpan di browser HP-mu maksimal <b>24 jam</b>, setelah itu otomatis terhapus. 🛟 Amankan koleksimu: pakai tombol <b>Export</b> di bawah buat simpan jadi file, atau <a href="#/masuk"><b>login gratis</b></a> biar tidak kena batas waktu. Total: <b>' + arr.length + "</b> referensi.</p>") +
     (arr.length ?
       '<div class="card"><h3>Export ⬇️</h3><p class="tiny muted">Pilih format, filenya langsung keunduh.</p>' +
       '<button class="btn" data-exp="txt">TXT</button>' +
@@ -1384,12 +1402,25 @@ const RIWAYAT_FILTERS = [
 const RIWAYAT_TIC = { chat: "chat", sitasi: "quote", jurnal: "search", topik: "bulb" };
 const RIWAYAT_NAMA = { chat: "Chat AI", sitasi: "Sitasi", jurnal: "Cari Jurnal", topik: "Ide Topik" };
 
-/* ----- Riwayat tamu: localStorage saja (maks 10 total, tidak ke server) ----- */
+/* ----- Riwayat tamu: localStorage saja (tidak ke server).
+   Semua pencarian & pemakaian tamu tercatat, tapi hanya disimpan maks
+   24 jam lalu otomatis terhapus (keputusan Sul 2026-10-18). ----- */
 const RIW_TAMU_KEY = "kp_riwayat_tamu";
-const RIW_TAMU_MAKS = 10;
+const RIW_TAMU_MAKS = 200; // batas aman teknis; batas utama = umur 24 jam
+const RIW_TAMU_TTL = 24 * 60 * 60 * 1000;
 function riwTamuGet() {
-  try { const a = JSON.parse(localStorage.getItem(RIW_TAMU_KEY) || "[]"); return Array.isArray(a) ? a : []; }
-  catch (e) { return []; }
+  let a;
+  try { a = JSON.parse(localStorage.getItem(RIW_TAMU_KEY) || "[]"); } catch (e) { return []; }
+  if (!Array.isArray(a)) return [];
+  const kini = Date.now();
+  const bersih = a.filter(e => {
+    const w = e && e.waktu ? new Date(e.waktu).getTime() : NaN;
+    return isFinite(w) && (kini - w) < RIW_TAMU_TTL;
+  });
+  if (bersih.length !== a.length) {
+    try { localStorage.setItem(RIW_TAMU_KEY, JSON.stringify(bersih)); } catch (e) {}
+  }
+  return bersih;
 }
 let _riwTamuGagalPernah = false; // I3: toast gagal simpan cukup sekali
 function riwTamuSet(a) {
@@ -1522,7 +1553,8 @@ function pageRiwayat() {
   const namaAktif = () => tipe ? RIWAYAT_NAMA[tipe] : "semua riwayat";
 
   const bannerTamu = isTamu
-    ? '<div class="warn-box" style="margin-bottom:12px">🔒 <b>Mode tamu:</b> riwayatmu disimpen di HP-mu aja (maks 10) — nggak dikirim ke server. <a href="#/masuk"><b>Login gratis</b></a> biar kesimpen permanen tanpa batas. ✨</div>'
+    ? '<div class="warn-box" style="margin-bottom:12px">⏰ <b>Mode tamu:</b> semua pencarian & pemakaianmu tercatat di sini, tapi cuma disimpan maksimal <b>24 jam</b> di HP-mu, habis itu <b>otomatis terhapus</b> dan nggak dikirim ke server.<br><br>🛟 <b>Amankan riwayatmu dari sekarang:</b> export jadi file pakai tombol di bawah ini, atau <a href="#/masuk"><b>login gratis</b></a> biar tersimpan permanen di akunmu tanpa batas waktu. ✨</div>' +
+      '<div style="margin-bottom:12px"><button class="btn btn-primary btn-block" id="btnRiwExport">⬇️ Export Riwayat (TXT)</button></div>'
     : "";
 
   view().innerHTML =
@@ -1543,6 +1575,39 @@ function pageRiwayat() {
     $("#btnRiwHapusSemua").textContent = "🗑️ Hapus " + namaAktif();
   };
   aturTombolHapus();
+
+  // Export riwayat tamu jadi file TXT (pengingat Sul 2026-10-18: beri jalan
+  // mengamankan riwayat sebelum batas 24 jam menghapusnya otomatis).
+  const bExpRiw = $("#btnRiwExport");
+  if (bExpRiw) bExpRiw.addEventListener("click", () => {
+    const arr = riwTamuGet();
+    if (!arr.length) { toast("Riwayatmu masih kosong. 📭"); return; }
+    let teks = "RIWAYAT KhairyPustaka (mode tamu)\nDiexport: " + new Date().toLocaleString("id-ID") +
+      "\nTotal: " + arr.length + " entri\n" + "=".repeat(50) + "\n\n";
+    arr.slice().reverse().forEach((e, i) => {
+      teks += (i + 1) + ". [" + (RIWAYAT_NAMA[e.tipe] || e.tipe) + "] " + (e.judul || "") + "\n";
+      teks += "    Waktu: " + fmtWaktuRiwayat(e.waktu) + "\n";
+      const d = e.data || {};
+      if (d.sitasi) teks += "    Sitasi: " + d.sitasi + "\n";
+      if (d.q) teks += "    Pencarian: " + d.q + "\n";
+      if (d.keyword) teks += "    Kata kunci: " + d.keyword + "\n";
+      if (Array.isArray(d.hasil)) {
+        teks += "    Hasil jurnal:\n";
+        d.hasil.slice(0, 12).forEach(w => { if (w && w.judul) teks += "    - " + w.judul + (w.tahun ? " (" + w.tahun + ")" : "") + "\n"; });
+      } else if (typeof d.hasil === "string" && d.hasil) {
+        teks += "    Hasil: " + d.hasil.slice(0, 1000) + "\n";
+      }
+      if (d.jawaban) teks += "    Jawaban: " + String(d.jawaban).slice(0, 1000) + "\n";
+      teks += "\n";
+    });
+    const blob = new Blob([teks], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "riwayat-khairypustaka.txt";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast("Riwayat keexport! Simpan filenya baik-baik ya. ⬇️");
+  });
 
   const muat = async () => {
     const box = $("#listRiwayat");
@@ -1709,74 +1774,13 @@ function pageMatriks() {
   });
 }
 
-/* ----- Deadline ----- */
+/* ----- Util tanggal (dipakai halaman Jadwal) ----- */
 function fmtTanggal(iso) {
   if (!iso) return "-";
   try {
     const d = new Date(iso.length <= 10 ? iso + "T00:00:00" : iso);
     return d.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
   } catch (e) { return iso; }
-}
-function sisaHari(iso) {
-  try {
-    const t = new Date(iso.length <= 10 ? iso + "T00:00:00" : iso);
-    const now = new Date(); now.setHours(0, 0, 0, 0);
-    return Math.round((t - now) / 86400000);
-  } catch (e) { return null; }
-}
-
-async function muatDeadline() {
-  const box = $("#listDeadline");
-  if (!box) return;
-  box.innerHTML = '<p class="loading">Lagi ngambil daftar deadline... ⏳</p>';
-  const res = await apiPOST("/deadline", { aksi: "list" });
-  if (!res.ok) { netErr(box, res); return; }
-  const d = res.data || {};
-  const arr = Array.isArray(d.deadline) ? d.deadline : (Array.isArray(d.daftar) ? d.daftar : (Array.isArray(d) ? d : []));
-  if (!arr.length) { box.innerHTML = '<p class="empty">Belum ada deadline. 🎉 Tambahin di bawah biar nggak kelewat!</p>'; return; }
-  box.innerHTML = arr.map((x, i) => {
-    const nama = esc(x.nama || x.judul || x.nama_deadline || "(tanpa nama)");
-    const tgl = x.tanggal || x.date || x.tenggat || "";
-    const sisa = sisaHari(tgl);
-    const cls = sisa == null ? "" : (sisa < 0 ? "dl-lewat" : (sisa <= 7 ? "dl-dekat" : ""));
-    const infoSisa = sisa == null ? "" : (sisa < 0 ? " — udah lewat " + Math.abs(sisa) + " hari! 😱" : (sisa === 0 ? " — HARI INI! 🔥" : " — " + sisa + " hari lagi ⏳"));
-    return '<div class="dl-item ' + cls + '"><div class="nama">' + nama +
-      '<div class="date">📅 ' + esc(fmtTanggal(tgl)) + infoSisa + "</div></div>" +
-      '<button class="btn btn-danger" data-dlhps="' + i + '">Hapus</button></div>';
-  }).join("");
-  $$("[data-dlhps]", box).forEach(b => b.addEventListener("click", async () => {
-    if (!confirm("Hapus deadline ini? 🗑️")) return;
-    const idx = parseInt(b.dataset.dlhps, 10);
-    const r = await apiPOST("/deadline", { aksi: "hapus", idx: idx });
-    if (!r.ok && kuotaTamuToast(r)) return;
-    toast(r.ok ? "Deadline dihapus. 🗑️" : "Gagal hapus, coba lagi ya. 😅");
-    muatDeadline();
-  }));
-}
-
-function pageDeadline() {
-  view().innerHTML =
-    "<h2>"+tic("alarm")+" Deadline Skripsi</h2>" +
-    '<div class="card"><h3>Tambah deadline ➕</h3>' +
-    '<label for="dlNama">Nama kegiatan</label><input type="text" id="dlNama" placeholder="cth: Sidang proposal">' +
-    '<label for="dlTgl">Tanggal</label><input type="date" id="dlTgl">' +
-    '<button class="btn btn-primary btn-block" id="btnDlAdd" style="margin-top:12px">➕ Tambah</button></div>' +
-    "<h3>Daftarmu 📋</h3><div id='listDeadline'></div>" +
-    '<p class="tiny muted">Belum ada pengingat otomatis di web. Cek halaman ini berkala biar tidak ada yang kelewat. 💡</p>';
-  muatDeadline();
-  $("#btnDlAdd").addEventListener("click", async () => {
-    const nama = ($("#dlNama").value || "").trim();
-    const tanggal = $("#dlTgl").value || "";
-    if (!nama || !tanggal) { toast("Isi nama + tanggalnya dulu 😄"); return; }
-    if (sisaHari(tanggal) < 0 && !confirm("Tanggalnya sudah lewat. Tetap simpan? 📅")) return;
-    const btn = $("#btnDlAdd"); setLoading(btn, true, "Lagi nyatet...");
-    const res = await apiPOST("/deadline", { aksi: "tambah", nama: nama, tanggal: tanggal });
-    setLoading(btn, false);
-    if (!res.ok) { if (kuotaTamuToast(res)) return; toast(res.error === "network" ? "Koneksi bermasalah, coba lagi ya. 😭" : "😅 " + ((res.data && (res.data.pesan || res.data.error)) || "Gagal nambah deadline.")); return; }
-    $("#dlNama").value = ""; $("#dlTgl").value = "";
-    toast("Deadline kecatet! Semangat! 💪");
-    muatDeadline();
-  });
 }
 
 /* ----- Statistik (decision tree) -----
@@ -2278,10 +2282,9 @@ function pageTopup() {
 /* ----- Bantuan ----- */
 function pageBantuan() {
   const faq = [
-    ["KhairyPustaka itu apa? ❓", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, deadline, sampai 10 generator AI naskah. Gratis! 🎓"],
+    ["KhairyPustaka itu apa? ❓", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, sampai 10 generator AI naskah. Gratis! 🎓"],
     ["Beneran gratis? 💰", "Iya! Fitur AI gratis " + aiHarian() + "x/hari" + (AUTH.login ? "." : " buat tamu (login gratis biar dapat 10x/hari).") + " Fitur non-AI gratis tiap hari: tamu 10x/hari per fitur, login sepuasnya. 😉"],
-    ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage), tanpa login. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang — jadi rajin-rajin export ya!"],
-    ["Kok nggak ada notifikasi? 🔔", "Belum ada notifikasi otomatis di versi web. Untuk deadline, catat di halaman Deadline dan cek berkala ya. 😉"],
+    ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage). Buat tamu, koleksi otomatis terhapus setelah 24 jam; login gratis biar tidak kena batas waktu itu. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang, jadi rajin-rajin export ya!"],
     ["Sitasi gaya apa aja yang didukung? 📑", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
     ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Groq, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp200/x, minimal 25x (Rp5.000), nggak hangus."],
     ["Error / nggak jalan, gimana? 😭", "Coba refresh dulu. Kalau masih error, cek koneksi internetmu. Masih bandel juga? Hubungi admin lewat tombol Hubungi Admin di bagian bawah halaman. 🛠️"]
@@ -2313,7 +2316,6 @@ const ROUTES = {
   "/riwayat": pageRiwayat,
   "/favorit": pageFavorit,
   "/matriks": pageMatriks,
-  "/deadline": pageDeadline,
   "/statistik": pageStatistik,
   "/template": pageTemplate,
   "/parafrase": pageParafrase,
