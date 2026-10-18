@@ -927,7 +927,6 @@ function pageBeranda() {
     ]],
     ["kelola", tic("folder")+" Kelola", [
       ["#/koleksi", "books", "Koleksiku", "Simpan & export referensi"],
-      ["#/favorit", "star", "Favorit", "Pantau jurnal favoritmu"],
       ["#/jadwal", "calendar", "Jadwal", "Timeline mundur skripsi"]
     ]],
     ["akun", tic("bolt")+" Akun", [
@@ -1740,15 +1739,6 @@ function pageRiwayat() {
   muat();
 }
 
-/* ----- Favorit ----- */
-function pageFavorit() {
-  view().innerHTML =
-    "<h2>"+tic("star")+" Jurnal Favorit</h2>" +
-    '<div class="card"><h3>⭐ Jurnal Favorit</h3>' +
-    "<p class='muted'>Kumpulan jurnal yang kamu tandai favorit, biar gampang dibuka lagi kapan pun tanpa nyari ulang. ✨</p></div>" +
-    '<div class="card"><h3>Tips 💡</h3><p class="muted">Lagi baca abstrak yang pas banget sama topikmu? Tandai sebagai favorit biar tidak hilang saat ganti halaman. 📚</p></div>';
-}
-
 /* ----- Matriks ----- */
 function pageMatriks() {
   const arr = koleksiGet();
@@ -2314,7 +2304,6 @@ const ROUTES = {
   "/topik": pageTopik,
   "/koleksi": pageKoleksi,
   "/riwayat": pageRiwayat,
-  "/favorit": pageFavorit,
   "/matriks": pageMatriks,
   "/statistik": pageStatistik,
   "/template": pageTemplate,
