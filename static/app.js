@@ -705,7 +705,8 @@ function pageAkun() {
       "<h2>"+tic("person")+" Akun</h2>" +
       '<div class="card center"><img src="' + avatarURL("teal") + '" alt="maskot" class="akun-foto">' +
       '<p class="muted">Kamu lagi mode tamu. Login biar saldo & datamu aman di semua perangkat. 🔐</p>' +
-      '<a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk / Daftar</a></div>';
+      '<a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk / Daftar</a></div>' + kartuPasangAppHTML();
+    ikatTombolPasang();
     return;
   }
   const u = AUTH;
@@ -723,7 +724,7 @@ function pageAkun() {
       : (via ? '<p class="muted">' + esc(via) + "</p>" : "")) +
     (u.admin ? "" : '<a class="btn btn-primary btn-block" href="#/topup">⚡ Jatah AI</a>') +
     (u.admin ? '<a class="btn btn-block" href="#/admin">🛡️ Panel Admin</a>' : "") +
-    '<button class="btn btn-block" id="btnLogout">🚪 Keluar</button></div>' +
+    '<button class="btn btn-block" id="btnLogout">🚪 Keluar</button></div>' + kartuPasangAppHTML() +
     (!u.foto ?
       '<div class="card"><h3>🎨 Foto Profil</h3><p class="muted">Pilih maskot favoritmu:</p>' +
       '<div class="avatar-grid">' + AVATAR_PILIHAN.map(function(p) {
@@ -752,6 +753,7 @@ function pageAkun() {
       '<button class="btn btn-primary btn-block" id="btnUbahMail">Kirim Link Verifikasi</button></div>'
       : '<div class="card"><p class="muted">Akun ini login ' + esc(via || "via Google") +
         " — ubah username, password & email hanya tersedia untuk akun username+password. 🙂</p></div>");
+  ikatTombolPasang();
   $("#btnLogout").addEventListener("click", async () => {
     await apiPOST("/auth/logout", {});
     AUTH = { login: false };
@@ -2679,6 +2681,54 @@ function flushRefPending() {
       if (d.milestone) toast("Yeay, temanmu dapat bonus referral! 🎉");
     }
   }).catch(() => {});
+}
+
+/* ---------- PWA: service worker + pasang aplikasi (2026-10-18) ---------- */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+let _pwaPrompt = null;
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  _pwaPrompt = e;
+});
+window.addEventListener("appinstalled", () => { _pwaPrompt = null; });
+
+async function pasangAplikasi() {
+  if (_pwaPrompt) {
+    _pwaPrompt.prompt();
+    try { await _pwaPrompt.userChoice; } catch (e) {}
+    _pwaPrompt = null;
+    return;
+  }
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent || "");
+  toast(ios
+    ? "Ketuk tombol Bagikan di Safari, lalu pilih \"Tambah ke Layar Utama\" 📲"
+    : "Buka menu titik tiga di browser, lalu pilih \"Pasang aplikasi\" atau \"Tambah ke Layar Utama\" 📲");
+}
+
+function kartuPasangAppHTML() {
+  return '<div class="card center"><h3>📲 Pasang Aplikasi</h3>' +
+    '<p class="muted">Pasang KhairyPustaka ke layar utama HP-mu. Dibuka kayak aplikasi beneran, lebih cepat dan praktis.</p>' +
+    '<button class="btn btn-primary btn-block" id="btnPasangApp" type="button">📲 Pasang Sekarang</button>' +
+    '<p class="muted tiny" id="pasangAppInfo"></p></div>';
+}
+
+function ikatTombolPasang() {
+  const b = $("#btnPasangApp");
+  if (!b) return;
+  if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
+    b.textContent = "✅ Sudah Terpasang";
+    b.disabled = true;
+    return;
+  }
+  const info = $("#pasangAppInfo");
+  if (info && /iphone|ipad|ipod/i.test(navigator.userAgent || "")) {
+    info.textContent = "Di iPhone: ketuk Bagikan di Safari, lalu Tambah ke Layar Utama.";
+  }
+  b.addEventListener("click", pasangAplikasi);
 }
 
 /* ---------- init ---------- */
