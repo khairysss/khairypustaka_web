@@ -926,9 +926,10 @@ function pageBeranda() {
     if (t && KATS.some(k => k[0] === t)) aktif = t; // tab terakhir diingat (tombol Kembali)
   } catch (e) {}
   function gridHTML() {
-    // Admin: sembunyikan SEMUA pintu masuk halaman Jatah AI (instruksi Sul).
+    // Admin & tamu: sembunyikan SEMUA pintu masuk halaman Jatah AI
+    // (admin: instruksi Sul; tamu: perintah Sul 2026-10-18).
     let feats = KATS.find(k => k[0] === aktif)[2];
-    if (AUTH.admin) feats = feats.filter(f => f[0] !== "#/topup");
+    if (AUTH.admin || !AUTH.login) feats = feats.filter(f => f[0] !== "#/topup");
     return feats.map((f, i) =>
       '<a class="feat" style="animation-delay:' + (i * 55) + 'ms" href="' + f[0] + '">' +
       '<span class="ico">' + tic(f[1]) + "</span><b>" + f[2] + "</b><small>" + f[3] + "</small></a>"
@@ -2099,6 +2100,26 @@ function pageTanya() {
 
 /* ----- Jatah AI (top-up) ----- */
 function pageTopup() {
+  // Tamu (perintah Sul 2026-10-18): halaman ini HANYA berisi info jatah
+  // gratis + ajakan login. Form top-up, kartu redeem, dan kode referral
+  // khusus member login karena saldo & kode terikat akun — menampilkan
+  // ketiganya ke tamu hanya membingungkan (dan saldonya pasti hilang).
+  if (!AUTH.login) {
+    view().innerHTML =
+      "<h2>" + tic("bolt") + " Jatah AI</h2>" +
+      '<div class="card"><h3>Sisa jatahmu</h3>' +
+      '<p>🎁 Gratis hari ini: <b id="tamuSisa">' + aiHarian() + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
+      '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Login gratis biar jatah AI naik jadi <b>10x/hari</b>, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman. 🔐</p></div>' +
+      '<div class="card center"><a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk / Daftar — gratis!</a></div>';
+    // Samakan angka dengan sisa asli dari server (tamu bisa sudah memakai sebagian).
+    apiJSON("/topup").then(res => {
+      const el = $("#tamuSisa");
+      if (el && res && res.ok && res.data && res.data.sisa_harian != null) {
+        el.textContent = Number(res.data.sisa_harian) + "x";
+      }
+    });
+    return;
+  }
   view().innerHTML =
     "<h2>"+tic("bolt")+" Jatah AI</h2>" +
     '<div id="topInfo"><p class="loading">Lagi ngecek jatah AI... ⏳</p></div>' +
@@ -2324,6 +2345,10 @@ function aturMenuAdmin() {
   } else if (a) {
     a.remove();
   }
+  // Menu Jatah AI khusus member login: tamu & admin tidak menampilkannya
+  // (perintah Sul 2026-10-18 — tamu tidak boleh melihat menu top-up).
+  const nt = $("#navTopup");
+  if (nt) nt.style.display = (AUTH.login && !AUTH.admin) ? "" : "none";
 }
 
 function admKartu(angka, label) {
