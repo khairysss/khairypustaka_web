@@ -760,7 +760,8 @@ def quota_footer(chat_id):
 
 # ------------------------------------------------------------ prompt
 def _prompt(kind, text, extra=""):
-    text = (text or "")[:1000]
+    # sidang v2 boleh menempel abstrak/ringkasan bab -> batas lebih longgar
+    text = (text or "")[:2000 if kind == "sidang" else 1000]
     extra = (extra or "")[:1000]
     if kind == "kerangka":
         return (BASE +
@@ -806,10 +807,22 @@ def _prompt(kind, text, extra=""):
                 "Tutup dengan satu baris catatan: sesuaikan dengan hasil penelitian sebenarnya.")
     if kind == "sidang":
         return (BASE +
-                "Buatkan simulasi persiapan sidang skripsi.\n\nJudul: " + text +
-                "\n\nJawab maksimal 400 kata: 7 pertanyaan yang paling mungkin ditanyakan dosen penguji "
-                "dari judul ini, masing-masing disertai 2-3 poin kunci jawaban. "
-                "Akhiri dengan 1 tips menghadapi pertanyaan yang tidak bisa dijawab.")
+                "Buatkan SIMULASI SIDANG skripsi yang lengkap dan terstruktur.\n\n"
+                "Bahan (judul, dan bila ada abstrak/ringkasan tiap bab): " + text +
+                "\n\nJawab maksimal 750 kata dengan format persis seperti ini:\n"
+                "Pembuka: 1 kalimat penyemangat + catatan singkat bila bahan yang diberikan hanya judul "
+                "(sarankan menempel abstrak supaya prediksi lebih akurat).\n"
+                "A. PERTANYAAN PEMBUKA & UMUM (2 pertanyaan): pertanyaan klasik pembuka sidang, "
+                "masing-masing diikuti 2-3 poin kunci jawaban.\n"
+                "B. PERTANYAAN PER BAB: BAB I (2 pertanyaan), BAB II (2), BAB III (2), BAB IV (2), "
+                "BAB V (1). Tiap pertanyaan diikuti 2-3 poin kunci jawaban yang spesifik terhadap "
+                "judul/bahan ini, BUKAN jawaban umum. Untuk BAB III tanyakan alasan pemilihan metode, "
+                "populasi/sampel, dan instrumen. Untuk BAB IV tanyakan makna hasil dan kenapa hasilnya "
+                "bisa seperti itu.\n"
+                "C. PERTANYAAN JEBAKAN KLASIK (2 pertanyaan): pertanyaan yang kelihatannya sederhana "
+                "tapi sering menjebak, plus strategi menjawabnya dengan aman.\n"
+                "D. TIPS PENUTUP: 2 tips praktis, salah satunya cara menghadapi pertanyaan yang "
+                "tidak bisa dijawab tanpa mengarang.")
     if kind == "kisi":
         return (BASE +
                 "Buatkan kisi-kisi instrumen penelitian.\n\nVariabel: " + text +

@@ -171,6 +171,34 @@ def send_reset_email(to_addr, nama, token):
     return send_email(to_addr, "Reset password KhairyPustaka 🔑", html)
 
 
+def send_welcome_email(to_addr, nama):
+    """Email sambutan untuk member baru (dikirim sekali, tepat setelah
+    verifikasi email berhasil). Kegagalan kirim tidak boleh menggagalkan
+    verifikasi; pemanggil membungkusnya dengan try/except."""
+    c = mail_config()
+    url = c["base_url"] + "/"
+    html = _wrap(
+        "Selamat datang di KhairyPustaka 🎓",
+        f"Halo <b>{nama}</b>! Akunmu sudah aktif. Sekarang kamu bisa memakai "
+        "semua fitur KhairyPustaka buat nemenin perjalanan skripsimu:<br><br>"
+        "🔎 <b>Cari Jurnal</b> dari 4 sumber sekaligus<br>"
+        "📝 <b>Buat Sitasi</b> 6 gaya dalam hitungan detik<br>"
+        "📊 <b>Panduan Statistik</b> interaktif buat nentuin uji yang tepat<br>"
+        "🤖 <b>AI Studio</b> dengan 10 generator naskah, termasuk "
+        "<b>Simulasi Sidang</b> buat latihan sebelum hari H<br><br>"
+        "Fitur non-AI bisa kamu pakai sepuasnya, dan jatah AI gratis "
+        "10x per hari selalu terisi ulang tiap tengah malam. Satu tips: "
+        "pasang KhairyPustaka ke layar utama HP lewat menu Akun, biar "
+        "bukanya secepat aplikasi biasa.",
+        "Mulai Pakai KhairyPustaka",
+        url,
+        "Email ini dikirim karena kamu baru saja mendaftar dan "
+        "memverifikasi akun di KhairyPustaka. Kalau kamu tidak merasa "
+        "mendaftar, abaikan saja email ini.",
+    )
+    return send_email(to_addr, "Selamat datang di KhairyPustaka 🎓", html)
+
+
 def send_change_email(to_addr, nama, token):
     """Email konfirmasi ke alamat BARU saat user minta ganti email."""
     c = mail_config()

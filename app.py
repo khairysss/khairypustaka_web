@@ -1785,6 +1785,16 @@ def auth_verifikasi():
                 sai.ai_topup(rid, refmod.REWARD_USES)
     except Exception as e:
         log.warning("proses pending_ref gagal untuk %s: %s", uid, e)
+    # Email sambutan member baru (2026-10-18): sekali saja, tepat di titik
+    # verifikasi berhasil (token hanya bisa dipakai sekali). Gagal kirim
+    # tidak boleh menggagalkan verifikasi.
+    try:
+        _u = authmod.get_user(uid)
+        if _u and _u.get("email"):
+            mailmod.send_welcome_email(_u["email"],
+                                       _u.get("nama") or "kamu")
+    except Exception as e:
+        log.warning("email sambutan gagal untuk %s: %s", uid, e)
     _do_login(uid, "web_" + g.sid if not g.user else g.uid)
     g.user = authmod.get_user(uid)
     g.uid = uid
@@ -2108,6 +2118,26 @@ def _pwa_manifest():
 
 # SEO (2026-10-18): robots.txt + sitemap.xml wajib MIME benar supaya
 # Google membacanya sebagai file penunjuk, bukan halaman HTML.
+# Halaman panduan statis (SEO, 2026-10-18): konten asli yang bisa dibaca
+# Google tanpa JavaScript, jembatan dari pencarian ke aplikasi.
+_PANDUAN_PAGES = {
+    "panduan": "panduan-index.html",
+    "panduan/cara-membuat-sitasi-apa-7": "panduan-sitasi-apa-7.html",
+    "panduan/cara-memilih-uji-statistik": "panduan-uji-statistik.html",
+    "panduan/cara-mencari-research-gap": "panduan-research-gap.html",
+}
+
+
+@app.get("/panduan")
+@app.get("/panduan/<slug>")
+def _panduan(slug=None):
+    key = "panduan" if not slug else "panduan/" + slug
+    fname = _PANDUAN_PAGES.get(key)
+    if not fname:
+        return send_file(os.path.join(_STATIC_DIR, "index.html"))
+    return send_file(os.path.join(_STATIC_DIR, fname))
+
+
 @app.get("/robots.txt")
 def _seo_robots():
     return send_file(os.path.join(_STATIC_DIR, "robots.txt"),
