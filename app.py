@@ -2106,6 +2106,20 @@ def _pwa_manifest():
                      mimetype="application/manifest+json")
 
 
+# SEO (2026-10-18): robots.txt + sitemap.xml wajib MIME benar supaya
+# Google membacanya sebagai file penunjuk, bukan halaman HTML.
+@app.get("/robots.txt")
+def _seo_robots():
+    return send_file(os.path.join(_STATIC_DIR, "robots.txt"),
+                     mimetype="text/plain")
+
+
+@app.get("/sitemap.xml")
+def _seo_sitemap():
+    return send_file(os.path.join(_STATIC_DIR, "sitemap.xml"),
+                     mimetype="application/xml")
+
+
 @app.get("/sw.js")
 def _pwa_sw():
     res = send_file(os.path.join(_STATIC_DIR, "sw.js"),
