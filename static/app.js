@@ -126,9 +126,10 @@ let AUTH = { login: false };
 let AUTH_SIAP = false; // R2 (audit 2026-10-13): true setelah /auth/status pertama resolve
 let _riwAntre = [];    // R2: entri tamu yang dicatat sebelum status auth pasti
 
-/* Jatah harian: tamu = ember gabungan 10x/hari buat semua fitur
-   (AI + non-AI, keputusan Sul 2026-10-18); login = jatah AI 10x/hari. */
+/* Jatah harian: tamu = ember gabungan 5x/hari buat semua fitur
+   (AI + non-AI, keputusan Sul 2026-10-19); login = jatah AI 10x/hari. */
 function aiHarian() { return 10; }
+function tamuHarian() { return 5; }
 
 /* ---------- Avatar maskot ---------- */
 const AVATAR_PILIHAN = ["teal", "orange", "navy", "red", "purple"];
@@ -222,7 +223,7 @@ function _kuotaTamuMatch(res) {
 function kuotaTamuBox(box, res) {
   const pesan = _kuotaTamuMatch(res);
   if (pesan != null) {
-    box.innerHTML = '<div class="warn-box">' + esc(pesan || "Jatah harian tamu habis (10x/hari buat semua fitur).") +
+    box.innerHTML = '<div class="warn-box">' + esc(pesan || "Jatah harian tamu habis (5x/hari buat semua fitur).") +
       '<br><a class="btn btn-primary" style="margin-top:10px;display:inline-block" href="#/masuk">Masuk / Daftar — gratis! ✨</a></div>';
     popupJatahHabis();
     return true;
@@ -232,7 +233,7 @@ function kuotaTamuBox(box, res) {
 function kuotaTamuToast(res) {
   const pesan = _kuotaTamuMatch(res);
   if (pesan != null) {
-    toast("🔒 " + (pesan || "Jatah harian tamu habis (10x/hari buat semua fitur).") + " Login gratis biar sepuasnya! ✨");
+    toast("🔒 " + (pesan || "Jatah harian tamu habis (5x/hari buat semua fitur).") + " Login gratis biar sepuasnya! ✨");
     popupJatahHabis();
     return true;
   }
@@ -971,6 +972,9 @@ function pageBeranda() {
       ["#/parafrase", "refresh", "Parafrase", "Ubah kalimat biar fresh"],
       ["#/terjemah", "globe", "Terjemah Abstrak", "Abstrak Inggris jadi Indonesia"],
       ["#/topik", "bulb", "Ide Topik", "Tren & research gap"]
+    ]],
+    ["convert", tic("doc")+" Convert", [
+      ["#/convert", "doc", "Convert File", "Word ke PDF, PDF ke Word, gabung PDF"]
     ]],
     ["nulis", tic("pencil")+" Nulis", [
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
@@ -2203,6 +2207,202 @@ function pageKemiripan() {
   });
 }
 
+/* ----- Convert File (halaman mandiri, hybrid lokal + iLoveAPI) ----- */
+const CONVERT_ALAT = [
+  {kode:"word_pdf", nama:"Word ke PDF",
+   desk:"Dokumen Word (.doc, .docx) jadi PDF yang rapi. Dikerjakan server iLovePDF.",
+   accept:".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document", api:true},
+  {kode:"pdf_word", nama:"PDF ke Word",
+   desk:"PDF jadi dokumen Word (.docx) yang bisa diedit. Hasilnya teks rapi siap disunting, tata letak visual bisa berbeda dari PDF aslinya.",
+   accept:".pdf,application/pdf", api:true},
+  {kode:"gabung", nama:"Gabung PDF",
+   desk:"Satukan 2 sampai 5 file PDF jadi satu file. Dikerjakan di server kami.",
+   accept:".pdf,application/pdf", multi:true, label:"Pilih 2 sampai 5 file PDF"},
+  {kode:"pisah", nama:"Pisah PDF",
+   desk:"Ambil halaman tertentu dari PDF. Tulis rentangnya, contoh 1-3,5 artinya halaman 1 sampai 3 plus halaman 5.",
+   accept:".pdf,application/pdf", rentang:true},
+  {kode:"kompres", nama:"Kompres PDF",
+   desk:"Perkecil ukuran PDF biar lolos batas unggah kampus. Dikerjakan di server kami.",
+   accept:".pdf,application/pdf"},
+  {kode:"gambar_pdf", nama:"Gambar ke PDF",
+   desk:"Satukan sampai 10 gambar (JPG, PNG) jadi satu file PDF. Dikerjakan di server kami.",
+   accept:"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp", multi:true, label:"Pilih sampai 10 gambar"},
+  {kode:"pdf_gambar", nama:"PDF ke Gambar",
+   desk:"Tiap halaman PDF jadi gambar JPG (maksimal 30 halaman). Kalau halamannya banyak, hasilnya dikemas ZIP.",
+   accept:".pdf,application/pdf"}
+];
+
+let _cvTimer = null;
+
+function cvWaktu(detik) {
+  detik = Math.max(0, Math.round(detik || 0));
+  if (detik < 60) return "sekitar " + detik + " detik";
+  const mnt = Math.round(detik / 60);
+  return "sekitar " + mnt + " menit";
+}
+
+function cvUkuran(byte) {
+  byte = byte || 0;
+  if (byte < 1024) return byte + " B";
+  if (byte < 1024 * 1024) return (byte / 1024).toFixed(1).replace(".", ",") + " KB";
+  return (byte / (1024 * 1024)).toFixed(1).replace(".", ",") + " MB";
+}
+
+function cvStatusHTML(d) {
+  const pill = {antre:"Mengantre", memproses:"Diproses", selesai:"Selesai",
+                gagal:"Gagal", dibatalkan:"Dibatalkan"}[d.status] || d.status;
+  let h = '<div class="card"><b>' + esc(d.nama_alat) + '</b> ' +
+    '<span class="chip">' + esc(pill) + "</span>" +
+    '<p class="muted tiny">' + esc(d.nama_file) + "</p>" +
+    "<p>" + esc(d.tahap) + "</p>";
+  if (d.status === "antre" || d.status === "memproses") {
+    h += '<p class="muted tiny">Sudah ' + d.detik_berjalan + " detik sejak dibuat</p>";
+  }
+  if (d.status === "antre") {
+    h += "<p>Posisi antrean: <b>ke " + d.posisi + "</b> (" + d.di_depan +
+      " convert di depanmu)</p>";
+    if (d.estimasi_mulai_detik > 0) {
+      h += '<p class="muted tiny">Perkiraan kasar mulai diproses: ' +
+        cvWaktu(d.estimasi_mulai_detik) + "</p>";
+    }
+    h += '<button class="btn" data-cv="batal">Batalkan</button>';
+  }
+  if (d.status === "selesai") {
+    if (d.hasil_hilang) {
+      h += '<div class="warn-box">Hasilnya sudah dibersihkan otomatis (lebih dari 30 menit). Convert ulang ya.</div>';
+    } else {
+      h += "<p>Hasil: <b>" + esc(d.hasil_nama) + "</b> (" +
+        cvUkuran(d.hasil_ukuran) + ")</p>" +
+        '<a class="btn btn-primary" href="/api/convert/unduh?id=' +
+        encodeURIComponent(d.id) + '">Unduh Hasil</a>' +
+        '<p class="muted tiny" style="margin-top:8px">Hasil otomatis dibersihkan setelah 30 menit.</p>';
+    }
+  }
+  if (d.status === "gagal") {
+    h += '<div class="err-box">' + esc(d.error || "Convertnya gagal, coba lagi ya.") + "</div>";
+  }
+  if (d.status === "dibatalkan") {
+    h += '<p class="muted">Convertnya dibatalkan. Mulai lagi kapan pun kamu siap.</p>';
+  }
+  return h + "</div>";
+}
+
+function cvMulaiPoll(id) {
+  const cek = async () => {
+    const box = $("#cvStatus");
+    if (!box) return;
+    let r = null, d = null;
+    try {
+      r = await fetch("/api/convert/status?id=" + encodeURIComponent(id));
+      d = await r.json();
+    } catch (e) { d = null; }
+    if (!r || !r.ok || !d || !d.id) {
+      box.innerHTML = '<div class="err-box">Tidak bisa mengecek status. Muat ulang halaman ini ya.</div>';
+      return;
+    }
+    box.innerHTML = cvStatusHTML(d);
+    const b = box.querySelector('[data-cv="batal"]');
+    if (b) b.addEventListener("click", () => cvBatalkan(d.id));
+    if (d.status === "selesai" || d.status === "gagal" || d.status === "dibatalkan") {
+      if (_cvTimer) { clearInterval(_cvTimer); _cvTimer = null; }
+    }
+  };
+  cek();
+  _cvTimer = regTimer(setInterval(cek, 3000));
+}
+
+async function cvBatalkan(id) {
+  const box = $("#cvStatus");
+  const res = await apiPOST("/api/convert/batal", { id: id });
+  if (!res.ok) { toast("😅 " + ((res.data && (res.data.pesan || res.data.error)) || "Tidak bisa dibatalkan")); return; }
+  toast("Convertnya dibatalkan 👍");
+  if (box) box.innerHTML = '<p class="muted">Convertnya dibatalkan. Mulai lagi kapan pun kamu siap.</p>';
+  if (_cvTimer) { clearInterval(_cvTimer); _cvTimer = null; }
+}
+
+async function cvKirim(alat, inputFile, inputRentang, btn) {
+  const files = Array.from((inputFile && inputFile.files) || []);
+  if (!files.length) { toast("Pilih filenya dulu ya 😄"); return; }
+  const box = $("#cvStatus");
+  box.innerHTML = '<p class="loading">Masuk antrean... ⏳</p>';
+  const fd = new FormData();
+  fd.append("alat", alat);
+  files.forEach(f => fd.append("file", f));
+  if (inputRentang) fd.append("rentang", inputRentang.value || "");
+  setLoading(btn, true, "Mengirim...");
+  const res = await unggahForm("/api/convert/buat", fd);
+  setLoading(btn, false);
+  const d = res.data || {};
+  if (!res.ok) {
+    if (d.error === "provider_belum_aktif") {
+      box.innerHTML = '<div class="warn-box">' + esc(d.pesan || "Alat ini lagi disiapkan.") + "</div>";
+      return;
+    }
+    if (!kuotaTamuBox(box, res)) netErr(box, res);
+    return;
+  }
+  cvMulaiPoll(d.id);
+}
+
+/* Menu pilihan convert: semua 7 alat terlihat dulu sebagai kartu,
+   tiap kartu membuka formulirnya sendiri. */
+function cvTampilMenu() {
+  if (_cvTimer) { clearInterval(_cvTimer); _cvTimer = null; }
+  const kartu = CONVERT_ALAT.map(a =>
+    '<button class="feat" data-cv-alat="' + a.kode + '" style="text-align:left;width:100%">' +
+    '<span class="ico">' + tic("doc") + "</span><b>" + esc(a.nama) + "</b><small>" + esc(a.desk) + "</small></button>"
+  ).join("");
+  view().innerHTML =
+    "<h2>" + tic("doc") + " Convert File</h2>" +
+    '<div class="card"><p class="muted">Pilih dulu mau convert apa. ' +
+    "Word ke PDF dikerjakan server iLovePDF, alat lainnya dikerjakan langsung di server kami. " +
+    "Semua convert masuk antrean yang sama (maksimal 2 jalan bareng, sisanya menunggu giliran) dan statusnya kelihatan jelas. " +
+    "File tidak disimpan permanen, hasil otomatis dibersihkan setelah 30 menit.</p></div>" +
+    '<div class="grid">' + kartu + "</div>";
+  view().querySelectorAll("[data-cv-alat]").forEach(b =>
+    b.addEventListener("click", () => cvBukaAlat(b.getAttribute("data-cv-alat"))));
+}
+
+/* Formulir satu alat convert, dengan tombol kembali ke menu pilihan. */
+function cvBukaAlat(kode) {
+  const a = CONVERT_ALAT.find(x => x.kode === kode);
+  if (!a) { cvTampilMenu(); return; }
+  if (_cvTimer) { clearInterval(_cvTimer); _cvTimer = null; }
+  let h = '<button class="btn-back" id="cvKembali" type="button">&larr; Kembali</button>' +
+    "<h2>" + tic("doc") + " " + esc(a.nama) + "</h2>" +
+    '<div id="cvStatus"></div>' +
+    '<div class="card">' +
+    '<p class="muted">' + esc(a.desk) + "</p>" +
+    '<label for="cvF">' + esc(a.label || "Pilih file") + ' <span class="tiny muted">(maks 10 MB)</span></label>' +
+    '<input type="file" id="cvF" accept="' + a.accept + '"' + (a.multi ? " multiple" : "") + ">";
+  if (a.rentang) {
+    h += '<label for="cvR" style="margin-top:8px">Rentang halaman</label>' +
+      '<input type="text" id="cvR" placeholder="misal: 1-3,5">';
+  }
+  h += '<button class="btn btn-primary btn-block" id="cvB" style="margin-top:12px">Proses</button>' +
+    '<p class="tiny muted" id="cvCatatan" style="margin-top:6px"></p></div>';
+  view().innerHTML = h;
+  $("#cvKembali").addEventListener("click", cvTampilMenu);
+  const btn = $("#cvB");
+  btn.addEventListener("click", () =>
+    cvKirim(a.kode, $("#cvF"), a.rentang ? $("#cvR") : null, btn));
+  // Tandai alat API bila kuncinya belum dipasang.
+  if (a.api) {
+    apiJSON("/api/convert/siap").then(res => {
+      const d = (res && res.data) || {};
+      const note = $("#cvCatatan");
+      if (res.ok && !d.ilovepdf_aktif) {
+        if (note) note.textContent = "Alat ini lagi disiapkan, kuncinya belum dipasang. Coba lagi nanti ya.";
+        btn.disabled = true;
+      }
+    }).catch(() => {});
+  }
+}
+
+function pageConvert() {
+  cvTampilMenu();
+}
+
 /* ----- AI Studio ----- */
 const AI_KINDS = [
   { kind: "kerangka",      ico: "layout", nama: "Kerangka",        desc: "Outline bab 1-5 biar nulisnya nggak ngawang.", ph: "cth: Pengaruh literasi digital terhadap prestasi mahasiswa..." },
@@ -2258,13 +2458,13 @@ function popupJatahHabis() {
         '<svg width="26" height="26" viewBox="0 0 24 24" fill="#e8873a" aria-hidden="true"><path d="M13 2 4.5 13.5H11L9.8 22 19 10h-6.5L13 2z"/></svg></div>' +
       '<h3 style="margin:10px 0 0">' + (login ? "Jatah AI Harianmu Habis" : "Jatah Tamu Hari Ini Habis") + '</h3>' +
       '<div style="margin-top:12px;background:#f7f1e3;border-radius:10px;padding:8px 10px;text-align:left">' +
-        '<div style="display:flex;justify-content:space-between;font-size:.8rem"><span>' + (login ? "Jatah gratis hari ini" : "Jatah tamu hari ini") + '</span><span><b>10 dari 10</b> terpakai</span></div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:.8rem"><span>' + (login ? "Jatah gratis hari ini" : "Jatah tamu hari ini") + '</span><span><b>' + (login ? "10 dari 10" : "5 dari 5") + '</b> terpakai</span></div>' +
         '<div style="height:8px;background:#e7ddc9;border-radius:99px;margin-top:6px;overflow:hidden"><div style="width:100%;height:100%;background:#e8873a"></div></div></div>' +
       (login
         ? '<p class="muted" style="text-align:left">Jatah AI gratis memang cuma <b>10x per hari</b>. Tenang, jatahnya reset otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok bisa kamu pakai lagi seperti biasa.</p>' +
           '<p class="muted" style="text-align:left">Tidak mau menunggu? Top up saja. Mulai <b>Rp5.000</b> kamu dapat <b>25x</b> jatah AI. Saldonya tidak hangus dan bisa dipakai kapan saja.</p>'
-        : '<p class="muted" style="text-align:left">Mode tamu jatahnya cuma <b>10x per hari</b> buat semua fitur, AI dan non-AI dihitung bareng. Jatahnya reset otomatis <b>tengah malam pukul 00.00 WITA</b>.</p>' +
-          '<p class="muted" style="text-align:left">Daftar gratis saja, tidak sampai semenit. Member bisa pakai fitur non-AI <b>sepuasnya</b>, jatah AI tetap 10x per hari, plus koleksi dan riwayatmu tersimpan aman di akun.</p>') +
+        : '<p class="muted" style="text-align:left">Limit harian mode tamu sudah terpakai semua. Tamu dapat <b>5x per hari</b> buat semua fitur, AI dan non-AI dihitung bareng. Tenang, jatahnya balik lagi otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok kamu bisa lanjut lagi.</p>' +
+          '<p class="muted" style="text-align:left">Tidak mau dibatasi limit harian? <b>Daftar gratis</b> saja, tidak sampai semenit. Begitu punya akun, fitur non-AI seperti cari jurnal, sitasi, convert, dan cek kemiripan bisa kamu pakai <b>sepuasnya</b> tanpa limit harian, jatah AI tetap 10x per hari, plus koleksi dan riwayatmu tersimpan aman di akun.</p>') +
       '<a class="btn btn-primary btn-block" id="kpJatahCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "⚡ Top Up Jatah AI" : "🔑 Daftar Gratis") + '</a>' +
       '<button class="btn btn-block" id="kpJatahTutup" type="button" style="margin-top:9px">Nanti Saja</button>' +
     '</div>';
@@ -2400,7 +2600,7 @@ function pageAI() {
     '<p><span class="kuota" id="kuotaBadge">cek kuota... ⏳</span></p>' +
     '<p class="muted tiny">' + (AUTH.login
       ? 'Gratis <b>10x/hari</b> buat akun login. Pakai bijak ya! 😉'
-      : 'Tamu dapat <b>10x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! 😉') + '</p>' +
+      : 'Tamu dapat <b>5x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! 😉') + '</p>' +
     pickerHTML("ai") +
     '<div class="ai-grid">' + AI_KINDS.map((k, i) =>
       '<div class="card ai-card"><h3>' + tic(k.ico) + " " + esc(k.nama) + "</h3>" +
@@ -2600,8 +2800,8 @@ function pageTopup() {
     view().innerHTML =
       "<h2>" + tic("bolt") + " Jatah AI</h2>" +
       '<div class="card"><h3>Sisa jatahmu</h3>' +
-      '<p>🎁 Gratis hari ini: <b id="tamuSisa">' + aiHarian() + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
-      '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Jatah tamu 10x/hari itu gabungan semua fitur (AI dan non-AI). Login gratis biar fitur non-AI sepuasnya, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman. 🔐</p></div>' +
+      '<p>🎁 Gratis hari ini: <b id="tamuSisa">' + tamuHarian() + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
+      '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Jatah tamu 5x/hari itu gabungan semua fitur (AI dan non-AI). Login gratis biar fitur non-AI sepuasnya, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman. 🔐</p></div>' +
       '<div class="card center"><a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk / Daftar — gratis!</a></div>';
     // Samakan angka dengan sisa asli dari server (tamu bisa sudah memakai sebagian).
     apiJSON("/topup").then(res => {
@@ -2771,7 +2971,7 @@ function pageTopup() {
 function pageBantuan() {
   const faq = [
     ["KhairyPustaka itu apa? ❓", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, sampai 10 generator AI naskah. Gratis! 🎓"],
-    ["Beneran gratis? 💰", "Iya! Buat tamu, semua fitur berbagi jatah gabungan " + aiHarian() + "x/hari (AI dan non-AI dihitung bareng). Login gratis bikin fitur non-AI sepuasnya, jatah AI tetap 10x/hari, dan datamu tersimpan. 😉"],
+    ["Beneran gratis? 💰", "Iya! Buat tamu, semua fitur berbagi jatah gabungan " + tamuHarian() + "x/hari (AI dan non-AI dihitung bareng). Login gratis bikin fitur non-AI sepuasnya, jatah AI tetap 10x/hari, dan datamu tersimpan. 😉"],
     ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage). Buat tamu, koleksi otomatis terhapus setelah 24 jam; login gratis biar tidak kena batas waktu itu. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang, jadi rajin-rajin export ya!"],
     ["Sitasi gaya apa aja yang didukung? 📑", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
     ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Groq, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp200/x, minimal 25x (Rp5.000), nggak hangus."],
@@ -2808,6 +3008,7 @@ const ROUTES = {
   "/parafrase": pageParafrase,
   "/terjemah": pageTerjemah,
   "/kemiripan": pageKemiripan,
+  "/convert": pageConvert,
   "/ai": pageAI,
   "/tanya": pageTanya,
   "/topup": pageTopup,
