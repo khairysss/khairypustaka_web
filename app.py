@@ -163,8 +163,9 @@ def track_penggunaan(tool):
 
 
 # ------------------------------------------- kuota harian tamu (gabungan)
-# Keputusan Sul 2026-10-18: tamu memakai SATU ember gabungan 10x/hari
+# Keputusan Sul 2026-10-18: tamu memakai SATU ember gabungan
 # untuk SEMUA fitur (AI + non-AI), disimpan di skripsi_ai (guest_all_*).
+# Revisi Sul 2026-10-19: ember tamu diturunkan jadi 5x/hari.
 # Login = non-AI unlimited + jatah AI 10x/hari (jalur terpisah).
 
 
@@ -177,18 +178,18 @@ def _is_tamu():
 
 
 def pesan_ai_habis():
-    """Pesan ramah saat jatah habis (tamu: ember gabungan 10x/hari
+    """Pesan ramah saat jatah habis (tamu: ember gabungan 5x/hari
     semua fitur; login: jatah AI 10x/hari)."""
     if _is_tamu():
-        return ("Jatah harian tamu habis (10x/hari buat semua fitur). "
+        return ("Jatah harian tamu habis (5x/hari buat semua fitur). "
                 "Login gratis biar fitur non-AI sepuasnya! ✨")
     return ("Jatah AI gratis harianmu habis (10x/hari). "
             "Besok reset lagi.")
 
 
 def kuota_tamu(tool):
-    """Batasi tamu: SATU ember gabungan 10x/hari untuk semua fitur
-    (keputusan Sul 2026-10-18). Pemakaian non-AI di sini dan pemakaian
+    """Batasi tamu: SATU ember gabungan 5x/hari untuk semua fitur
+    (keputusan Sul 2026-10-18, angka direvisi 2026-10-19). Pemakaian non-AI di sini dan pemakaian
     AI lewat _ai_consume_uid mengurangi ember yang sama di skripsi_ai
     (guest_all_*).
 
@@ -210,7 +211,7 @@ def kuota_tamu(tool):
         log.warning("kuota_tamu gagal: %s", e)
         return None
     return (jsonify({"error": "kuota_tamu_habis",
-                     "pesan": "Jatah harian tamu habis (10x/hari buat semua fitur). Login gratis biar fitur non-AI sepuasnya!"}), 429)
+                     "pesan": "Jatah harian tamu habis (5x/hari buat semua fitur). Login gratis biar fitur non-AI sepuasnya!"}), 429)
 
 
 # ---------------------------------------------------------------- sesi

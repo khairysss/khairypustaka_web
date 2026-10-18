@@ -446,7 +446,7 @@ def _guest_all_used(d, uid, ip, today):
 def guest_all_try_consume(uid, ip):
     """Reservasi 1 dari ember gabungan tamu (AI + non-AI), hitung ganda.
 
-    Ember identitas (10x/hari) DAN ember alamat IP (50x/hari) dicek dulu
+    Ember identitas (5x/hari) DAN ember alamat IP (50x/hari) dicek dulu
     keduanya, baru keduanya ditambah — satu langkah atomik di bawah _LOCK.
     True bila lolos, False bila salah satu ember sudah habis.
     """
