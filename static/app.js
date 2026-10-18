@@ -312,6 +312,22 @@ function koleksiHapus(i) {
   arr.splice(i, 1);
   koleksiSet(arr);
 }
+function koleksiImpor(items) {
+  const arr = koleksiGet();
+  const ada = new Set(arr.map(x => (x.judul || "").trim().toLowerCase()).filter(Boolean));
+  const baru = [];
+  let duplikat = 0;
+  for (const it of items || []) {
+    const j = (it.judul || "").trim().toLowerCase();
+    if (!j) continue;
+    if (ada.has(j)) { duplikat++; continue; }
+    ada.add(j);
+    it.ts = Date.now();
+    baru.push(it);
+  }
+  if (baru.length) koleksiSet(baru.concat(arr));
+  return { tambah: baru.length, duplikat: duplikat };
+}
 
 function kartuHasil(item, idx) {
   const judul = esc(item.judul || "(tanpa judul)");
@@ -381,6 +397,11 @@ function pageSitasi() {
   view().innerHTML =
     "<h2>"+tic("quote")+" Buat Sitasi</h2>" +
     '<div class="card"><p class="muted">Isi detail sumbernya, pilih gaya sitasi, langsung jadi. ✨</p>' +
+    '<div style="border:1.5px dashed #9db8bd;border-radius:10px;padding:10px 12px;margin-bottom:12px">' +
+    '<label for="sitFile" style="margin-top:0">📄 Isi otomatis dari file jurnal (.pdf/.docx/.txt)</label>' +
+    '<input type="file" id="sitFile" accept="' + ACCEPT_DOK + '">' +
+    '<p class="muted tiny" style="margin:6px 0 0">Judul, penulis, tahun, dan jurnal dibaca otomatis dari file. Hasil baca otomatis bisa meleset, jadi <b>wajib cek lagi</b> isinya sebelum dipakai ya.</p>' +
+    '<div id="sitCek"></div></div>' +
     '<label for="sitJudul">Judul *</label><input type="text" id="sitJudul" placeholder="Judul artikel/jurnal" autocomplete="off">' +
     '<label for="sitPenulis">Penulis</label><input type="text" id="sitPenulis" placeholder="Nama penulis, pisahkan dengan koma" autocomplete="off">' +
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
@@ -394,6 +415,28 @@ function pageSitasi() {
     '<button class="btn btn-primary btn-block" id="btnBuatSit">📑 Buatkan Sitasi</button></div>' +
     '<div id="sitHasil"></div>';
   let gaya = "harvard";
+  $("#sitFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const cek = $("#sitCek");
+    cek.innerHTML = '<p class="muted tiny" style="margin-top:8px">Lagi membaca file... ⏳</p>';
+    const fd = new FormData();
+    fd.append("file", f);
+    const res = await unggahForm("/api/sitasi-pdf", fd);
+    if (!res.ok) { cek.innerHTML = ""; toast("😅 " + errFile(res)); return; }
+    const w = (res.data && res.data.work) || {};
+    if (w.judul) $("#sitJudul").value = w.judul;
+    if (Array.isArray(w.penulis) && w.penulis.length) $("#sitPenulis").value = w.penulis.join(", ");
+    if (w.tahun) $("#sitTahun").value = w.tahun;
+    if (w.jurnal) $("#sitJurnal").value = w.jurnal;
+    if (w.volume) $("#sitVolume").value = w.volume;
+    if (w.pages) $("#sitPages").value = w.pages;
+    const dariDoi = res.data.sumber === "doi";
+    cek.innerHTML = '<div class="warn-box" style="margin-top:10px;text-align:left">📄 Kolom di bawah sudah diisi otomatis dari file' +
+      (dariDoi ? " (metadata resmi dari database jurnal, ketemu lewat DOI di file itu)." : " (ditebak dari teks halaman pertama file).") +
+      ' <b>Cek lagi satu per satu ya</b>, terutama judul, nama penulis, dan tahunnya, sebelum klik Buatkan Sitasi.</div>';
+    toast("Kolom terisi dari file. Cek lagi isinya ya 😉");
+  });
   $$("#sitGaya .chip").forEach(c => c.addEventListener("click", () => {
     $$("#sitGaya .chip").forEach(x => x.classList.remove("active"));
     c.classList.add("active"); gaya = c.dataset.gaya;
@@ -926,6 +969,7 @@ function pageBeranda() {
       ["#/ai", "spark", "AI Studio", "10 generator naskah tugas & skripsi"],
       ["#/tanya", "chat", "Tanya AI", "Tanya apa aja soal tugas & skripsi"],
       ["#/parafrase", "refresh", "Parafrase", "Ubah kalimat biar fresh"],
+      ["#/terjemah", "globe", "Terjemah Abstrak", "Abstrak Inggris jadi Indonesia"],
       ["#/topik", "bulb", "Ide Topik", "Tren & research gap"]
     ]],
     ["nulis", tic("pencil")+" Nulis", [
@@ -1121,6 +1165,21 @@ function wireKartu(scope) {
   }));
 }
 
+/* ----- Unggah file -> teks (dipakai banyak fitur) ----- */
+const ACCEPT_DOK = ".docx,.txt,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+async function ekstrakTeksFile(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  return unggahForm("/api/ekstrak-teks", fd);
+}
+async function unggahForm(path, fd) {
+  try {
+    const r = await fetch(path, { method: "POST", body: fd });
+    return { ok: r.ok, status: r.status, data: await r.json().catch(() => null) };
+  } catch (e) { return { ok: false, status: 0, data: null }; }
+}
+function errFile(res) { return (res.data && res.data.error) || "file-nya tidak bisa dibaca"; }
+
 /* ----- Cari dari Sitasi ----- */
 let carifileHasil = []; // state lokal halaman ini (jangan pakai cariState)
 function pageCarifile() {
@@ -1129,8 +1188,23 @@ function pageCarifile() {
     '<div class="card"><p class="muted">Punya sitasi tapi nggak tahu filenya di mana? Paste aja di sini, biar aku yang lacak. 🕵️</p>' +
     '<label for="teksSit">Teks sitasi</label>' +
     '<textarea id="teksSit" placeholder="cth: Sugiyono. (2019). Metode Penelitian Kuantitatif. Bandung: Alfabeta."></textarea>' +
+    '<label for="cfFile" style="margin-top:10px">Atau unggah file daftar pustaka (.docx/.pdf/.txt)</label>' +
+    '<input type="file" id="cfFile" accept="' + ACCEPT_DOK + '">' +
+    '<p class="muted tiny">Teks dari file dimasukkan ke kotak di atas. Cek dulu isinya, baru klik Lacak File.</p>' +
     '<button class="btn btn-primary btn-block" id="btnCarifile" style="margin-top:12px">🔎 Lacak File</button></div>' +
     '<div id="hasilCarifile"></div>';
+  $("#cfFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    toast("Lagi membaca file... ⏳");
+    const res = await ekstrakTeksFile(f);
+    if (!res.ok) { toast("😅 " + errFile(res)); return; }
+    let teks = (res.data.teks || "").trim();
+    let potong = "";
+    if (teks.length > 30000) { teks = teks.slice(0, 30000); potong = " (dipotong ke 30.000 karakter pertama)"; }
+    $("#teksSit").value = teks;
+    toast("Teks dari file sudah dimasukkan" + potong + ". Cek dulu, lalu klik Lacak File 🔎");
+  });
   $("#btnCarifile").addEventListener("click", async () => {
     const teks = ($("#teksSit").value || "").trim();
     if (!teks) { toast("Paste dulu sitasinya 😄"); return; }
@@ -1372,6 +1446,10 @@ function pageKoleksi() {
       '<div style="margin-top:10px"><button class="btn" data-exp="txt">TXT</button>' +
       '<button class="btn" data-exp="docx">DOCX</button>' +
       '<button class="btn" data-exp="bibtex">BibTeX</button></div></div>' : "") +
+    '<div class="card"><h3>Impor Referensi 📥</h3><p class="tiny muted">Punya daftar referensi di Mendeley, Zotero, atau Google Scholar? Export dari sana sebagai file <b>.bib</b> (BibTeX) atau <b>.ris</b>, lalu unggah di sini. Referensinya langsung masuk koleksi, siap di-export jadi daftar pustaka.</p>' +
+    '<input type="file" id="impFile" accept=".bib,.ris,.txt">' +
+    '<button class="btn btn-primary btn-block" id="btnImpor" style="margin-top:10px">📥 Impor ke Koleksi</button>' +
+    '<div id="imporHasil"></div></div>' +
     '<div id="listKoleksi">' +
       (arr.length ? arr.map((it, i) =>
         '<div class="card hasil"><h3>' + esc(it.judul || "(tanpa judul)") + "</h3>" +
@@ -1387,6 +1465,20 @@ function pageKoleksi() {
     toast("Dihapus dari koleksi. 🗑️");
     pageKoleksi();
   }));
+  $("#btnImpor").addEventListener("click", async () => {
+    const f = $("#impFile").files[0];
+    const box = $("#imporHasil");
+    if (!f) { toast("Pilih dulu file .bib atau .ris-nya 😄"); return; }
+    const btn = $("#btnImpor"); setLoading(btn, true, "Lagi mengimpor...");
+    const fd = new FormData();
+    fd.append("file", f);
+    const res = await unggahForm("/api/koleksi-impor", fd);
+    setLoading(btn, false);
+    if (!res.ok) { box.innerHTML = '<div class="err-box" style="margin-top:10px">😅 ' + esc(errFile(res)) + "</div>"; return; }
+    const r = koleksiImpor((res.data && res.data.items) || []);
+    toast("Impor selesai: " + r.tambah + " referensi masuk koleksi" + (r.duplikat ? ", " + r.duplikat + " duplikat dilewati" : "") + " 📚");
+    pageKoleksi();
+  });
   $$("[data-exp]", view()).forEach(b => b.addEventListener("click", async () => {
     const format = b.dataset.exp;
     setLoading(b, true, "Lagi nyiapin file...");
@@ -1879,29 +1971,141 @@ function pageTemplate() {
 }
 
 /* ----- Parafrase ----- */
+/* ----- Terjemah Abstrak (halaman mandiri + unggah PDF jurnal) ----- */
+function pageTerjemah() {
+  view().innerHTML =
+    "<h2>"+tic("globe")+" Terjemah Abstrak</h2>" +
+    '<div class="card"><p class="muted">Terjemahkan abstrak jurnal berbahasa Inggris ke Bahasa Indonesia. Tempel teksnya, atau unggah PDF jurnalnya: teks awal dokumen diambil otomatis, lalu kamu pangkas sampai tersisa abstraknya saja.</p>' +
+    '<label for="tjTeks">Abstrak bahasa Inggris</label><textarea id="tjTeks" rows="8" placeholder="Tempel abstrak berbahasa Inggris di sini..."></textarea>' +
+    '<p class="muted tiny"><span id="tjHitung">0</span>/3.000 karakter</p>' +
+    '<label for="tjFile" style="margin-top:8px">Atau unggah file jurnal (.pdf/.docx/.txt)</label>' +
+    '<input type="file" id="tjFile" accept="' + ACCEPT_DOK + '">' +
+    '<button class="btn btn-primary btn-block" id="btnTj" style="margin-top:12px">🌐 Terjemahkan</button></div>' +
+    '<div id="hasilTj"></div>';
+  const ta = $("#tjTeks");
+  const hitung = () => { const el = $("#tjHitung"); if (el) el.textContent = ta.value.length; };
+  ta.addEventListener("input", hitung);
+  $("#tjFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    toast("Lagi membaca file... ⏳");
+    const res = await ekstrakTeksFile(f);
+    if (!res.ok) { toast("😅 " + errFile(res)); return; }
+    let teks = (res.data.teks || "").replace(/\s+/g, " ").trim();
+    const m = teks.match(/\babstract\b/i);
+    if (m && m.index < 2500) teks = teks.slice(m.index + m[0].length).replace(/^[:\s]+/, "");
+    ta.value = teks.slice(0, 3000);
+    hitung();
+    toast("Teks dari file sudah dimasukkan. Pangkas sampai tersisa abstraknya saja, lalu klik Terjemahkan 🌐");
+  });
+  $("#btnTj").addEventListener("click", async () => {
+    const teks = (ta.value || "").trim();
+    if (teks.length < 20) { toast("Teksnya terlalu pendek buat diterjemahkan 😅"); return; }
+    if (teks.length > 3000) { toast("Kepanjangan, pangkas ke 3.000 karakter ya 😄"); return; }
+    const box = $("#hasilTj");
+    box.innerHTML = '<p class="loading">Lagi menerjemahkan... ⏳</p>';
+    const btn = $("#btnTj"); setLoading(btn, true, "Menerjemahkan...");
+    const res = await apiPOST("/terjemah", { teks: teks });
+    setLoading(btn, false);
+    const d = res.data || {};
+    if (!res.ok) { if (!kuotaTamuBox(box, res)) netErr(box, res); return; }
+    if (d.sumber === "sudah_indonesia") { box.innerHTML = '<div class="warn-box">Teksnya sudah berbahasa Indonesia, tidak perlu diterjemahkan 😉</div>'; return; }
+    if (!d.hasil) { box.innerHTML = '<div class="warn-box">Hasil terjemahannya kosong, coba lagi ya 😅</div>'; return; }
+    box.innerHTML = '<div class="card"><h3>Hasil terjemahan ✨</h3><p style="white-space:pre-wrap">' + esc(d.hasil) + '</p><button class="btn" id="tjCopy">📋 Salin</button></div>';
+    $("#tjCopy").addEventListener("click", () => copyText(d.hasil));
+    toast(d.sumber === "mymemory" ? "Diterjemahkan 🤖 (terjemahan mesin)" : "Diterjemahkan 🤖");
+  });
+}
+
+function pecahTeksParafrase(teks, maks) {
+  /* Pecah teks panjang jadi potongan <= maks karakter di batas kalimat,
+     supaya bisa diproses /api/parafrase (maks 800) berurutan. */
+  maks = maks || 750;
+  const kalimat = (teks.replace(/\s+/g, " ").match(/[^.!?…]+[.!?…]+["')\]]*\s*|[^.!?…]+$/g) || [teks])
+    .map(s => s.trim()).filter(Boolean);
+  const potongan = [];
+  let cur = "";
+  const dorong = (s) => {
+    while (s.length > maks) {
+      let cut = s.lastIndexOf(" ", maks);
+      if (cut < 100) cut = maks;
+      potongan.push(s.slice(0, cut).trim());
+      s = s.slice(cut).trim();
+    }
+    if (s) potongan.push(s);
+  };
+  for (const k of kalimat) {
+    if (cur && (cur + " " + k).length > maks) { dorong(cur); cur = k; }
+    else cur = cur ? cur + " " + k : k;
+  }
+  if (cur) dorong(cur);
+  return potongan.filter(Boolean);
+}
+
 function pageParafrase() {
   view().innerHTML =
     "<h2>"+tic("refresh")+" Parafrase</h2>" +
     '<div class="card"><p class="muted">Tempel kalimat yang mau diubah, biar nggak kepentok plagiarisme. 😉</p>' +
     '<label for="pfTeks">Teks asli</label><textarea id="pfTeks" placeholder="Tempel kalimat/paragraf di sini..."></textarea>' +
+    '<label for="pfFile" style="margin-top:10px">Atau unggah file satu bab (.docx/.pdf/.txt)</label>' +
+    '<input type="file" id="pfFile" accept="' + ACCEPT_DOK + '">' +
+    '<p class="muted tiny">Teks panjang (dari tempel atau file) otomatis diproses per potongan ±750 karakter secara berurutan. Tiap potongan dihitung 1x pemakaian parafrase.</p>' +
     '<button class="btn btn-primary btn-block" id="btnPf" style="margin-top:12px">🔁 Parafrase-kan!</button></div>' +
     '<div id="hasilPf"></div>';
+  $("#pfFile").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    toast("Lagi membaca file... ⏳");
+    const res = await ekstrakTeksFile(f);
+    if (!res.ok) { toast("😅 " + errFile(res)); return; }
+    $("#pfTeks").value = (res.data.teks || "").trim();
+    toast("Teks dari file sudah dimasukkan (" + (res.data.karakter || 0) + " karakter). Klik Parafrase-kan buat memproses 🔁");
+  });
   $("#btnPf").addEventListener("click", async () => {
     const teks = ($("#pfTeks").value || "").trim();
-    if (!teks) { toast("Tempel dulu teksnya 😄"); return; }
+    if (!teks) { toast("Tempel dulu teksnya, atau unggah file-nya 😄"); return; }
     const box = $("#hasilPf");
-    box.innerHTML = '<p class="loading">Lagi muter-muter kata... ⏳</p>';
-    const btn = $("#btnPf"); setLoading(btn, true, "Lagi muter kata...");
-    const res = await apiPOST("/parafrase", { teks: teks });
+    const btn = $("#btnPf");
+    const potongan = pecahTeksParafrase(teks, 750);
+    const hasilBagian = [];
+    let gagalDi = 0;
+    setLoading(btn, true, "Lagi muter kata...");
+    for (let i = 0; i < potongan.length; i++) {
+      box.innerHTML = '<p class="loading">Lagi muter-muter kata... ⏳' +
+        (potongan.length > 1 ? " (potongan " + (i + 1) + " dari " + potongan.length + ")" : "") + "</p>";
+      const res = await apiPOST("/parafrase", { teks: potongan[i] });
+      if (!res.ok) {
+        if (kuotaTamuBox(box, res)) {
+          if (hasilBagian.length) box.innerHTML += '<div class="card"><h3>Hasil parafrase sebagian ✨</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>";
+          gagalDi = i + 1;
+          break;
+        }
+        box.innerHTML = '<div class="warn-box">Potongan ke-' + (i + 1) + " gagal diproses. 😅 " + (hasilBagian.length ? "Bagian sebelumnya tetap ditampilkan di bawah." : "Coba lagi ya.") + "</div>" +
+          (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ✨</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
+        gagalDi = i + 1;
+        break;
+      }
+      const d = res.data || {};
+      const h = d.hasil || d.parafrase || d.text;
+      if (!h) {
+        box.innerHTML = '<div class="warn-box">Hasil potongan ke-' + (i + 1) + ' kosong. 😅' + (hasilBagian.length ? " Bagian sebelumnya tetap ditampilkan di bawah." : "") + "</div>" +
+          (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ✨</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
+        gagalDi = i + 1;
+        break;
+      }
+      hasilBagian.push(h);
+    }
     setLoading(btn, false);
-    if (!res.ok) { netErr(box, res); return; }
-    const d = res.data || {};
-    const hasil = d.hasil || d.parafrase || d.text;
-    if (!hasil) { box.innerHTML = '<div class="warn-box">Hasilnya kosong. 😅 Coba teks yang lebih panjang ya.</div>'; return; }
-    box.innerHTML = '<div class="card"><h3>Hasil parafrase ✨</h3><p style="white-space:pre-wrap">' + esc(hasil) + '</p><button class="btn" id="pfCopy">📋 Salin</button></div>';
-    // I4 (audit 2026-10-13): parafrase dicatat sebagai riwayat chat
-    riwTamuCatat("chat", teks, { sumber: "parafrase", text: teks, hasil: hasil });
-    $("#pfCopy").addEventListener("click", () => copyText(hasil));
+    if (!hasilBagian.length) { if (!gagalDi) box.innerHTML = '<div class="warn-box">Hasilnya kosong. 😅 Coba teks yang lebih panjang ya.</div>'; return; }
+    const gabung = hasilBagian.join("\n\n");
+    if (!gagalDi) {
+      box.innerHTML = '<div class="card"><h3>Hasil parafrase ✨</h3>' +
+        (potongan.length > 1 ? '<p class="muted tiny">Diproses dalam ' + potongan.length + " potongan.</p>" : "") +
+        '<p style="white-space:pre-wrap">' + esc(gabung) + '</p><button class="btn" id="pfCopy">📋 Salin</button></div>';
+      // I4 (audit 2026-10-13): parafrase dicatat sebagai riwayat chat
+      riwTamuCatat("chat", teks, { sumber: "parafrase", text: teks, hasil: gabung });
+      $("#pfCopy").addEventListener("click", () => copyText(gabung));
+    }
   });
 }
 
@@ -2066,11 +2270,29 @@ function pageAI() {
       '<p class="muted tiny">' + esc(k.desc) + "</p>" +
       (k.kind === "abstrak" ? '<input type="text" id="aiJudul' + i + '" placeholder="Judul penelitian (opsional, buat abstrak)" autocomplete="off" style="margin-bottom:8px">' : "") +
       '<textarea id="aiIn' + i + '" placeholder="' + esc(k.ph) + '"></textarea>' +
+      '<label class="muted tiny" style="display:block;margin-top:8px">Atau isi dari file draf (.docx/.pdf/.txt)<input type="file" class="aiFile" data-aii="' + i + '" accept="' + ACCEPT_DOK + '" style="margin-top:4px"></label>' +
       '<button class="btn btn-primary btn-block" data-aigen="' + i + '" style="margin-top:10px">✨ Generate</button>' +
       '<div id="aiOut' + i + '"></div></div>'
     ).join("") + "</div>";
 
   ambilKuota().then(kuotaBadgeUpdate);
+
+  $$(".aiFile", view()).forEach(inp => inp.addEventListener("change", async () => {
+    const i = parseInt(inp.dataset.aii, 10);
+    const f = inp.files[0];
+    if (!f) return;
+    toast("Lagi membaca file... ⏳");
+    const res = await ekstrakTeksFile(f);
+    if (!res.ok) { toast("😅 " + errFile(res)); inp.value = ""; return; }
+    const k = AI_KINDS[i];
+    const cap = (k.kind === "pembahasan" || k.kind === "bab2") ? 4000 : 2000;
+    let teks = (res.data.teks || "").trim();
+    let potong = "";
+    if (teks.length > cap) { teks = teks.slice(0, cap); potong = " (dipotong ke " + cap.toLocaleString("id-ID") + " karakter pertama, batas generator ini)"; }
+    $("#aiIn" + i).value = teks;
+    toast("Draf dari file sudah dimasukkan ke " + k.nama + potong + ". Cek dan edit dulu kalau perlu, baru klik Generate ✨");
+    inp.value = "";
+  }));
 
   $$("[data-aigen]", view()).forEach(btn => btn.addEventListener("click", async () => {
     const i = parseInt(btn.dataset.aigen, 10);
@@ -2396,6 +2618,7 @@ const ROUTES = {
   "/statistik": pageStatistik,
   "/template": pageTemplate,
   "/parafrase": pageParafrase,
+  "/terjemah": pageTerjemah,
   "/kemiripan": pageKemiripan,
   "/ai": pageAI,
   "/tanya": pageTanya,
