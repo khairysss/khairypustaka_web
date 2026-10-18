@@ -313,17 +313,31 @@ def _sasaran_pilihan(pilihan):
     return eps
 
 
-async def _coba_eps(eps, prompt, max_tokens, sisa):
+async def _coba_eps(eps, prompt, max_tokens, sisa, batas=None):
     """Coba daftar endpoint berurutan. Return (teks, label) atau (None, None).
 
     Semantik sama dengan rotasi lama: 404 = lewati model, 429 = lewati
     seluruh provider itu (key-level), timeout budget = berhenti.
+    batas: sisa detik maksimum khusus daftar ini (fase sasaran pemilih
+    model dibatasi agar fase rotasi selalu kebagian budget — pelajaran
+    tes live 2026-10-19: satu panggilan lambat bisa menghabiskan seluruh
+    budget 40 detik dan menggagalkan request yang sebenarnya bisa
+    diselamatkan rotasi).
     """
+    import time as _time
+    t_mulai = _time.monotonic()
+
+    def jatah():
+        s = sisa()
+        if batas is not None:
+            s = min(s, max(0.5, batas - (_time.monotonic() - t_mulai)))
+        return s
+
     skip_provider = set()
     for name, base, cfg in eps:
         if name in skip_provider:
             continue
-        if sisa() <= 0.5:
+        if jatah() <= 0.5:
             break
         if name == "gemini":
             try:
@@ -331,7 +345,7 @@ async def _coba_eps(eps, prompt, max_tokens, sisa):
                 out = await asyncio.wait_for(
                     tanya_mod.gemini_generate(
                         prompt, max_output_tokens=max_tokens),
-                    timeout=sisa())
+                    timeout=jatah())
             except Exception as e:
                 log.info("AI pilihan gemini gagal: %s", e)
                 continue
@@ -342,7 +356,7 @@ async def _coba_eps(eps, prompt, max_tokens, sisa):
             out = await asyncio.wait_for(
                 _openai_chat(base, cfg["key"], cfg["model"], prompt,
                              max_tokens=max_tokens),
-                timeout=sisa())
+                timeout=jatah())
         except _KeyRateLimited:
             log.info("AI pilihan %s key kena 429, lewati provider", name)
             skip_provider.add(name)
@@ -415,7 +429,8 @@ async def generate_pilihan(prompt, pilihan="auto", budget=40.0,
     if pilihan != "auto":
         sasaran = _sasaran_pilihan(pilihan)
         if sasaran:
-            out, label = await _coba_eps(sasaran, prompt, max_tokens, sisa)
+            out, label = await _coba_eps(sasaran, prompt, max_tokens, sisa,
+                                         batas=min(22.0, budget * 0.55))
             if out:
                 return {"teks": out, "label": label, "dialihkan": False,
                         "status": "ok"}
