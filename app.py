@@ -2334,6 +2334,7 @@ _PANDUAN_PAGES = {
     "panduan/contoh-latar-belakang-skripsi": "panduan-latar-belakang.html",
     "panduan/beda-sempro-dan-sidang": "panduan-sempro-sidang.html",
     "panduan/cara-membuat-daftar-pustaka-otomatis": "panduan-daftar-pustaka.html",
+    "panduan/cek-plagiarisme": "panduan-cek-plagiarisme.html",
 }
 
 
