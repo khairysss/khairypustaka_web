@@ -84,6 +84,13 @@ def _panggil(url, data=None, token=None, timeout=20, jenis="application/json"):
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read()
     except urllib.error.HTTPError as e:
+        # Diagnostik audit 2026-10-19: catat metode + host/path yang gagal
+        # (tanpa kredensial) supaya langkah alur yang ditolak provider
+        # terlihat persis di log server.
+        from urllib.parse import urlparse
+        _u = urlparse(url)
+        log.warning("iLoveAPI langkah gagal: %s %s%s",
+                    req.method, _u.netloc, _u.path)
         pesan = _pesan_http(e)
         if pesan.startswith("tool convert ini belum didukung iLoveAPI"):
             raise ToolTidakDidukung(pesan)
