@@ -1009,6 +1009,77 @@ def kemiripan():
     return jsonify({"hasil": hasil})
 
 
+def _teks_dari_file(fs):
+    """Ekstrak teks dari file unggahan (.docx/.txt). File TIDAK disimpan:
+    dibaca di memori lalu dibuang. Return (teks, None) / (None, pesan)."""
+    nama = (fs.filename or "").lower()
+    raw = fs.read()
+    if len(raw) > 2 * 1024 * 1024:
+        return None, "ukuran file maksimal 2 MB ya"
+    if nama.endswith(".pdf") or raw[:4] == b"%PDF":
+        return None, ("file PDF belum didukung. Simpan dulu sebagai "
+                      ".docx/.txt, atau salin teksnya lalu tempel manual ya")
+    if nama.endswith(".docx") or raw[:2] == b"PK":
+        try:
+            from docx import Document
+            doc = Document(BytesIO(raw))
+            bagian = [p.text for p in doc.paragraphs]
+            for tabel in doc.tables:
+                for baris in tabel.rows:
+                    bagian.append(" ".join(c.text for c in baris.cells))
+            return "\n".join(bagian), None
+        except Exception:
+            return None, ("file .docx-nya tidak bisa dibaca, mungkin rusak "
+                          "atau formatnya bukan Word asli")
+    try:
+        return raw.decode("utf-8-sig"), None
+    except UnicodeDecodeError:
+        return raw.decode("latin-1", errors="replace"), None
+
+
+@app.post("/api/kemiripan-file")
+@with_rl
+def kemiripan_file():
+    """Cek Plagiarisme versi unggah file: naskah/sumber boleh berupa
+    teks tempel atau file .docx/.txt (boleh dicampur). Batas versi file
+    lebih longgar: naskah 50.000 karakter, sumber 150.000 karakter."""
+    naskah = (request.form.get("naskah") or "").strip()
+    sumber = (request.form.get("sumber") or "").strip()
+    for kunci in ("file_naskah", "file_sumber"):
+        fs = request.files.get(kunci)
+        if fs and fs.filename:
+            teks, errm = _teks_dari_file(fs)
+            if errm:
+                return _err(errm, 422)
+            if kunci == "file_naskah":
+                naskah = (teks or "").strip()
+            else:
+                sumber = (teks or "").strip()
+    if not naskah or not sumber:
+        return _err("naskah dan teks sumber dua-duanya wajib ada ya: "
+                    "tempel teksnya atau unggah file-nya")
+    if len(naskah) > 50000:
+        return _err(f"naskah dari file kepanjangan ({len(naskah)} karakter), "
+                    "maksimal 50.000 karakter. Potong jadi beberapa bagian ya.", 422)
+    if len(sumber) > 150000:
+        return _err(f"teks sumber dari file kepanjangan ({len(sumber)} karakter), "
+                    "maksimal 150.000 karakter ya.", 422)
+    if kemiripan_mod.jumlah_kata(naskah) < 10:
+        return _err("naskahnya terlalu pendek, minimal sekitar 10 kata biar bisa dicek.", 422)
+    if kemiripan_mod.jumlah_kata(sumber) < 10:
+        return _err("teks sumbernya terlalu pendek, minimal sekitar 10 kata ya.", 422)
+    _qt = kuota_tamu("kemiripan")
+    if _qt is not None:
+        return _qt
+    track_penggunaan("kemiripan")
+    try:
+        hasil = kemiripan_mod.cek(naskah, sumber)
+    except Exception as e:
+        log.warning("kemiripan-file gagal: %s", e)
+        return _err("pengecekan gagal, coba lagi nanti", 502)
+    return jsonify({"hasil": hasil})
+
+
 # ---------------------------------------------------------------- terjemah
 @app.post("/api/terjemah")
 @with_rl
