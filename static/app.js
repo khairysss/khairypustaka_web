@@ -974,7 +974,13 @@ function pageBeranda() {
       ["#/topik", "bulb", "Ide Topik", "Tren & research gap"]
     ]],
     ["convert", tic("doc")+" Convert", [
-      ["#/convert", "doc", "Convert File", "Word ke PDF, PDF ke Word, gabung PDF"]
+      ["#/convert?alat=word_pdf", "doc", "Word ke PDF", ""],
+      ["#/convert?alat=pdf_word", "doc", "PDF ke Word", ""],
+      ["#/convert?alat=gabung", "doc", "Gabung PDF", ""],
+      ["#/convert?alat=pisah", "doc", "Pisah PDF", ""],
+      ["#/convert?alat=kompres", "doc", "Kompres PDF", ""],
+      ["#/convert?alat=gambar_pdf", "doc", "Gambar ke PDF", ""],
+      ["#/convert?alat=pdf_gambar", "doc", "PDF ke Gambar", ""]
     ]],
     ["nulis", tic("pencil")+" Nulis", [
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
@@ -2363,13 +2369,16 @@ function cvTampilMenu() {
     b.addEventListener("click", () => cvBukaAlat(b.getAttribute("data-cv-alat"))));
 }
 
-/* Formulir satu alat convert, dengan tombol kembali ke menu pilihan. */
+/* Formulir satu alat convert. Navigasi kembali memakai tombol Kembali
+   global situs (satu pola di semua halaman). */
 function cvBukaAlat(kode) {
   const a = CONVERT_ALAT.find(x => x.kode === kode);
   if (!a) { cvTampilMenu(); return; }
   if (_cvTimer) { clearInterval(_cvTimer); _cvTimer = null; }
-  let h = '<button class="btn-back" id="cvKembali" type="button">&larr; Kembali</button>' +
-    "<h2>" + tic("doc") + " " + esc(a.nama) + "</h2>" +
+  // Tanpa tombol kembali internal: tombol Kembali global situs sudah
+  // tampil di semua halaman selain Beranda (temuan Sul 2026-10-19:
+  // dua tombol Kembali menumpuk di formulir convert itu dobel).
+  let h = "<h2>" + tic("doc") + " " + esc(a.nama) + "</h2>" +
     '<div id="cvStatus"></div>' +
     '<div class="card">' +
     '<p class="muted">' + esc(a.desk) + "</p>" +
@@ -2382,7 +2391,6 @@ function cvBukaAlat(kode) {
   h += '<button class="btn btn-primary btn-block" id="cvB" style="margin-top:12px">Proses</button>' +
     '<p class="tiny muted" id="cvCatatan" style="margin-top:6px"></p></div>';
   view().innerHTML = h;
-  $("#cvKembali").addEventListener("click", cvTampilMenu);
   const btn = $("#cvB");
   btn.addEventListener("click", () =>
     cvKirim(a.kode, $("#cvF"), a.rentang ? $("#cvR") : null, btn));
@@ -2400,7 +2408,13 @@ function cvBukaAlat(kode) {
 }
 
 function pageConvert() {
-  cvTampilMenu();
+  // Dari tab Convert di Beranda: tile tiap alat membawa ?alat=<kode>
+  // supaya formulirnya langsung terbuka tanpa klik tambahan (perintah
+  // Sul 2026-10-19). Tanpa parameter, tampilkan menu 7 pilihan.
+  const alat = new URLSearchParams(
+    (location.hash.split("?")[1] || "")).get("alat") || "";
+  if (alat && CONVERT_ALAT.some(a => a.kode === alat)) cvBukaAlat(alat);
+  else cvTampilMenu();
 }
 
 /* ----- AI Studio ----- */
