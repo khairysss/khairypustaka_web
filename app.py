@@ -156,14 +156,10 @@ def track_penggunaan(tool):
         log.warning("track_penggunaan gagal: %s", e)
 
 
-# ------------------------------------------- kuota harian tamu fitur non-AI
-_GUEST_USAGE_PATH = "data/guest_usage.json"
-_GUEST_USAGE_LOCK = threading.Lock()
-KUOTA_TAMU_HARIAN = 10  # per fitur non-AI, khusus tamu; login = unlimited
-GUEST_IP_TOOL_DAILY_CAP = 50  # hitung ganda: plafon gabungan per alamat IP
-# per fitur non-AI untuk SEMUA tamu dari IP itu (lintas identitas browser).
-# Longgar supaya jaringan kampus/kos tidak langsung kena hukuman; cukup
-# menutup akal ganti-ganti browser di satu jaringan.
+# ------------------------------------------- kuota harian tamu (gabungan)
+# Keputusan Sul 2026-10-18: tamu memakai SATU ember gabungan 10x/hari
+# untuk SEMUA fitur (AI + non-AI), disimpan di skripsi_ai (guest_all_*).
+# Login = non-AI unlimited + jatah AI 10x/hari (jalur terpisah).
 
 
 def _is_tamu():
@@ -175,104 +171,40 @@ def _is_tamu():
 
 
 def pesan_ai_habis():
-    """Pesan ramah saat jatah AI gratis habis (tamu 5x / login 10x)."""
+    """Pesan ramah saat jatah habis (tamu: ember gabungan 10x/hari
+    semua fitur; login: jatah AI 10x/hari)."""
     if _is_tamu():
-        return ("Jatah AI gratis harianmu habis (5x/hari). "
-                "Login gratis biar dapat 10x/hari! ✨")
+        return ("Jatah harian tamu habis (10x/hari buat semua fitur). "
+                "Login gratis biar fitur non-AI sepuasnya! ✨")
     return ("Jatah AI gratis harianmu habis (10x/hari). "
             "Besok reset lagi.")
 
 
-def _guest_prune(d, today):
-    """Buang entri tamu yang tidak aktif > 7 hari (S-3 audit 2026-10-17).
-
-    Dipanggil saat tulis bila dokumen membesar; mencegah pertumbuhan tanpa
-    batas (satu entri per identitas tamu selamanya). Entri rusak/tanpa
-    tanggal valid dianggap AKTIF (fail-safe: jangan hapus data meragukan).
-    """
-    from datetime import date as _date
-    try:
-        tgl = _date.fromisoformat(today)
-    except ValueError:
-        return d
-    buang = []
-    for uid, u in d.items():
-        if not isinstance(u, dict):
-            continue
-        termuda = None
-        for t in u.values():
-            if not isinstance(t, dict):
-                continue
-            for k in t.keys():
-                try:
-                    kk = _date.fromisoformat(str(k))
-                except ValueError:
-                    termuda = tgl  # tanggal tak dikenal -> anggap aktif
-                    break
-                if termuda is None or kk > termuda:
-                    termuda = kk
-            if termuda is not None and termuda >= tgl:
-                break
-        if termuda is not None and (tgl - termuda).days > 7:
-            buang.append(uid)
-    for uid in buang:
-        d.pop(uid, None)
-    if buang:
-        log.info("guest_usage: %d entri basi dibersihkan", len(buang))
-    return d
-
-
 def kuota_tamu(tool):
-    """Batasi tamu 10x/hari per fitur non-AI.
+    """Batasi tamu: SATU ember gabungan 10x/hari untuk semua fitur
+    (keputusan Sul 2026-10-18). Pemakaian non-AI di sini dan pemakaian
+    AI lewat _ai_consume_uid mengurangi ember yang sama di skripsi_ai
+    (guest_all_*).
 
     Kembalikan None bila lolos (sekaligus catat hit untuk tamu),
-    atau tuple (response, 429) bila kuota tamu habis.
+    atau tuple (response, 429) bila ember gabungan habis.
     Login = unlimited (langsung None, tanpa pencatatan).
-    S-2: tulisan ke DB yang gagal melempar DBUnavailable -> 503
-    (tidak ditelan menjadi fail-open diam-diam).
+    DB yang gagal total melempar DBUnavailable -> 503 (S-2 audit);
+    error lain fail-open seperti perilaku lama.
     """
     name = (tool or "").strip().lower()
     if not name or not _is_tamu():
         return None
-    uid = g.uid
-    today = _today_wita()
-    kehabisan = (jsonify({"error": "kuota_tamu_habis",
-                          "pesan": "Jatah harian tamu untuk fitur ini habis (10x/hari). Login gratis biar pakai sepuasnya!"}), 429)
     try:
-        with _GUEST_USAGE_LOCK:
-            d = dbstore.load_json(_GUEST_USAGE_PATH, {})
-            if not isinstance(d, dict):
-                d = {}
-            u = d.get(uid)
-            if not isinstance(u, dict):
-                u = {}
-            t = u.get(name)
-            n = int((t or {}).get(today, 0) or 0) if isinstance(t, dict) else 0
-            if n >= KUOTA_TAMU_HARIAN:
-                return kehabisan
-            # Hitung ganda: ember alamat IP dicek dulu (jangan bocorkan
-            # alasannya — payload 429 sama persis seperti kehabisan biasa).
-            ipkey = sai.guest_ip_key(_ip())
-            iu = d.get(ipkey)
-            if not isinstance(iu, dict):
-                iu = {}
-            it = iu.get(name)
-            n2 = int((it or {}).get(today, 0) or 0) if isinstance(it, dict) else 0
-            if n2 >= GUEST_IP_TOOL_DAILY_CAP:
-                return kehabisan
-            u[name] = {today: n + 1}
-            d[uid] = u
-            iu[name] = {today: n2 + 1}
-            d[ipkey] = iu
-            if len(d) > 2000:
-                d = _guest_prune(d, today)
-            dbstore.save_json(_GUEST_USAGE_PATH, d)
-        return None
+        if sai.guest_all_try_consume(g.uid, _ip()):
+            return None
     except dbstore.DBUnavailable:
         raise
     except Exception as e:
         log.warning("kuota_tamu gagal: %s", e)
         return None
+    return (jsonify({"error": "kuota_tamu_habis",
+                     "pesan": "Jatah harian tamu habis (10x/hari buat semua fitur). Login gratis biar fitur non-AI sepuasnya!"}), 429)
 
 
 # ---------------------------------------------------------------- sesi
@@ -1491,7 +1423,8 @@ def _ai_consume_uid(uid):
     if _is_web_admin():
         return "harian"
     if _tamu_web_uid(uid):
-        return sai.ai_try_consume_guest(uid, _ip())
+        # Ember gabungan tamu (AI + non-AI): keputusan Sul 2026-10-18.
+        return "harian" if sai.guest_all_try_consume(uid, _ip()) else None
     return sai.ai_try_consume(uid)
 
 
@@ -1502,7 +1435,7 @@ def _ai_refund_uid(uid, pool):
     (cerminan hitung ganda di _ai_consume_uid). Member: jalur normal.
     """
     if _tamu_web_uid(uid):
-        sai.ai_refund_guest(uid, _ip())
+        sai.guest_all_refund(uid, _ip())
     else:
         sai.ai_refund(uid, pool)
 
@@ -1516,7 +1449,7 @@ def _ai_left_uid(uid):
     if _is_web_admin():
         return 999
     if _tamu_web_uid(uid):
-        return sai.ai_quota_info_guest(uid, _ip())[0]
+        return sai.guest_all_left(uid, _ip())
     return sai.ai_quota_left(uid)
 
 
@@ -1528,7 +1461,7 @@ def _ai_info_uid(uid):
     if _is_web_admin():
         return 999, sai.ai_balance(uid)
     if _tamu_web_uid(uid):
-        return sai.ai_quota_info_guest(uid, _ip())
+        return sai.guest_all_left(uid, _ip()), sai.ai_balance(uid)
     return sai.ai_quota_info(uid)
 
 

@@ -411,6 +411,100 @@ def ai_quota_info_guest(uid, ip):
     return min(ai_quota_left(uid), ip_ai_left(ip)), ai_balance(uid)
 
 
+# ------------------------------------------- kuota gabungan tamu (AI + non-AI)
+# Keputusan Sul 2026-10-18: tamu web dapat SATU ember gabungan
+# 10x/hari untuk SEMUA fitur (AI dan non-AI dihitung bareng).
+# Menggantikan skema lama: AI 5x/hari sendiri + non-AI 10x/hari per fitur.
+# Member login TIDAK lewat sini (AI 10x/hari, non-AI sepuasnya).
+GUEST_ALL_DAILY_LIMIT = 10   # per identitas tamu, gabungan semua fitur
+GUEST_ALL_IP_DAILY_CAP = 50  # plafon gabungan per alamat IP (lintas browser)
+
+
+def _guest_all_used(d, uid, ip, today):
+    """(pakai_identitas, pakai_ip) ember gabungan tamu hari ini."""
+    ga = d.get("guest_all") or {}
+    e = ga.get(str(uid))
+    used = 0
+    if isinstance(e, dict) and e.get("date") == today:
+        try:
+            used = max(0, int(e.get("count", 0) or 0))
+        except (TypeError, ValueError):
+            used = 0
+    gi = d.get("guest_all_ip") or {}
+    ie = gi.get(guest_ip_key(ip))
+    iused = 0
+    if isinstance(ie, dict) and ie.get("date") == today:
+        try:
+            iused = max(0, int(ie.get("count", 0) or 0))
+        except (TypeError, ValueError):
+            iused = 0
+    return used, iused
+
+
+def guest_all_try_consume(uid, ip):
+    """Reservasi 1 dari ember gabungan tamu (AI + non-AI), hitung ganda.
+
+    Ember identitas (10x/hari) DAN ember alamat IP (50x/hari) dicek dulu
+    keduanya, baru keduanya ditambah — satu langkah atomik di bawah _LOCK.
+    True bila lolos, False bila salah satu ember sudah habis.
+    """
+    if is_premium(uid):
+        return True
+    with _LOCK:
+        d = _load()  # DBUnavailable (mode strict) menular ke pemanggil -> 503
+        today = _today()
+        used, iused = _guest_all_used(d, uid, ip, today)
+        if used >= GUEST_ALL_DAILY_LIMIT or iused >= GUEST_ALL_IP_DAILY_CAP:
+            return False
+        ga = d.setdefault("guest_all", {})
+        ga[str(uid)] = {"date": today, "count": used + 1}
+        gi = d.setdefault("guest_all_ip", {})
+        gi[guest_ip_key(ip)] = {"date": today, "count": iused + 1}
+        _save(d)
+        return True
+
+
+def guest_all_refund(uid, ip):
+    """Kembalikan 1 jatah gabungan tamu yang gagal dipakai: kurangi ember
+    identitas DAN ember alamat IP (masing-masing dijaga tidak negatif)."""
+    if is_premium(uid):
+        return
+    with _LOCK:
+        d = _load()
+        today = _today()
+        ga = d.get("guest_all") or {}
+        e = ga.get(str(uid))
+        if isinstance(e, dict) and e.get("date") == today:
+            try:
+                if int(e.get("count", 0) or 0) > 0:
+                    e["count"] = int(e["count"]) - 1
+            except (TypeError, ValueError):
+                pass
+        gi = d.get("guest_all_ip") or {}
+        ie = gi.get(guest_ip_key(ip))
+        if isinstance(ie, dict) and ie.get("date") == today:
+            try:
+                if int(ie.get("count", 0) or 0) > 0:
+                    ie["count"] = int(ie["count"]) - 1
+            except (TypeError, ValueError):
+                pass
+        _save(d)
+
+
+def guest_all_left(uid, ip):
+    """Sisa ember gabungan tamu hari ini = min(identitas, IP), supaya
+    tampilan tidak menjanjikan pemakaian yang akan diblokir plafon IP."""
+    if is_premium(uid):
+        return 999
+    try:
+        d = _load()
+    except Exception:
+        return GUEST_ALL_DAILY_LIMIT
+    used, iused = _guest_all_used(d, uid, ip, _today())
+    return max(0, min(GUEST_ALL_DAILY_LIMIT - used,
+                      GUEST_ALL_IP_DAILY_CAP - iused))
+
+
 def ai_refund(chat_id, pool=None):
     """Kembalikan 1 jatah yang sudah direservasi ke pool yang benar.
 
