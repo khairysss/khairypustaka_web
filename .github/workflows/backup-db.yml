@@ -14,7 +14,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then echo "Secret DATABASE_URL belum dipasang"; exit 1; fi
-          docker run --rm -e DATABASE_URL postgres:17-alpine pg_dump "$DATABASE_URL" --no-owner --no-privileges > backup.sql
+          docker run --rm -e DATABASE_URL postgres:18-alpine pg_dump "$DATABASE_URL" --no-owner --no-privileges > backup.sql
           gzip backup.sql
           ls -la backup.sql.gz
       - name: Simpan sebagai artifact
