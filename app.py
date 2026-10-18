@@ -23,6 +23,8 @@ import logging
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date, datetime
 from io import BytesIO
 
@@ -56,6 +58,8 @@ from search_intl import (
 import referral as refmod
 import redeem as redmod
 import jadwal_web
+import convert as convert_mod
+import ilovepdf_api as ilovepdf
 
 try:
     import premium_pay as ppay
@@ -2621,6 +2625,390 @@ def auth_konfirmasi_email():
     if msg:
         return _err(msg, 400)
     return jsonify({"ok": True, "msg": "email berhasil diganti! 🎉"})
+
+
+# ------------------------------------------------------- convert file
+# Halaman "Convert File" (keputusan Sul 2026-10-19): hybrid.
+# - API iLovePDF khusus 2 tool berat: Word ke PDF dan PDF ke Word.
+# - Sisanya dikerjakan lokal: Gabung PDF, Pisah PDF, Kompres PDF,
+#   Gambar ke PDF, PDF ke Gambar (pypdf / PyMuPDF / Pillow).
+# Semua convert masuk SATU antrean async: maksimal 2 job jalan
+# bersamaan, sisanya menunggu giliran. Hasil disimpan di memori
+# ±30 menit lalu dibersihkan otomatis. File tidak pernah disimpan
+# permanen di mana pun.
+
+_CONVERT_JALAN_BARENG = 2
+_CONVERT_HASIL_TTL = 30 * 60          # detik
+_CONVERT_MAKS_FILE = 10 * 1024 * 1024  # 10 MB per file
+_CONVERT_MAKS_BODY = 60 * 1024 * 1024  # 60 MB total body request
+_CONVERT_GAMBAR_MAKS_FILE = 10
+_CONVERT_GAMBAR_MAKS_TOTAL = 15 * 1024 * 1024  # 15 MB total gambar
+_CONVERT_AKTIF_PER_USER = 3           # job antre/memproses per pengguna
+_CONVERT_ESTIMASI_PER_JOB = 45        # detik, perkiraan kasar per antrean
+_CONVERT_HASIL_TERSIMPAN = 30          # job selesai yang hasilnya ditahan
+
+_CONVERT_ALAT = {
+    "word_pdf":   {"nama": "Word ke PDF", "provider": "api",
+                   "ext": (".doc", ".docx"), "multi": False},
+    "pdf_word":   {"nama": "PDF ke Word", "provider": "api",
+                   "ext": (".pdf",), "multi": False},
+    "gabung":     {"nama": "Gabung PDF", "provider": "lokal",
+                   "ext": (".pdf",), "multi": True, "min": 2, "maks": 5},
+    "pisah":      {"nama": "Pisah PDF", "provider": "lokal",
+                   "ext": (".pdf",), "multi": False, "rentang": True},
+    "kompres":    {"nama": "Kompres PDF", "provider": "lokal",
+                   "ext": (".pdf",), "multi": False},
+    "gambar_pdf": {"nama": "Gambar ke PDF", "provider": "lokal",
+                   "ext": (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"),
+                   "multi": True, "min": 1, "maks": 10},
+    "pdf_gambar": {"nama": "PDF ke Gambar", "provider": "lokal",
+                   "ext": (".pdf",), "multi": False},
+}
+
+_CONVERT_LOCK = threading.Lock()
+_CONVERT_JOBS = {}
+_CONVERT_POOL = ThreadPoolExecutor(
+    max_workers=_CONVERT_JALAN_BARENG,
+    thread_name_prefix="convert")
+
+
+@contextmanager
+def _batas_request(byte):
+    """Naikkan sementara batas body request (default 2 MB) untuk satu
+    endpoint, mis. convert yang menerima file sampai 10 MB."""
+    lama = app.config["MAX_CONTENT_LENGTH"]
+    app.config["MAX_CONTENT_LENGTH"] = byte
+    try:
+        yield
+    finally:
+        app.config["MAX_CONTENT_LENGTH"] = lama
+
+
+@app.errorhandler(413)
+def _badan_terlalu_besar(e):
+    return jsonify({
+        "error": "file_terlalu_besar",
+        "pesan": ("total file yang dikirim terlalu besar. "
+                  "Maksimal 10 MB per file ya"),
+    }), 413
+
+
+def _convert_bersih():
+    """Buang job selesai/gagal/dibatalkan yang kedaluwarsa, dan batasi
+    jumlah hasil yang ditahan di memori. WAJIB dipanggil dengan
+    _CONVERT_LOCK sudah dipegang."""
+    kini = time.time()
+    for jid in [k for k, j in _CONVERT_JOBS.items()
+                if j["status"] in ("selesai", "gagal", "dibatalkan")
+                and kini - (j["selesai_ts"] or kini) > _CONVERT_HASIL_TTL]:
+        _CONVERT_JOBS.pop(jid, None)
+    # Rem memori: tahan hasil maksimal N job selesai terbaru.
+    selesai = sorted(
+        (j for j in _CONVERT_JOBS.values()
+         if j["status"] == "selesai" and j["hasil"] is not None),
+        key=lambda j: j["selesai_ts"] or 0)
+    for job in selesai[:-_CONVERT_HASIL_TERSIMPAN]:
+        job["hasil"] = None
+        job["hasil_hilang"] = True
+
+
+def _convert_validasi(alat, info, files, rentang):
+    """Validasi input SEBELUM kuota dicatat (request invalid tidak
+    membakar jatah tamu). Kembalikan (daftar_bytes, pesan_error)."""
+    if info.get("multi"):
+        bmin = info.get("min", 1)
+        bmaks = info.get("maks", 10)
+        if not bmin <= len(files) <= bmaks:
+            return None, (f"alat {info['nama']} butuh {bmin} sampai "
+                          f"{bmaks} file ya")
+    elif len(files) != 1:
+        return None, f"alat {info['nama']} butuh tepat 1 file ya"
+    if info.get("rentang") and not (rentang or "").strip():
+        return None, ("tulis dulu rentang halamannya, contoh: 1-3,5 "
+                      "(halaman 1 sampai 3, lalu halaman 5)")
+    daftar = []
+    total = 0
+    for fs in files:
+        nama = (fs.filename or "").lower()
+        if not nama.endswith(info["ext"]):
+            return None, (f"format file untuk {info['nama']} belum tepat. "
+                          f"Yang diterima: {', '.join(info['ext'])}")
+        raw = fs.read()
+        if not raw:
+            return None, "ada file yang kosong, pilih ulang filenya ya"
+        if len(raw) > _CONVERT_MAKS_FILE:
+            return None, ("ukuran file maksimal 10 MB ya. "
+                          "Kecilkan dulu filenya")
+        total += len(raw)
+        daftar.append((fs.filename, raw))
+    if alat == "gambar_pdf" and total > _CONVERT_GAMBAR_MAKS_TOTAL:
+        return None, ("total gambar maksimal 15 MB ya. "
+                      "Kurangi jumlah gambarnya")
+    return daftar, None
+
+
+def _convert_lokal(job, tahap):
+    """Jalankan convert lokal sesuai alat. Kembalikan
+    (hasil_bytes, nama_hasil, mime)."""
+    alat = job["alat"]
+    masuk = job["masukan"]
+    if alat == "gabung":
+        tahap("Menggabungkan halaman PDF")
+        keluar = convert_mod.gabung_pdf([b for _, b in masuk])
+        return keluar, convert_mod.nama_hasil(masuk[0][0], "pdf"), \
+            "application/pdf"
+    if alat == "pisah":
+        tahap("Memisahkan halaman PDF")
+        keluar = convert_mod.pisah_pdf(masuk[0][1],
+                                       job["opsi"].get("rentang", ""))
+        return keluar, convert_mod.nama_hasil(masuk[0][0], "pdf"), \
+            "application/pdf"
+    if alat == "kompres":
+        tahap("Mengompres PDF")
+        keluar = convert_mod.kompres_pdf(masuk[0][1])
+        return keluar, convert_mod.nama_hasil(masuk[0][0], "pdf"), \
+            "application/pdf"
+    if alat == "gambar_pdf":
+        tahap("Menyusun gambar jadi PDF")
+        keluar = convert_mod.gambar_ke_pdf([b for _, b in masuk])
+        return keluar, convert_mod.nama_hasil(masuk[0][0], "pdf"), \
+            "application/pdf"
+    if alat == "pdf_gambar":
+        tahap("Merender halaman jadi gambar")
+        keluar, fmt = convert_mod.pdf_ke_gambar(masuk[0][1])
+        if fmt == "zip":
+            return keluar, convert_mod.nama_hasil(masuk[0][0], "zip"), \
+                "application/zip"
+        return keluar, convert_mod.nama_hasil(masuk[0][0], "jpg"), \
+            "image/jpeg"
+    raise convert_mod.ConvertError("alat convert tidak dikenal")
+
+
+def _convert_kerja(jid):
+    """Pekerja antrean: dijalankan di thread pool (maks 2 bersamaan)."""
+    with _CONVERT_LOCK:
+        job = _CONVERT_JOBS.get(jid)
+        if not job or job["status"] != "antre":
+            return
+        if job["stop"].is_set():
+            job["status"] = "dibatalkan"
+            job["selesai_ts"] = time.time()
+            return
+        job["status"] = "memproses"
+        job["mulai"] = time.time()
+
+    def tahap(teks):
+        try:
+            with _CONVERT_LOCK:
+                if job["status"] == "memproses":
+                    job["tahap"] = teks
+        except Exception:
+            pass
+
+    try:
+        info = _CONVERT_ALAT[job["alat"]]
+        if info["provider"] == "api":
+            try:
+                hasil, nama_hasil, mime = ilovepdf.convert(
+                    job["masukan"][0][1], job["masukan"][0][0],
+                    job["alat"], tahap=tahap)
+            except ilovepdf.ToolTidakDidukung:
+                # iLoveAPI resmi tidak menyediakan PDF ke Word; alihkan
+                # job yang sama ke mode lokal teks rapi (transparan via
+                # tahap) supaya fiturnya tetap benar benar bisa dipakai.
+                if job["alat"] != "pdf_word":
+                    raise
+                tahap("Dikerjakan mode lokal teks rapi")
+                keluar = convert_mod.pdf_ke_word(job["masukan"][0][1])
+                hasil = keluar
+                nama_hasil = convert_mod.nama_hasil(
+                    job["masukan"][0][0], "docx")
+                mime = ("application/vnd.openxmlformats-officedocument"
+                        ".wordprocessingml.document")
+        else:
+            hasil, nama_hasil, mime = _convert_lokal(job, tahap)
+        with _CONVERT_LOCK:
+            job["status"] = "selesai"
+            job["tahap"] = "Selesai"
+            job["hasil"] = hasil
+            job["hasil_nama"] = nama_hasil
+            job["hasil_mime"] = mime
+            job["hasil_ukuran"] = len(hasil)
+            job["selesai_ts"] = time.time()
+    except (convert_mod.ConvertError, ilovepdf.ILoveError) as e:
+        with _CONVERT_LOCK:
+            job["status"] = "gagal"
+            job["tahap"] = "Gagal"
+            job["error"] = str(e)
+            job["selesai_ts"] = time.time()
+    except Exception as e:
+        log.warning("convert gagal tak terduga %s: %s", jid, e)
+        with _CONVERT_LOCK:
+            job["status"] = "gagal"
+            job["tahap"] = "Gagal"
+            job["error"] = "terjadi kendala teknis, coba lagi nanti ya"
+            job["selesai_ts"] = time.time()
+    finally:
+        with _CONVERT_LOCK:
+            _convert_bersih()
+
+
+def _convert_status_json(jid):
+    """Bentuk publik status job: transparan soal antrean, tahap, dan
+    waktu. Tanpa persen persenan palsu."""
+    with _CONVERT_LOCK:
+        job = _CONVERT_JOBS.get(jid)
+        if not job:
+            return None
+        antrean = sorted(
+            (j for j in _CONVERT_JOBS.values()
+             if j["status"] in ("antre", "memproses")),
+            key=lambda j: j["dibuat"])
+        posisi = next((i + 1 for i, j in enumerate(antrean)
+                       if j["id"] == jid), 0)
+        depan = max(0, posisi - 1)
+        return {
+            "id": job["id"],
+            "alat": job["alat"],
+            "nama_alat": _CONVERT_ALAT[job["alat"]]["nama"],
+            "nama_file": job["nama_asli"],
+            "status": job["status"],
+            "tahap": job["tahap"],
+            "posisi": posisi,
+            "di_depan": depan,
+            "detik_berjalan": int(time.time() - job["dibuat"]),
+            "estimasi_mulai_detik": (depan * _CONVERT_ESTIMASI_PER_JOB
+                                     if job["status"] == "antre" else 0),
+            "bisa_batal": job["status"] == "antre",
+            "error": job["error"],
+            "hasil_nama": job["hasil_nama"],
+            "hasil_ukuran": job["hasil_ukuran"],
+            "hasil_hilang": bool(job.get("hasil_hilang")),
+        }
+
+
+def _convert_milik(jid):
+    """Ambil job milik request ini, atau None bila tidak ada / bukan milik."""
+    with _CONVERT_LOCK:
+        job = _CONVERT_JOBS.get((jid or "").strip())
+        if not job or job["uid"] != g.uid:
+            return None
+        return job
+
+
+@app.post("/api/convert/buat")
+@with_rl
+def convert_buat():
+    """Buat job convert baru (masuk antrean). Validasi dulu, baru catat
+    kuota tamu, lalu serahkan ke worker. File dibaca di memori."""
+    with _batas_request(_CONVERT_MAKS_BODY):
+        alat = (request.form.get("alat") or "").strip()
+        info = _CONVERT_ALAT.get(alat)
+        if not info:
+            return _err("pilih dulu alat convertnya ya")
+        if info["provider"] == "api" and not ilovepdf.aktif():
+            return jsonify({
+                "error": "provider_belum_aktif",
+                "pesan": (f"{info['nama']} lagi disiapkan, kunci API nya "
+                          "belum dipasang. Coba lagi nanti ya"),
+            }), 409
+        files = [f for f in request.files.getlist("file")
+                 if f and f.filename]
+        if not files:
+            return _err("pilih filenya dulu ya")
+        daftar, emsg = _convert_validasi(
+            alat, info, files, request.form.get("rentang") or "")
+        if emsg:
+            return _err(emsg, 422)
+        _qt = kuota_tamu("convert")
+        if _qt is not None:
+            return _qt
+        track_penggunaan("convert")
+        jid = "cv_" + uuid.uuid4().hex[:16]
+        with _CONVERT_LOCK:
+            _convert_bersih()
+            aktif_user = sum(1 for j in _CONVERT_JOBS.values()
+                             if j["uid"] == g.uid
+                             and j["status"] in ("antre", "memproses"))
+            if aktif_user >= _CONVERT_AKTIF_PER_USER:
+                return _err("tunggu convert yang lagi jalan selesai dulu ya, "
+                            "baru mulai yang baru", 429)
+            _CONVERT_JOBS[jid] = {
+                "id": jid, "uid": g.uid, "alat": alat,
+                "nama_asli": daftar[0][0],
+                "status": "antre", "tahap": "Menunggu giliran",
+                "dibuat": time.time(), "mulai": None, "selesai_ts": None,
+                "masukan": daftar,
+                "opsi": {"rentang": (request.form.get("rentang") or "")
+                         .strip()},
+                "stop": threading.Event(),
+                "hasil": None, "hasil_nama": None, "hasil_mime": None,
+                "hasil_ukuran": 0, "hasil_hilang": False, "error": None,
+            }
+        _CONVERT_POOL.submit(_convert_kerja, jid)
+        return jsonify(_convert_status_json(jid))
+
+
+@app.get("/api/convert/status")
+@with_rl
+def convert_status():
+    """Status job untuk polling frontend (±3 detik). Transparan:
+    posisi antrean, tahap nyata, waktu berjalan, estimasi kasar."""
+    data = _convert_status_json((request.args.get("id") or "").strip())
+    if not data:
+        return _err("job convert tidak ditemukan", 404)
+    job = _convert_milik((request.args.get("id") or "").strip())
+    if not job:
+        return _err("job convert tidak ditemukan", 404)
+    return jsonify(data)
+
+
+@app.get("/api/convert/unduh")
+@with_rl
+def convert_unduh():
+    """Unduh hasil convert milik sendiri."""
+    job = _convert_milik(request.args.get("id"))
+    if not job:
+        return _err("job convert tidak ditemukan", 404)
+    with _CONVERT_LOCK:
+        if job["status"] != "selesai":
+            return _err("hasilnya belum siap", 409)
+        if job.get("hasil_hilang") or not job["hasil"]:
+            return _err("hasilnya sudah dibersihkan otomatis, "
+                        "convert ulang ya", 410)
+        data, nama, mime = job["hasil"], job["hasil_nama"], job["hasil_mime"]
+    return send_file(BytesIO(data), mimetype=mime, as_attachment=True,
+                     download_name=nama)
+
+
+@app.post("/api/convert/batal")
+@with_rl
+def convert_batal():
+    """Batalkan job yang masih mengantre (belum mulai diproses)."""
+    body = request.get_json(silent=True) or {}
+    job = _convert_milik(body.get("id"))
+    if not job:
+        return _err("job convert tidak ditemukan", 404)
+    with _CONVERT_LOCK:
+        if job["status"] != "antre":
+            return _err("convertnya sudah mulai diproses, "
+                        "tidak bisa dibatalkan", 409)
+        job["stop"].set()
+        job["status"] = "dibatalkan"
+        job["tahap"] = "Dibatalkan"
+        job["selesai_ts"] = time.time()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/convert/siap")
+@with_rl
+def convert_siap():
+    """Status kesiapan provider untuk UI (tanpa membocorkan apa pun)."""
+    return jsonify({
+        "ilovepdf_aktif": ilovepdf.aktif(),
+        "alat": {k: {"nama": v["nama"], "provider": v["provider"]}
+                 for k, v in _CONVERT_ALAT.items()},
+    })
 
 
 @app.errorhandler(500)
