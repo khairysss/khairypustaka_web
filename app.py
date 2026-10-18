@@ -34,6 +34,7 @@ import mailer as mailmod
 import skripsi_ai as sai
 import collection as koleksi
 import stats as stats_mod
+import kemiripan as kemiripan_mod
 import matrix as matriks_mod
 import template_doc
 import topics as topik_mod
@@ -973,6 +974,38 @@ def parafrase():
     if g.user:
         histmod.catat(g.uid, "chat", teks,
                       {"sumber": "parafrase", "text": teks, "hasil": hasil})
+    return jsonify({"hasil": hasil})
+
+
+# ------------------------------------------------------- cek plagiarisme
+# Jalur A (keputusan Sul 2026-10-18): kemiripan naskah vs sumber yang
+# ditempel pengguna, dihitung lokal (n-gram) TANPA AI & tanpa menyimpan
+# teks. Nama fitur di UI "Cek Plagiarisme" dengan disclaimer 3 lapis.
+@app.post("/api/kemiripan")
+@with_rl
+def kemiripan():
+    body = request.get_json(silent=True) or {}
+    naskah = (body.get("naskah") or "").strip()
+    sumber = (body.get("sumber") or "").strip()
+    if not naskah or not sumber:
+        return _err("naskah dan teks sumber dua-duanya wajib diisi ya")
+    if len(naskah) > 10000:
+        return _err("naskahnya kepanjangan, maksimal 10.000 karakter ya. Potong jadi beberapa bagian.", 422)
+    if len(sumber) > 30000:
+        return _err("teks sumbernya kepanjangan, maksimal 30.000 karakter ya.", 422)
+    if kemiripan_mod.jumlah_kata(naskah) < 10:
+        return _err("naskahnya terlalu pendek, minimal sekitar 10 kata biar bisa dicek.", 422)
+    if kemiripan_mod.jumlah_kata(sumber) < 10:
+        return _err("teks sumbernya terlalu pendek, minimal sekitar 10 kata ya.", 422)
+    _qt = kuota_tamu("kemiripan")
+    if _qt is not None:
+        return _qt
+    track_penggunaan("kemiripan")
+    try:
+        hasil = kemiripan_mod.cek(naskah, sumber)
+    except Exception as e:
+        log.warning("kemiripan gagal: %s", e)
+        return _err("pengecekan gagal, coba lagi nanti", 502)
     return jsonify({"hasil": hasil})
 
 
