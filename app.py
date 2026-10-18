@@ -33,7 +33,6 @@ import dbstore
 import mailer as mailmod
 import skripsi_ai as sai
 import collection as koleksi
-import deadline as tenggat
 import stats as stats_mod
 import matrix as matriks_mod
 import template_doc
@@ -961,43 +960,6 @@ def matriks():
     except Exception as e:
         log.warning("matriks gagal: %s", e)
         return _err("gagal membuat matriks", 502)
-
-
-# ---------------------------------------------------------------- deadline
-@app.post("/api/deadline")
-@with_rl
-def deadline():
-    body = request.get_json(silent=True) or {}
-    aksi = (body.get("aksi") or "list").strip().lower()
-    uid = g.uid
-    # validasi dulu, baru catat kuota (request invalid tidak membakar jatah tamu)
-    if aksi not in ("tambah", "list", "hapus"):
-        return _err("aksi harus tambah|list|hapus")
-    if aksi == "tambah":
-        nama = (body.get("nama") or "").strip()
-        tgl = tenggat.parse_tanggal(body.get("tanggal") or "")
-        if not nama or not tgl:
-            return _err("nama & tanggal (contoh: 20/12/2026) wajib diisi")
-    elif aksi == "hapus":
-        try:
-            idx = int(body.get("idx"))
-        except (TypeError, ValueError):
-            return _err("idx tidak valid")
-    _qt = kuota_tamu("deadline")
-    if _qt is not None:
-        return _qt
-    track_penggunaan("deadline")
-    if aksi == "tambah":
-        if tenggat.add(uid, nama, tgl) is None:
-            return _err("deadline sudah mencapai batas 200, hapus yang lama dulu ya", 400)
-    elif aksi == "hapus":
-        if tenggat.remove(uid, idx) is None:
-            return _err("idx tidak ada")
-    items = tenggat.list_all(uid)
-    out = [{"idx": i, "nama": it["nama"], "tanggal": it["tanggal"],
-            "tanggal_id": tenggat.fmt_id(it["tanggal"])}
-           for i, it in enumerate(items)]
-    return jsonify({"deadline": out})
 
 
 # ---------------------------------------------------------------- statistik
