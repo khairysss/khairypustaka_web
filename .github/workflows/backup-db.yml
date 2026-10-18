@@ -1,0 +1,25 @@
+name: Backup Database Mingguan
+
+on:
+  schedule:
+    - cron: "17 19 * * 0"
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump database Neon
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "Secret DATABASE_URL belum dipasang"; exit 1; fi
+          docker run --rm -e DATABASE_URL postgres:17-alpine pg_dump "$DATABASE_URL" --no-owner --no-privileges > backup.sql
+          gzip backup.sql
+          ls -la backup.sql.gz
+      - name: Simpan sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backup-db-${{ github.run_id }}
+          path: backup.sql.gz
+          retention-days: 90
