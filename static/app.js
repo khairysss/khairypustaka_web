@@ -955,7 +955,8 @@ function pageBeranda() {
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
       ["#/ai", "spark", "AI Studio", "10 generator naskah tugas & skripsi"],
-      ["#/kemiripan", "check", "Cek Plagiarisme", "Cek kemiripan naskah vs sumbermu"]
+      ["#/kemiripan", "check", "Cek Plagiarisme", "Cek kemiripan naskah vs sumbermu"],
+      ["#/convert?alat=word_pdf", "doc", "Word ke PDF", "Ubah file Word jadi PDF"]
     ]],
     ["riset", tic("search")+" Riset", [
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
