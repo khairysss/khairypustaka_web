@@ -3539,3 +3539,66 @@ document.addEventListener("DOMContentLoaded", async () => {
   try { await refreshAuth(); } catch (e) {}
   router();
 });
+
+
+/* ---------- Banner versi baru (buat aplikasi terpasang/PWA) ----------
+   Mengecek berkala apakah index.html di server sudah menunjuk app.js versi
+   lain dari yang sedang jalan. Bila beda, tampilkan banner berisi tombol
+   Perbarui yang memuat ulang aplikasi, jadi pengguna tidak perlu refresh
+   manual (di aplikasi terpasang memang tidak ada tombol refresh). */
+(function () {
+  function versiDari(teks) {
+    var m = /app\.js\?v=(\d+)/.exec(teks || "");
+    return m ? m[1] : null;
+  }
+  var skrip = document.querySelector('script[src*="app.js"]');
+  var versiIni = skrip ? versiDari(skrip.getAttribute("src")) : null;
+  if (!versiIni) return;
+  var sedangTampil = false;
+
+  function tampilkanBanner(versiBaru) {
+    if (sedangTampil || document.getElementById("kpBannerVersi")) return;
+    try { if (sessionStorage.getItem("kp_ver_ditutup") === versiBaru) return; } catch (e) {}
+    sedangTampil = true;
+    var b = document.createElement("div");
+    b.id = "kpBannerVersi";
+    b.setAttribute("style", "position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom, 0px));z-index:400;background:#143b43;color:#fff;border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 10px 28px rgba(0,0,0,.28);font-size:14px;max-width:calc(100vw - 96px);");
+    var label = document.createElement("span");
+    label.textContent = "Ada versi baru KhairyPustaka";
+    label.setAttribute("style", "font-weight:600;line-height:1.3;");
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Perbarui";
+    btn.setAttribute("style", "background:#f39c3d;color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap;");
+    btn.addEventListener("click", function () { location.reload(); });
+    var tutup = document.createElement("button");
+    tutup.type = "button";
+    tutup.textContent = "✕";
+    tutup.setAttribute("aria-label", "Tutup");
+    tutup.setAttribute("style", "background:transparent;color:#fff;border:0;font-size:15px;padding:4px 6px;cursor:pointer;opacity:.85;");
+    tutup.addEventListener("click", function () {
+      try { sessionStorage.setItem("kp_ver_ditutup", versiBaru); } catch (e) {}
+      if (b.parentNode) b.parentNode.removeChild(b);
+      sedangTampil = false;
+    });
+    b.appendChild(label);
+    b.appendChild(btn);
+    b.appendChild(tutup);
+    document.body.appendChild(b);
+  }
+
+  function cekVersi() {
+    fetch("/", { credentials: "same-origin" })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var v = versiDari(html);
+        if (v && v !== versiIni) tampilkanBanner(v);
+      })
+      .catch(function () {});
+  }
+  function cekDuaKali() { cekVersi(); setTimeout(cekVersi, 8000); }
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) cekDuaKali(); });
+  window.addEventListener("focus", cekDuaKali);
+  setInterval(cekVersi, 15 * 60 * 1000);
+  setTimeout(cekVersi, 30000);
+})();
