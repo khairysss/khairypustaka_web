@@ -158,8 +158,52 @@ def _google_translate(text, from_code="en", to_code="id"):
     return out
 
 
+_NAMA_BAHASA = {"en": "Inggris", "id": "Indonesia"}
+
+
+def _ai_translate(text, from_code="en", to_code="id"):
+    """Fallback terakhir: terjemahkan via rotasi AI (Cerebras/Gemini).
+
+    Ditambahkan 2026-10-19: MyMemory kehabisan kuota harian dari IP
+    Render dan Google gtx memblokir IP Render, sehingga seluruh rantai
+    gratis mati total (terjemah + parafrase 502). Rotasi AI memakai key
+    produksi sendiri, jadi tidak tergantung kuota pihak ketiga.
+    Balikan dibersihkan dari pembuka basa-basi dan tanda kutip pembungkus.
+    """
+    text = (text or "").strip()
+    if not text:
+        return None
+    asal = _NAMA_BAHASA.get(from_code, from_code)
+    tujuan = _NAMA_BAHASA.get(to_code, to_code)
+    prompt = (
+        f"Terjemahkan teks berikut dari bahasa {asal} ke bahasa {tujuan} "
+        "secara akurat dan alami, seperti gaya penulisan akademik. "
+        "Pertahankan istilah teknis, nama, angka, dan singkatan apa adanya. "
+        "Jawab HANYA dengan hasil terjemahannya, tanpa penjelasan, tanpa "
+        "pembuka, dan tanpa tanda kutip pembungkus.\n\n"
+        f"{text}"
+    )
+    try:
+        import asyncio
+
+        import ai_providers
+        out = asyncio.run(ai_providers.generate(prompt, budget=35.0,
+                                                max_tokens=1500))
+    except Exception as e:
+        log.warning("AI translate gagal: %s", e)
+        return None
+    if not out:
+        return None
+    out = out.strip()
+    if len(out) >= 2 and out[0] == '"' and out[-1] == '"':
+        out = out[1:-1].strip()
+    if not out or out.lower() == text.lower():
+        return None
+    return out
+
+
 def _terjemahkan(text, from_code, to_code):
-    """Rantai penerjemah: Argos offline -> MyMemory -> Google gtx."""
+    """Rantai penerjemah: Argos offline -> MyMemory -> Google gtx -> AI."""
     try:
         out = _argos_translate(text, from_code, to_code)
         if out:
@@ -172,6 +216,9 @@ def _terjemahkan(text, from_code, to_code):
     out = _google_translate(text, from_code, to_code)
     if out:
         return out, "google"
+    out = _ai_translate(text, from_code, to_code)
+    if out:
+        return out, "ai"
     return None, None
 
 
@@ -179,7 +226,7 @@ def translate_en_id(text):
     """Terjemahkan abstrak EN->ID.
 
     Return (hasil, sumber) dengan sumber: 'argos' | 'mymemory' |
-    'sudah_indonesia' | None (gagal).
+    'google' | 'ai' | 'sudah_indonesia' | None (gagal).
     """
     text = (text or "").strip()
     if not text:
