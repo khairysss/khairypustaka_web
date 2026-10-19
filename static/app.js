@@ -426,7 +426,7 @@ function pageSitasi() {
   view().innerHTML =
     "<h2>"+tic("quote")+" Buat Sitasi</h2>" +
     '<div class="card"><p class="muted">Isi detail sumbernya, pilih gaya sitasi, langsung jadi. ✨</p>' +
-    '<div style="border:1.5px dashed #9db8bd;border-radius:10px;padding:10px 12px;margin-bottom:12px">' +
+    '<div style="border:1.5px dashed #75909e;border-radius:10px;padding:10px 12px;margin-bottom:12px">' +
     '<label for="sitFile" style="margin-top:0">📄 Isi otomatis dari file jurnal (.pdf/.docx/.txt)</label>' +
     '<input type="file" id="sitFile" accept="' + ACCEPT_DOK + '">' +
     '<p class="muted tiny" style="margin:6px 0 0">Judul, penulis, tahun, dan jurnal dibaca otomatis dari file. Hasil baca otomatis bisa meleset, jadi <b>wajib cek lagi</b> isinya sebelum dipakai ya.</p>' +
@@ -771,7 +771,7 @@ function pfMsg(id, ok, text) {
   const el = $("#" + id, view());
   if (!el) return;
   el.textContent = text || "";
-  el.style.color = ok ? "#0f766e" : "#b91c1c";
+  el.style.color = ok ? "#2dd4d8" : "#ff6b6f";
 }
 
 function pageAkun() {
@@ -2174,7 +2174,7 @@ function pageParafrase() {
 function pageKemiripan() {
   view().innerHTML =
     "<h2>" + tic("check") + " Cek Plagiarisme</h2>" +
-    '<div class="warn-box" style="border:2px solid #f0b429;background:#fff7dd;font-size:1rem;line-height:1.65">' +
+    '<div class="warn-box" style="border:2px solid #f0a832;background:rgba(232,147,12,.12);font-size:1rem;line-height:1.65">' +
     "<b>⚠️ Baca Dulu Sebelum Pakai, Penting Banget</b><br>" +
     "Alat ini membandingkan naskahmu <b>hanya dengan teks sumber yang kamu tempel di halaman ini</b>. Alat ini tidak memindai internet, tidak terhubung ke database Turnitin mana pun, dan tidak bisa melihat skripsi atau tugas mahasiswa lain.<br><br>" +
     "Kalau skormu rendah di sini, artinya naskahmu sudah cukup berbeda dari sumber yang kamu tempel itu. <b>Skor ini bukan jaminan lolos cek Turnitin di kampusmu</b>, karena hasil Turnitin juga dipengaruhi sumber lain yang tidak kamu tempel di sini.<br><br>" +
@@ -2222,11 +2222,11 @@ function pageKemiripan() {
     const h = (res.data || {}).hasil || {};
     const skor = (h.skor != null ? h.skor : 0);
     const skorTampil = String(skor).replace(".", ",");
-    let warna = "#2e7d32";
-    if (skor >= 40) warna = "#c62828"; else if (skor >= 25) warna = "#e65100";
+    let warna = "#4ade80";
+    if (skor >= 40) warna = "#ff6b6f"; else if (skor >= 25) warna = "#f0a832";
     let kalimatHTML = (h.kalimat || []).map(k => {
-      if (k.level === "tinggi") return '<span style="background:#ffd9d0;border-radius:4px;padding:1px 2px">' + esc(k.teks) + "</span> <b style='color:#c62828'>(" + k.skor + "%)</b>";
-      if (k.level === "sedang") return '<span style="background:#ffedb3;border-radius:4px;padding:1px 2px">' + esc(k.teks) + "</span> <b style='color:#e65100'>(" + k.skor + "%)</b>";
+      if (k.level === "tinggi") return '<span style="background:rgba(229,72,77,.35);border-radius:4px;padding:1px 2px">' + esc(k.teks) + "</span> <b style='color:#ff8589'>(" + k.skor + "%)</b>";
+      if (k.level === "sedang") return '<span style="background:rgba(240,168,50,.30);border-radius:4px;padding:1px 2px">' + esc(k.teks) + "</span> <b style='color:#f5c26b'>(" + k.skor + "%)</b>";
       return esc(k.teks);
     }).join(" ");
     let catatan;
@@ -2240,8 +2240,8 @@ function pageKemiripan() {
       '<p style="font-size:2.4rem;font-weight:800;margin:2px 0;color:' + warna + '">' + skorTampil + '%</p>' +
       '<p class="muted" style="margin:0 0 10px"><b>Ini bukan skor Turnitin.</b> Dari ' + (h.total_kata || 0) + ' kata naskahmu, ' + (h.kata_mirip || 0) + ' kata berada dalam rangkaian yang sama persis dengan sumber.</p>' +
       '<p style="line-height:1.8">' + kalimatHTML + "</p>" +
-      '<p class="muted">Kalimat berwarna <span style="background:#ffd9d0;padding:0 6px;border-radius:4px">merah</span> kemiripannya tinggi, <span style="background:#ffedb3;padding:0 6px;border-radius:4px">kuning</span> sedang. Angka di belakang kalimat adalah persen kemiripan kalimat itu dengan sumber.</p></div>' +
-      '<div class="warn-box" style="border:2px solid #f0b429;background:#fff7dd;line-height:1.65">' + catatan + "</div>";
+      '<p class="muted">Kalimat berwarna <span style="background:rgba(229,72,77,.35);padding:0 6px;border-radius:4px">merah</span> kemiripannya tinggi, <span style="background:rgba(240,168,50,.30);padding:0 6px;border-radius:4px">kuning</span> sedang. Angka di belakang kalimat adalah persen kemiripan kalimat itu dengan sumber.</p></div>' +
+      '<div class="warn-box" style="border:2px solid #f0a832;background:rgba(232,147,12,.12);line-height:1.65">' + catatan + "</div>";
     box.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
@@ -2501,12 +2501,12 @@ function popupJatahHabis() {
   el.style.padding = "16px";
   el.innerHTML =
     '<div class="modal-box" style="border-radius:20px;max-width:420px;text-align:center">' +
-      '<div style="width:52px;height:52px;margin:2px auto 0;border-radius:50%;background:#fdf0dc;display:flex;align-items:center;justify-content:center">' +
-        '<svg width="26" height="26" viewBox="0 0 24 24" fill="#e8873a" aria-hidden="true"><path d="M13 2 4.5 13.5H11L9.8 22 19 10h-6.5L13 2z"/></svg></div>' +
+      '<div style="width:52px;height:52px;margin:2px auto 0;border-radius:50%;background:#102c44;display:flex;align-items:center;justify-content:center">' +
+        '<svg width="26" height="26" viewBox="0 0 24 24" fill="#f0a832" aria-hidden="true"><path d="M13 2 4.5 13.5H11L9.8 22 19 10h-6.5L13 2z"/></svg></div>' +
       '<h3 style="margin:10px 0 0">' + (login ? "Jatah AI Harianmu Habis" : "Jatah Tamu Hari Ini Habis") + '</h3>' +
-      '<div style="margin-top:12px;background:#f7f1e3;border-radius:10px;padding:8px 10px;text-align:left">' +
+      '<div style="margin-top:12px;background:#102c44;border-radius:10px;padding:8px 10px;text-align:left">' +
         '<div style="display:flex;justify-content:space-between;font-size:.8rem"><span>' + (login ? "Jatah gratis hari ini" : "Jatah tamu hari ini") + '</span><span><b>' + (login ? "10 dari 10" : "5 dari 5") + '</b> terpakai</span></div>' +
-        '<div style="height:8px;background:#e7ddc9;border-radius:99px;margin-top:6px;overflow:hidden"><div style="width:100%;height:100%;background:#e8873a"></div></div></div>' +
+        '<div style="height:8px;background:#0a1f30;border-radius:99px;margin-top:6px;overflow:hidden"><div style="width:100%;height:100%;background:#f0a832"></div></div></div>' +
       (login
         ? '<p class="muted" style="text-align:left">Jatah AI gratis memang cuma <b>10x per hari</b>. Tenang, jatahnya reset otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok bisa kamu pakai lagi seperti biasa.</p>' +
           '<p class="muted" style="text-align:left">Tidak mau menunggu? Top up saja. Mulai <b>Rp5.000</b> kamu dapat <b>25x</b> jatah AI. Saldonya tidak hangus dan bisa dipakai kapan saja.</p>'
@@ -2564,7 +2564,7 @@ function popupPremiumTopup() {
   el.style.padding = "16px";
   el.innerHTML =
     '<div class="modal-box" style="border-radius:20px;max-width:420px;text-align:center">' +
-      '<div style="width:52px;height:52px;margin:2px auto 0;border-radius:50%;background:#f7ecd2;display:flex;align-items:center;justify-content:center;font-size:24px">⭐</div>' +
+      '<div style="width:52px;height:52px;margin:2px auto 0;border-radius:50%;background:#102c44;display:flex;align-items:center;justify-content:center;font-size:24px">⭐</div>' +
       '<h3 style="margin:10px 0 0">' + (login ? "Model Premium Perlu Saldo Top Up" : "Model Premium Khusus Member") + '</h3>' +
       (login
         ? '<p class="muted" style="text-align:left">Claude Haiku 4.5 dan Perplexity Sonar adalah model premium. Sekali pakai memotong <b>1x saldo top up</b>, dan saldonya hanya terpotong kalau modelnya berhasil menjawab.</p>' +
@@ -3594,14 +3594,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     sedangTampil = true;
     var b = document.createElement("div");
     b.id = "kpBannerVersi";
-    b.setAttribute("style", "position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom, 0px));z-index:400;background:#143b43;color:#fff;border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 10px 28px rgba(0,0,0,.28);font-size:14px;max-width:calc(100vw - 96px);");
+    b.setAttribute("style", "position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom, 0px));z-index:400;background:#0d2438;color:#fff;border:1px solid rgba(169,195,207,.35);border-radius:16px;padding:10px 12px;display:flex;align-items:center;gap:10px;box-shadow:0 10px 28px rgba(0,0,0,.28);font-size:14px;max-width:calc(100vw - 96px);");
     var label = document.createElement("span");
     label.textContent = "Ada versi baru KhairyPustaka";
     label.setAttribute("style", "font-weight:600;line-height:1.3;");
     var btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = "Perbarui";
-    btn.setAttribute("style", "background:#f39c3d;color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap;");
+    btn.setAttribute("style", "background:#2dd4d8;color:#04262e;border:0;border-radius:10px;padding:8px 12px;font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap;");
     btn.addEventListener("click", function () { location.reload(); });
     var tutup = document.createElement("button");
     tutup.type = "button";
