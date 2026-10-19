@@ -85,6 +85,20 @@ function clearPageTimers() {
   while (_pageTimers.length) { try { clearInterval(_pageTimers.pop()); } catch (e) {} }
 }
 
+/* Saring kode error mentah server jadi kalimat manusiawi di semua jalur
+   fetch, supaya kode seperti "db_sibuk" tidak pernah tampil mentah ke
+   pengguna di fitur apa pun. Kode yang dipakai logika UI (kuota_habis,
+   premium_gagal, premium_terkunci, kuota_tamu_habis) SENGAJA tidak diubah. */
+const PESAN_SERVER_GANGGUAN = "Server lagi bermasalah, coba lagi beberapa saat ya";
+const KODE_ERR_MENTAH = ["db_sibuk", "kesalahan server", "server_sibuk", "rate_limit", "file_terlalu_besar"];
+function saringErrData(data) {
+  if (data && KODE_ERR_MENTAH.indexOf(data.error) >= 0) {
+    data.error = data.pesan || PESAN_SERVER_GANGGUAN;
+    data._gangguanServer = true;
+  }
+  return data;
+}
+
 async function apiJSON(path, opts) {
   const o = Object.assign({ method: "GET", headers: { "Content-Type": "application/json" } }, opts || {});
   // timeout: 30 dtk umum; 80 dtk untuk /ai, /tanya, /topik (budget server
@@ -107,6 +121,7 @@ async function apiJSON(path, opts) {
     } else {
       try { data = { _text: await r.text() }; } catch (e) { data = null; }
     }
+    data = saringErrData(data);
     if (!r.ok) return { ok: false, status: r.status, data: data, error: "HTTP " + r.status };
     return { ok: true, status: r.status, data: data };
   } catch (e) {
@@ -127,7 +142,8 @@ function apiPOST(path, body) {
    konteks = kalimat pengganti yang sesuai halamannya. */
 function pesanErrAkun(res, konteks) {
   const e = (res && res.data && res.data.error) || "";
-  if (!res || res.status === 0 || e === "db_sibuk" || e === "kesalahan server") {
+  if (!res || res.status === 0 || (res.data && res.data._gangguanServer) ||
+      e === "db_sibuk" || e === "kesalahan server") {
     return konteks;
   }
   return e || konteks;
@@ -188,7 +204,7 @@ async function apiDownload(path, opts, fallbackName) {
       let code = "HTTP " + r.status, pesan = "";
       const ct2 = r.headers.get("content-type") || "";
       if (ct2.indexOf("application/json") >= 0) {
-        try { const j = await r.json(); if (j && j.error) code = j.error; if (j && j.pesan) pesan = j.pesan; } catch (e) {}
+        try { const j = saringErrData(await r.json()); if (j && j.error) code = j.error; if (j && j.pesan) pesan = j.pesan; } catch (e) {}
       }
       return { ok: false, status: r.status, error: code, pesan: pesan };
     }
@@ -1201,7 +1217,8 @@ async function ekstrakTeksFile(file) {
 async function unggahForm(path, fd) {
   try {
     const r = await fetch(path, { method: "POST", body: fd });
-    return { ok: r.ok, status: r.status, data: await r.json().catch(() => null) };
+    const data = await r.json().catch(() => null);
+    return { ok: r.ok, status: r.status, data: saringErrData(data) };
   } catch (e) { return { ok: false, status: 0, data: null }; }
 }
 function errFile(res) { return (res.data && res.data.error) || "file-nya tidak bisa dibaca"; }
@@ -2193,7 +2210,7 @@ function pageKemiripan() {
       if (fSumber) fd.append("file_sumber", fSumber);
       try {
         const r = await fetch("/api/kemiripan-file", { method: "POST", body: fd });
-        res = { ok: r.ok, status: r.status, data: await r.json().catch(() => null) };
+        res = { ok: r.ok, status: r.status, data: saringErrData(await r.json().catch(() => null)) };
       } catch (e) {
         res = { ok: false, status: 0, data: null };
       }
