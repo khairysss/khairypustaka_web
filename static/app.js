@@ -121,6 +121,18 @@ function apiPOST(path, body) {
   return apiJSON(path, { method: "POST", body: JSON.stringify(body || {}) });
 }
 
+/* Pesan error manusiawi untuk alur akun: kode mentah server (mis. "db_sibuk"
+   saat basis data tak terjangkau, 500 generik, atau koneksi putus) jangan
+   sampai tampil ke pengguna, bisa dikira kesalahan mereka sendiri.
+   konteks = kalimat pengganti yang sesuai halamannya. */
+function pesanErrAkun(res, konteks) {
+  const e = (res && res.data && res.data.error) || "";
+  if (!res || res.status === 0 || e === "db_sibuk" || e === "kesalahan server") {
+    return konteks;
+  }
+  return e || konteks;
+}
+
 /* ---------- Auth (username+password / tamu) ---------- */
 let AUTH = { login: false };
 let AUTH_SIAP = false; // R2 (audit 2026-10-13): true setelah /auth/status pertama resolve
@@ -506,7 +518,7 @@ function pageMasuk() {
       setLoading(resendBtn, true, "Mengirim...");
       var r = await apiPOST("/auth/kirim-ulang", { email: ident });
       setLoading(resendBtn, false);
-      toast(r.ok ? "Dikirim! Cek email ya 📧" : "😅 " + ((r.data && r.data.error) || "gagal mengirim"));
+      toast(r.ok ? "Dikirim! Cek email ya 📧" : "😅 " + pesanErrAkun(r, "Server lagi bermasalah, gagal mengirim. Coba lagi beberapa saat ya"));
     });
     var toggleBtn = document.getElementById(idp + "Toggle");
     if (toggleBtn && boxEl) toggleBtn.addEventListener("click", function () {
@@ -530,7 +542,7 @@ function pageMasuk() {
         if (opts.onChanged) opts.onChanged(mail);
         toast("Email berhasil diganti 📧");
       } else {
-        var emsg = (r.data && r.data.error) || "gagal mengganti email";
+        var emsg = pesanErrAkun(r, "Server lagi bermasalah, gagal mengganti email. Coba lagi beberapa saat ya");
         if (msgEl) msgEl.textContent = emsg;
         toast("😅 " + emsg);
       }
@@ -627,7 +639,10 @@ function pageMasuk() {
       toast(mode === "in" ? "Selamat datang kembali! 🎉" : "Akun dibuat! 🎉");
       location.hash = "#/akun";
     } else {
-      const msg = (res.data && res.data.error) || "Gagal, coba lagi ya. 😅";
+      const konteks = mode === "in"
+        ? "Belum bisa masuk sekarang, server lagi bermasalah. Coba lagi beberapa saat ya"
+        : "Belum bisa daftar sekarang, server lagi bermasalah. Coba lagi beberapa saat ya";
+      const msg = pesanErrAkun(res, konteks);
       if (mode === "in" && res.status === 403 && msg.indexOf("verifikasi email") >= 0) {
         showLoginVerifyHelp(u);
       }
@@ -703,7 +718,7 @@ function pageReset() {
         '<div class="card center"><p>Password berhasil diganti! Silakan masuk pakai password barumu. ✨</p>' +
         '<a class="btn btn-primary btn-block" href="#/masuk">Masuk</a></div>';
     } else {
-      toast("😅 " + ((res.data && res.data.error) || "gagal, coba minta link baru"));
+      toast("😅 " + pesanErrAkun(res, "gagal, coba minta link baru"));
     }
   });
 }
@@ -728,7 +743,7 @@ function pageVerifikasi() {
         '<a class="btn btn-primary btn-block" href="#/akun">Ke Akun Saya</a></div>';
     } else {
       view().innerHTML = "<h2>"+tic("mail")+" Verifikasi Email</h2>" +
-        '<div class="err-box">😅 ' + esc((res.data && res.data.error) || "verifikasi gagal") + "</div>" +
+        '<div class="err-box">😅 ' + esc(pesanErrAkun(res, "verifikasi gagal")) + "</div>" +
         '<div class="card center"><p class="muted">Link mungkin sudah dipakai / kedaluwarsa. ' +
         'Minta link baru dari halaman Masuk ya.</p><a class="btn btn-primary" href="#/masuk">Ke halaman Masuk</a></div>';
     }
