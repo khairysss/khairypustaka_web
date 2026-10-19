@@ -2122,6 +2122,27 @@ def admin_backup():
         download_name="khairypustaka-backup-%s.json" % _today_wita())
 
 
+@app.post("/api/backup-snapshot")
+def backup_snapshot():
+    """Snapshot seluruh kp_kv untuk cadangan eksternal otomatis.
+
+    Berkunci env BACKUP_KEY lewat header X-Backup-Key (bukan sesi):
+    dipakai cron harian di luar Render supaya pemulihan tidak
+    bergantung riwayat 6 jam Neon Free (insiden 2026-10-19). Tanpa
+    kunci terpasang atau kunci salah -> 404 seperti path sensitif lain.
+    """
+    kunci = (os.environ.get("BACKUP_KEY") or "").strip()
+    if not kunci:
+        return _err("tidak ditemukan", 404)
+    import hmac as _hmac
+    diberi = request.headers.get("X-Backup-Key") or ""
+    if not _hmac.compare_digest(diberi, kunci):
+        return _err("tidak ditemukan", 404)
+    data = dbstore.dump_all()
+    return jsonify({"aplikasi": "KhairyPustaka", "versi_backup": 2,
+                    "dibuat": _today_wita(), "data": data})
+
+
 def _sweep_uid(doc, uid, depth=0):
     """Hapus semua entri berkunci uid dari dokumen (rekursif maks 2 lapis).
     Return True bila ada perubahan."""

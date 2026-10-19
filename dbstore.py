@@ -255,10 +255,43 @@ def file_append_jsonl(path, entry):
 
 # ------------------------------------------------------- API utama
 
-def load_json(path, default=_NO_DEFAULT):
-    """Muat dokumen JSON (dict/list). default dipakai bila tak ada / gagal."""
+def load_json(path, default=_NO_DEFAULT, strict=False):
+    """Muat dokumen JSON (dict/list). default dipakai bila tak ada / gagal.
+
+    strict=True (WAJIB untuk dokumen read-modify-write kritis: users,
+    tokens, kuota/saldo, referral, redeem, koleksi, riwayat): di mode
+    Postgres TIDAK ADA fallback ke file dan TIDAK ADA default senyap
+    saat DB tak terjangkau — lempar DBUnavailable (-> 503) supaya
+    dokumen basi/kosong tidak pernah menjadi dasar tulisan berikutnya.
+    Insiden 2026-10-19: load users jatuh ke file kosong saat koneksi
+    Neon gagal sesaat, lalu hasil mutasinya menimpa dokumen asli dan
+    menghapus 9 akun. Baris yang memang belum ada tetap mengembalikan
+    default (kasus sah: store baru).
+    """
     if not enabled():
         return file_load(path, default)
+    if strict:
+        name = store_name(path)
+        last_err = None
+        for attempt in (1, 2):
+            conn = _pg_conn_strict()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(_KV_LOAD_SQL, (name,))
+                    row = cur.fetchone()
+                _pg_release(conn, ok=True)
+                if row is None:
+                    return _resolve_default(default)
+                return row[0] if row[0] is not None else _resolve_default(default)
+            except DBUnavailable:
+                raise
+            except Exception as e:
+                last_err = e
+                log.error("dbstore.load_json strict gagal (%s, percobaan "
+                          "%d): %s", name, attempt, e)
+                _pg_release(conn, ok=False)
+                _pool_reset()
+        raise DBUnavailable("baca Postgres gagal: %s" % name) from last_err
     conn = _pg_conn()
     if conn is None:
         return file_load(path, default)
@@ -276,6 +309,29 @@ def load_json(path, default=_NO_DEFAULT):
         return file_load(path, default)
     finally:
         _pg_release(conn, ok=True)
+
+
+def dump_all():
+    """Seluruh isi kp_kv sebagai {store: data}. STRICT (untuk backup).
+
+    Dipakai endpoint backup berkunci: snapshot eksternal harian supaya
+    pemulihan tidak bergantung riwayat 6 jam Neon Free (insiden
+    2026-10-19). Gagal DB -> DBUnavailable.
+    """
+    if not enabled():
+        raise DBUnavailable("dump_all butuh mode Postgres")
+    conn = _pg_conn_strict()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT store, data FROM kp_kv ORDER BY store")
+            rows = cur.fetchall()
+        _pg_release(conn, ok=True)
+        return {r[0]: r[1] for r in rows}
+    except DBUnavailable:
+        raise
+    except Exception as e:
+        _pg_release(conn, ok=False)
+        raise DBUnavailable("dump_all gagal") from e
 
 
 def save_json(path, data):

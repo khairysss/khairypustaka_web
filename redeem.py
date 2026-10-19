@@ -42,7 +42,7 @@ MAX_GEN = 200
 
 
 def _load():
-    d = dbstore.load_json(_FILE, {})
+    d = dbstore.load_json(_FILE, {}, strict=True)
     return d if isinstance(d, dict) else {}
 
 

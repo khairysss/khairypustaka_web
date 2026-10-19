@@ -53,16 +53,36 @@ LOGIN_TTL = 90 * 24 * 3600  # 90 hari
 
 # ---------------------------------------------------------------- util file
 def _load_users():
-    d = dbstore.load_json(_USERS_FILE, {})
+    # strict: dokumen akun TIDAK BOLEH jatuh ke file/default saat DB
+    # terganggu (insiden 2026-10-19: 9 akun tertimpa hasil bacaan kosong)
+    d = dbstore.load_json(_USERS_FILE, {}, strict=True)
     return d if isinstance(d, dict) else {}
 
 
-def _save_users(d):
+def _save_users(d, allow_shrink=False):
+    """Simpan dokumen akun + PENJAGA ANTI SUSUT (insiden 2026-10-19).
+
+    Di mode Postgres, simpan yang membuang akun (jumlah kunci lebih
+    kecil dari yang tersimpan) DITOLAK dengan DBUnavailable (-> 503),
+    kecuali pemanggil adalah jalur hapus resmi (delete_user) yang
+    memberi allow_shrink=True. Penjaga ini lapis kedua setelah baca
+    ketat: dokumen hasil bacaan basi tidak akan pernah bisa menimpa
+    dokumen asli yang lebih lengkap.
+    """
+    if dbstore.enabled() and not allow_shrink:
+        current = _load_users()
+        if len(d) < len(current):
+            hilang = sorted(set(current) - set(d))[:5]
+            log.error("PENJAGA AKUN: simpan ditolak, %d akun akan hilang "
+                      "(%s); %d -> %d", len(current) - len(d), hilang,
+                      len(current), len(d))
+            raise dbstore.DBUnavailable(
+                "penjaga akun menolak simpan yang membuang akun")
     dbstore.save_json(_USERS_FILE, d)
 
 
 def _load_tokens():
-    d = dbstore.load_json(_TOKENS_FILE, {})
+    d = dbstore.load_json(_TOKENS_FILE, {}, strict=True)
     return d if isinstance(d, dict) else {}
 
 
@@ -427,7 +447,7 @@ def delete_user(uid):
         if uid not in d:
             return False
         del d[uid]
-        _save_users(d)
+        _save_users(d, allow_shrink=True)
     return True
 
 

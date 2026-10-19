@@ -18,7 +18,7 @@ KOLEKSI_FILE = os.path.join(DATA_DIR, "koleksi.json")
 
 
 def _load():
-    d = dbstore.load_json(KOLEKSI_FILE, {})
+    d = dbstore.load_json(KOLEKSI_FILE, {}, strict=True)
     return d if isinstance(d, dict) else {}
 
 

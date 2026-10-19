@@ -55,7 +55,7 @@ BASE = ("Kamu asisten skripsi/tugas akhir untuk mahasiswa Indonesia semua jurusa
 
 # ------------------------------------------------------------ kuota
 def _load():
-    d = dbstore.load_json(_QUOTA_PATH, {"users": {}, "premium": {}})
+    d = dbstore.load_json(_QUOTA_PATH, {"users": {}, "premium": {}}, strict=True)
     if not isinstance(d, dict):
         return {"users": {}, "premium": {}}
     d.setdefault("users", {})

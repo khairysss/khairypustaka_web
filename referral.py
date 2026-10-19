@@ -82,7 +82,7 @@ def _generate_unique_code(existing):
 
 
 def _load_file(path):
-    d = dbstore.load_json(path, {})
+    d = dbstore.load_json(path, {}, strict=True)
     return d if isinstance(d, dict) else {}
 
 

@@ -55,7 +55,7 @@ _PENDING_LOCK = threading.Lock()
 
 
 def _load_pending():
-    d = dbstore.load_json(PENDING_PATH, {})
+    d = dbstore.load_json(PENDING_PATH, {}, strict=True)
     return d if isinstance(d, dict) else {}
 
 
