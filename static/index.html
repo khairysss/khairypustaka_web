@@ -24,7 +24,7 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"WebSite","name":"KhairyPustaka","url":"https://pustaka.khairys.web.id/","inLanguage":"id","publisher":{"@type":"Organization","name":"KhairyPustaka","url":"https://pustaka.khairys.web.id/"}}
 </script>
-<link rel="stylesheet" href="style.css?v=19">
+<link rel="stylesheet" href="style.css?v=20">
 <link rel="preload" as="image" href="intro-poster.jpg" fetchpriority="high">
 <link rel="icon" href="maskot.jpg">
 <link rel="manifest" href="manifest.webmanifest">
@@ -179,8 +179,21 @@
   // Penayangan otomatis: HANYA kunjungan pertama per browser.
   if (sudahLihat()) return;
   tandai();
-  ov.hidden = false;
-  var p = vid.play(); if (p && p.catch) p.catch(function () {});
+  // Tampilkan SETELAH frame pertama video siap (loadeddata) agar kotak
+  // video muncul dalam ukuran finalnya sekaligus — mencegah skor CLS
+  // dari kontrol video yang berubah ukuran saat metadata termuat.
+  // Cadangan 1,2 detik bila jaringan lambat.
+  var sudahTampil = false;
+  function tampilIntro() {
+    if (sudahTampil) return; sudahTampil = true;
+    ov.hidden = false;
+    var p = vid.play(); if (p && p.catch) p.catch(function () {});
+  }
+  if (vid.readyState >= 2) tampilIntro();
+  else {
+    vid.addEventListener("loadeddata", tampilIntro);
+    setTimeout(tampilIntro, 1200);
+  }
 })();
 </script>
 
