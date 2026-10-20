@@ -121,7 +121,7 @@
       <p class="intro-title">Kenalan dulu sama KhairyPustaka 🎓</p>
       <button class="intro-close" id="introClose" aria-label="Tutup video intro">✕</button>
     </div>
-    <video id="introVideo" width="720" height="1280" src="intro.mp4" poster="intro-poster.jpg" controls playsinline muted preload="metadata"></video>
+    <video id="introVideo" width="720" height="1280" src="intro.mp4" poster="intro-poster.jpg" playsinline muted preload="metadata"></video>
     <button class="intro-skip" id="introSkip">Lewati — langsung ke beranda →</button>
   </div>
 </div>
@@ -170,6 +170,7 @@
   fab.addEventListener("click", function () {
     var sk = document.getElementById("introSkip");
     if (sk) sk.textContent = "Tutup";
+    vid.controls = true; // mode manual: kontrol bawaan dikembalikan
     ov.hidden = false;
     try { vid.currentTime = 0; } catch (e) {}
     vid.muted = false;
