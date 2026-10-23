@@ -185,7 +185,7 @@ async function refreshAuth() {
       "<span>" + nama + "</span>" +
       (AUTH.admin ? '<span class="badge-admin">ADMIN</span>' : "") + "</a>";
   } else {
-    area.innerHTML = '<a href="#/masuk" class="btn-login">🔑 Masuk</a>';
+    area.innerHTML = '<a href="#/masuk" class="btn-login">' + tic("key") + ' Masuk</a>';
   }
 }
 
@@ -252,7 +252,7 @@ function kuotaTamuBox(box, res) {
   const pesan = _kuotaTamuMatch(res);
   if (pesan != null) {
     box.innerHTML = '<div class="warn-box">' + esc(pesan || "Jatah harian tamu habis (5x/hari buat semua fitur).") +
-      '<br><a class="btn btn-primary" style="margin-top:10px;display:inline-block" href="#/masuk">Masuk / Daftar — gratis! ✨</a></div>';
+      '<br><a class="btn btn-primary" style="margin-top:10px;display:inline-block" href="#/masuk">Masuk / Daftar — gratis! ' + tic("spark") + '</a></div>';
     popupJatahHabis();
     return true;
   }
@@ -368,7 +368,7 @@ function kartuHasil(item, idx) {
   const url = safeUrl(item.url || (item.doi ? "https://doi.org/" + encodeURIComponent(item.doi) : ""));
   const linkBtn = url ? '<a class="btn btn-ghost" href="' + esc(url) + '" target="_blank" rel="noopener">Buka Link</a>' : "";
   const pdf = safeUrl(item.pdf_url);
-  const pdfBtn = (pdf && pdf !== url) ? '<a class="btn btn-ghost" href="' + esc(pdf) + '" target="_blank" rel="noopener">📄 PDF</a>' : "";
+  const pdfBtn = (pdf && pdf !== url) ? '<a class="btn btn-ghost" href="' + esc(pdf) + '" target="_blank" rel="noopener">' + tic("doc") + ' PDF</a>' : "";
   return '<article class="card hasil">' +
     "<h3>" + judul + "</h3>" +
     '<div class="meta">' + penulis + " | " + tahun + " | " + jurnal + "</div>" +
@@ -376,8 +376,8 @@ function kartuHasil(item, idx) {
     '<div class="aksi-row">' +
       '<button class="btn" data-aksi="sitasi" data-idx="' + idx + '">Sitasi</button>' +
       '<button class="btn" data-aksi="simpan" data-idx="' + idx + '">Simpan ke Koleksi</button>' +
-      (item.abstrak ? '<button class="btn" data-aksi="ringkas" data-idx="' + idx + '">✨ Ringkas AI</button>' : "") +
-      (item.abstrak ? '<button class="btn" data-aksi="terjemah" data-idx="' + idx + '">🌐 Terjemah</button>' : "") +
+      (item.abstrak ? '<button class="btn" data-aksi="ringkas" data-idx="' + idx + '">' + tic("spark") + ' Ringkas AI</button>' : "") +
+      (item.abstrak ? '<button class="btn" data-aksi="terjemah" data-idx="' + idx + '">' + tic("globe") + ' Terjemah</button>' : "") +
       linkBtn + pdfBtn +
     "</div></article>";
 }
@@ -441,7 +441,7 @@ function pageSitasi() {
     '<label>Gaya sitasi</label><div class="chip-row" id="sitGaya">' +
     GAYA.map((g, i) => '<button class="chip' + (i === 0 ? " active" : "") + '" data-gaya="' + g[0] + '">' + g[1] + "</button>").join("") +
     "</div>" +
-    '<button class="btn btn-primary btn-block" id="btnBuatSit">📑 Buatkan Sitasi</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnBuatSit">' + tic("doc") + ' Buatkan Sitasi</button></div>' +
     '<div id="sitHasil"></div>';
   let gaya = "harvard";
   $("#sitFile").addEventListener("change", async (e) => {
@@ -488,7 +488,7 @@ function pageSitasi() {
     if (!teks) { box.innerHTML = '<div class="err-box">Server nggak ngasih sitasi, coba lagi ya.</div>'; return; }
     box.innerHTML = '<div class="card hasil"><h3>Hasil sitasi (' + esc((res.data && res.data.gaya) || gaya) + ")</h3>" +
       '<div class="sitasi-hasil"><pre>' + esc(teks) + "</pre></div>" +
-      '<button class="btn btn-accent" id="btnSalinSit">📋 Salin</button></div>';
+      '<button class="btn btn-accent" id="btnSalinSit">' + tic("clipboard") + ' Salin</button></div>';
     riwTamuCatat("sitasi", work.judul || "", { gaya: (res.data && res.data.gaya) || gaya, sitasi: teks, work: work });
     $("#btnSalinSit").addEventListener("click", async () => {
       try { await navigator.clipboard.writeText(teks); toast("Disalin! 📋"); }
@@ -586,7 +586,7 @@ function pageMasuk() {
     '<div id="pwMasukBox">' +
     '<input type="text" id="pwUserIn" placeholder="username atau email" autocomplete="username" autocapitalize="off" spellcheck="false">' +
     '<div class="pw-wrap"><input type="password" id="pwPassIn" placeholder="password" autocomplete="current-password">' +
-    '<button type="button" class="pw-eye" data-for="pwPassIn" aria-label="Tampilkan password">👁️</button></div>' +
+    '<button type="button" class="pw-eye" data-for="pwPassIn" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
     '<button class="btn btn-primary btn-block" id="btnPwMasuk">Masuk</button>' +
     '<p class="center tiny" style="margin-top:8px"><a href="#/lupa">Lupa password? 🤔</a> · <a href="#" id="linkResend">Belum terima email verifikasi? 📧</a></p></div>' +
     '<div id="loginVerifyHelp" class="hidden">' + verifyHelpHTML("lv") + '</div>' +
@@ -594,11 +594,11 @@ function pageMasuk() {
     '<input type="text" id="pwUserUp" placeholder="pilih username" autocomplete="username" autocapitalize="off" spellcheck="false">' +
     '<input type="email" id="pwMailUp" placeholder="email aktif" autocomplete="email" autocapitalize="off" spellcheck="false">' +
     '<div class="pw-wrap"><input type="password" id="pwPassUp" placeholder="password (min. 8 karakter)" autocomplete="new-password">' +
-    '<button type="button" class="pw-eye" data-for="pwPassUp" aria-label="Tampilkan password">👁️</button></div>' +
+    '<button type="button" class="pw-eye" data-for="pwPassUp" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
     '<button class="btn btn-accent btn-block" id="btnPwDaftar">Daftar Akun</button>' +
     '<p class="muted tiny">Kami kirim link verifikasi ke emailmu 📧</p></div>' +
     '<div class="login-or"><span>atau</span></div>' +
-    '<a class="btn btn-block" href="#/beranda">👤 Lanjut sebagai tamu</a>' +
+    '<a class="btn btn-block" href="#/beranda">' + tic("person") + ' Lanjut sebagai tamu</a>' +
     '<p class="muted tiny">Mode tamu tetap bisa pakai semua fitur gratis. Tapi top-up wajib login biar saldonya nggak hilang. 🔐</p></div>';
   // tab Masuk / Daftar
   const tabM = $("#tabPwMasuk"), tabD = $("#tabPwDaftar");
@@ -711,9 +711,9 @@ function pageReset() {
     "<h2>"+tic("key")+" Password Baru</h2>" +
     '<div class="card center"><p class="muted">Bikin password baru buat akunmu (min. 8 karakter).</p>' +
     '<div class="pw-wrap"><input type="password" id="rstPw1" placeholder="password baru" autocomplete="new-password">' +
-    '<button type="button" class="pw-eye" data-for="rstPw1" aria-label="Tampilkan password">👁️</button></div>' +
+    '<button type="button" class="pw-eye" data-for="rstPw1" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
     '<div class="pw-wrap"><input type="password" id="rstPw2" placeholder="ulangi password baru" autocomplete="new-password">' +
-    '<button type="button" class="pw-eye" data-for="rstPw2" aria-label="Tampilkan password">👁️</button></div>' +
+    '<button type="button" class="pw-eye" data-for="rstPw2" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
     '<button class="btn btn-primary btn-block" id="btnReset" style="margin-top:12px">Ganti Password</button></div>';
   $$(".pw-eye", view()).forEach(b => b.addEventListener("click", () => {
     const inp = $("#" + b.dataset.for, view());
@@ -780,7 +780,7 @@ function pageAkun() {
       "<h2>"+tic("person")+" Akun</h2>" +
       '<div class="card center"><img src="' + avatarURL("teal") + '" alt="maskot" class="akun-foto">' +
       '<p class="muted">Kamu lagi mode tamu. Login biar saldo & datamu aman di semua perangkat. 🔐</p>' +
-      '<a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk / Daftar</a></div>' + kartuPasangAppHTML();
+      '<a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk / Daftar</a></div>' + kartuPasangAppHTML();
     ikatTombolPasang();
     return;
   }
@@ -797,33 +797,33 @@ function pageAkun() {
       ? '<p class="pf-akun-info">👤 @' + esc(u.username || "") + "</p>" +
         '<p class="pf-akun-info">📧 ' + esc(u.email || "") + "</p>"
       : (via ? '<p class="muted">' + esc(via) + "</p>" : "")) +
-    (u.admin ? "" : '<a class="btn btn-primary btn-block" href="#/topup">⚡ Jatah AI</a>') +
-    (u.admin ? '<a class="btn btn-block" href="#/admin">🛡️ Panel Admin</a>' : "") +
-    '<button class="btn btn-block" id="btnLogout">🚪 Keluar</button></div>' + kartuPasangAppHTML() +
+    (u.admin ? "" : '<a class="btn btn-primary btn-block" href="#/topup">' + tic("bolt") + ' Jatah AI</a>') +
+    (u.admin ? '<a class="btn btn-block" href="#/admin">' + tic("shield") + ' Panel Admin</a>' : "") +
+    '<button class="btn btn-block" id="btnLogout">' + tic("logout") + ' Keluar</button></div>' + kartuPasangAppHTML() +
     (!u.foto ?
-      '<div class="card"><h3>🎨 Foto Profil</h3><p class="muted">Pilih maskot favoritmu:</p>' +
+      '<div class="card"><h3>' + tic("image") + ' Foto Profil</h3><p class="muted">Pilih maskot favoritmu:</p>' +
       '<div class="avatar-grid">' + AVATAR_PILIHAN.map(function(p) {
         return '<button class="avatar-opt' + (avatarURL(u.avatar) === avatarURL(p) ? " active" : "") +
           '" data-av="' + p + '" aria-label="Avatar ' + p + '"><img src="' + avatarURL(p) + '" alt="avatar ' + p + '"></button>';
       }).join("") + '</div><p class="pf-msg" id="pfAvMsg"></p></div>'
       : "") +
     (isPw ?
-      '<div class="card"><h3>✏️ Ubah Username</h3>' +
+      '<div class="card"><h3>' + tic("pencil") + ' Ubah Username</h3>' +
       '<input type="text" id="pfUserBaru" placeholder="username baru (3–20 karakter)" maxlength="20" autocapitalize="off" autocomplete="off">' +
       '<p class="pf-msg" id="pfUserMsg"></p>' +
       '<button class="btn btn-primary btn-block" id="btnUbahUser">Simpan Username</button></div>' +
-      '<div class="card"><h3>🔑 Ubah Password</h3>' +
+      '<div class="card"><h3>' + tic("key") + ' Ubah Password</h3>' +
       '<div class="pw-wrap"><input type="password" id="pfPwLama" placeholder="password lama" autocomplete="current-password">' +
-      '<button type="button" class="pw-eye" data-for="pfPwLama" aria-label="Tampilkan password">👁️</button></div>' +
+      '<button type="button" class="pw-eye" data-for="pfPwLama" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
       '<div class="pw-wrap"><input type="password" id="pfPwBaru" placeholder="password baru (min. 8 karakter)" autocomplete="new-password">' +
-      '<button type="button" class="pw-eye" data-for="pfPwBaru" aria-label="Tampilkan password">👁️</button></div>' +
+      '<button type="button" class="pw-eye" data-for="pfPwBaru" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
       '<p class="pf-msg" id="pfPwMsg"></p>' +
       '<button class="btn btn-primary btn-block" id="btnUbahPw">Simpan Password</button></div>' +
-      '<div class="card"><h3>📧 Ubah Email</h3>' +
+      '<div class="card"><h3>' + tic("mail") + ' Ubah Email</h3>' +
       '<p class="muted">Link verifikasi dikirim ke email barumu (berlaku 24 jam). Email lama tetap aktif sampai kamu klik link itu.</p>' +
       '<input type="email" id="pfMailBaru" placeholder="email baru" autocapitalize="off" autocomplete="off">' +
       '<div class="pw-wrap"><input type="password" id="pfMailPw" placeholder="konfirmasi password" autocomplete="current-password">' +
-      '<button type="button" class="pw-eye" data-for="pfMailPw" aria-label="Tampilkan password">👁️</button></div>' +
+      '<button type="button" class="pw-eye" data-for="pfMailPw" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
       '<p class="pf-msg" id="pfMailMsg"></p>' +
       '<button class="btn btn-primary btn-block" id="btnUbahMail">Kirim Link Verifikasi</button></div>'
       : '<div class="card"><p class="muted">Akun ini login ' + esc(via || "via Google") +
@@ -1093,8 +1093,8 @@ function pageCari() {
     "</div>" +
     '<div class="card"><label for="q">Kata kunci</label>' +
     '<input type="text" id="q" placeholder="cth: stunting balita, employee performance, ..." autocomplete="off">' +
-    '<button class="btn btn-primary btn-block" id="btnCari" style="margin-top:12px">🔍 Cari</button></div>' +
-    '<div id="hasilCari">' + (cariState.hasil.length ? "" : '<p class="empty">Ketik kata kunci terus tekan Cari. Jurnal dari OpenAlex, Crossref, Sinta &amp; Garuda siap membantu. 🚀</p>') + "</div>";
+    '<button class="btn btn-primary btn-block" id="btnCari" style="margin-top:12px">' + tic("search") + ' Cari</button></div>' +
+    '<div id="hasilCari">' + (cariState.hasil.length ? "" : '<p class="empty">Ketik kata kunci terus tekan Cari. Jurnal dari OpenAlex, Crossref, Sinta &amp; Garuda siap membantu.</p>') + "</div>";
 
   if (cariState.hasil.length) renderHasilCari();
 
@@ -1234,7 +1234,7 @@ function pageCarifile() {
     '<label for="cfFile" style="margin-top:10px">Atau unggah file daftar pustaka (.docx/.pdf/.txt)</label>' +
     '<input type="file" id="cfFile" accept="' + ACCEPT_DOK + '">' +
     '<p class="muted tiny">Teks dari file dimasukkan ke kotak di atas. Cek dulu isinya, baru klik Lacak File.</p>' +
-    '<button class="btn btn-primary btn-block" id="btnCarifile" style="margin-top:12px">🔎 Lacak File</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnCarifile" style="margin-top:12px">' + tic("search") + ' Lacak File</button></div>' +
     '<div id="hasilCarifile"></div>';
   $("#cfFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
@@ -1268,7 +1268,7 @@ function pageCarifile() {
     }
     const miss = Array.isArray(d.tidak_ketemu) ? d.tidak_ketemu : [];
     if (miss.length) {
-      html += '<div class="card"><h3>Tidak ketemu 🔍</h3><p class="muted tiny">Sitasi di bawah ini nggak kelacak sumbernya:</p><ul class="bersih">' +
+      html += '<div class="card"><h3>Tidak ketemu ' + tic("search") + '</h3><p class="muted tiny">Sitasi di bawah ini nggak kelacak sumbernya:</p><ul class="bersih">' +
         miss.map(m => "<li>" + esc(typeof m === "string" ? m : JSON.stringify(m)) + "</li>").join("") + "</ul></div>";
     }
     if (d.parsial) html += '<p class="muted tiny">⏱️ Sebagian sitasi belum diproses (waktu habis) — coba lagi dengan teks lebih pendek.</p>';
@@ -1313,10 +1313,10 @@ function daftarItemHTML(x) {
 function pageRekomendasi() {
   view().innerHTML =
     "<h2>"+tic("target")+" Rekomendasi Jurnal</h2>" +
-    '<div class="card"><p class="muted">Mau publikasi? Kasih tahu topikmu, aku carikan jurnal yang cocok. 📝</p>' +
+    '<div class="card"><p class="muted">Mau publikasi? Kasih tahu topikmu, aku carikan jurnal yang cocok.</p>' +
     '<label for="topikRek">Topik / judul penelitian</label>' +
     '<input type="text" id="topikRek" placeholder="cth: pengaruh digital marketing terhadap UMKM">' +
-    '<button class="btn btn-primary btn-block" id="btnRek" style="margin-top:12px">🎯 Carikan Jurnal</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnRek" style="margin-top:12px">' + tic("target") + ' Carikan Jurnal</button></div>' +
     '<div id="hasilRek"></div>';
   $("#btnRek").addEventListener("click", async () => {
     const topik = ($("#topikRek").value || "").trim();
@@ -1330,7 +1330,7 @@ function pageRekomendasi() {
     const d = res.data || {};
     const daftar = Array.isArray(d.daftar) ? d.daftar : (Array.isArray(d.hasil) ? d.hasil : []);
     box.innerHTML = daftar.length
-      ? '<div class="card"><h3>Jurnal yang cocok buatmu 🎉</h3><ul class="bersih">' + daftar.map(daftarItemHTML).join("") + "</ul></div>"
+      ? '<div class="card"><h3>Jurnal yang cocok buatmu ' + tic("spark") + '</h3><ul class="bersih">' + daftar.map(daftarItemHTML).join("") + "</ul></div>"
       : '<div class="warn-box">Belum nemu rekomendasi buat topik itu. 😅 Coba kata kunci yang lebih umum ya.</div>';
   });
 }
@@ -1341,7 +1341,7 @@ function pagePublisher() {
     '<div class="card"><p class="muted">Jelajahi penerbit &amp; jurnal per indeks. Tulis bidangnya dulu ya. 📚</p>' +
     '<label for="bidangPub">Bidang *</label>' +
     '<input type="text" id="bidangPub" placeholder="cth: kesehatan, pendidikan, teknik">' +
-    '<button class="btn btn-primary btn-block" id="btnPub" style="margin-top:12px">🏢 Tampilkan</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnPub" style="margin-top:12px">' + tic("building") + ' Tampilkan</button></div>' +
     '<div id="hasilPub"></div>';
   $("#btnPub").addEventListener("click", async () => {
     const bidang = ($("#bidangPub").value || "").trim();
@@ -1355,7 +1355,7 @@ function pagePublisher() {
     const d = res.data || {};
     const daftar = Array.isArray(d.daftar) ? d.daftar : [];
     box.innerHTML = daftar.length
-      ? '<div class="card"><h3>Daftar publisher &amp; jurnal 🏢</h3><ul class="bersih">' + daftar.map(daftarItemHTML).join("") + "</ul></div>"
+      ? '<div class="card"><h3>Daftar publisher &amp; jurnal ' + tic("building") + '</h3><ul class="bersih">' + daftar.map(daftarItemHTML).join("") + "</ul></div>"
       : '<div class="warn-box">Datanya lagi kosong. 😅 Coba lagi nanti ya.</div>';
   });
 }
@@ -1363,10 +1363,10 @@ function pagePublisher() {
 function pagePenulis() {
   view().innerHTML =
     "<h2>"+tic("person")+" Info Penulis</h2>" +
-    '<div class="card"><p class="muted">Kepoin profil peneliti: H-index, karya, sitasi, afiliasi. 🔎</p>' +
+    '<div class="card"><p class="muted">Kepoin profil peneliti: H-index, karya, sitasi, afiliasi.</p>' +
     '<label for="namaPen">Nama penulis</label>' +
     '<input type="text" id="namaPen" placeholder="cth: Budi Santoso">' +
-    '<button class="btn btn-primary btn-block" id="btnPen" style="margin-top:12px">👤 Cari Penulis</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnPen" style="margin-top:12px">' + tic("person") + ' Cari Penulis</button></div>' +
     '<div id="hasilPen"></div>';
   $("#btnPen").addEventListener("click", async () => {
     const nama = ($("#namaPen").value || "").trim();
@@ -1393,7 +1393,7 @@ function kartuPenulis(a) {
   const afil = (a.affiliations || []).filter(Boolean).join(", ");
   const topik = (a.topics || []).filter(Boolean).join(", ");
   const profUrl = safeUrl(a.url);
-  return '<div class="card"><h3>👤 ' + esc(a.name || "-") + "</h3>" +
+  return '<div class="card"><h3>' + tic("person") + ' ' + esc(a.name || "-") + "</h3>" +
     '<ul class="bersih">' +
     (afil ? "<li>🏛️ <b>Afiliasi:</b> " + esc(afil) + "</li>" : "") +
     (a.h_index != null ? "<li>📊 <b>H-index:</b> " + esc(a.h_index) + "</li>" : "") +
@@ -1414,7 +1414,7 @@ function pageTopik() {
     '<label for="kwTopik">Keyword</label>' +
     '<input type="text" id="kwTopik" placeholder="cth: kecerdasan buatan pendidikan">' +
     pickerHTML("tp") +
-    '<button class="btn btn-primary btn-block" id="btnTopik" style="margin-top:12px">💡 Kasih Ide Dong</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnTopik" style="margin-top:12px">' + tic("bulb") + ' Kasih Ide Dong</button></div>' +
     '<div id="hasilTopik"></div>';
   pickerPasang("tp");
   ambilInfoKuota().then(() => pickerSegarkan("tp"));
@@ -1437,15 +1437,15 @@ function pageTopik() {
     }
     let html = "";
     const tren = d.tren || d.trends;
-    if (tren) html += '<div class="card"><h3>Tren publikasi 📈</h3>' + trenHtml(tren) + "</div>";
+    if (tren) html += '<div class="card"><h3>Tren publikasi ' + tic("chart") + '</h3>' + trenHtml(tren) + "</div>";
     // d.ide = string ide judul (selalu ada bila sukses); d.saran = array topik
     // alternatif (sering [] kosong yang truthy!) — render ide TERPISAH agar
     // tidak tertutup array kosong.
     if (typeof d.ide === "string" && d.ide)
-      html += '<div class="card"><h3>Ide judul dari AI 💡</h3><div>' + mdRapi(d.ide) + "</div>" + labelModelHTML(d) + "</div>";
+      html += '<div class="card"><h3>Ide judul dari AI ' + tic("bulb") + '</h3><div>' + mdRapi(d.ide) + "</div>" + labelModelHTML(d) + "</div>";
     const saran = (Array.isArray(d.saran) && d.saran.length) ? d.saran : (d.topik || []);
     if (Array.isArray(saran) && saran.length)
-      html += '<div class="card"><h3>Saran topik &amp; research gap 💡</h3><ul class="bersih">' + saran.map(s => "<li>" + esc(typeof s === "string" ? s : (s.judul || s.topik || JSON.stringify(s))) + "</li>").join("") + "</ul></div>";
+      html += '<div class="card"><h3>Saran topik &amp; research gap ' + tic("bulb") + '</h3><ul class="bersih">' + saran.map(s => "<li>" + esc(typeof s === "string" ? s : (s.judul || s.topik || JSON.stringify(s))) + "</li>").join("") + "</ul></div>";
     if (d.premium_terkunci) {
       html += '<div class="warn-box">Model premium memakai saldo top up, jadi ide AI-nya belum bisa dibuat. Tren dan saran di atas tetap bisa kamu pakai. 🙏</div>';
       popupPremiumTopup();
@@ -1501,15 +1501,15 @@ function pageKoleksi() {
       ? '<p class="muted">Tersimpan di browser HP-mu. Total: <b>' + arr.length + "</b> referensi.</p>"
       : '<p class="muted">⏰ Mode tamu: koleksi tersimpan di browser HP-mu maksimal <b>24 jam</b>, setelah itu otomatis terhapus. 🛟 Amankan koleksimu: pakai tombol <b>Export</b> di bawah buat simpan jadi file, atau <a href="#/masuk"><b>login gratis</b></a> biar tidak kena batas waktu. Total: <b>' + arr.length + "</b> referensi.</p>") +
     (arr.length ?
-      '<div class="card"><h3>Export Daftar Pustaka ⬇️</h3><p class="tiny muted">Pilih gaya sitasi & format, filenya langsung keunduh. Urutan entri otomatis sesuai kaidah gaya (A-Z untuk APA/Harvard/MLA/Chicago).</p>' +
+      '<div class="card"><h3>Export Daftar Pustaka ' + tic("download") + '</h3><p class="tiny muted">Pilih gaya sitasi & format, filenya langsung keunduh. Urutan entri otomatis sesuai kaidah gaya (A-Z untuk APA/Harvard/MLA/Chicago).</p>' +
       '<label class="muted" for="expGaya">Gaya sitasi</label>' +
       '<select id="expGaya"><option value="apa">APA 7</option><option value="harvard">Harvard</option><option value="mla">MLA 9</option><option value="chicago">Chicago</option><option value="vancouver">Vancouver</option><option value="ieee">IEEE</option></select>' +
       '<div style="margin-top:10px"><button class="btn" data-exp="txt">TXT</button>' +
       '<button class="btn" data-exp="docx">DOCX</button>' +
       '<button class="btn" data-exp="bibtex">BibTeX</button></div></div>' : "") +
-    '<div class="card"><h3>Impor Referensi 📥</h3><p class="tiny muted">Punya daftar referensi di Mendeley, Zotero, atau Google Scholar? Export dari sana sebagai file <b>.bib</b> (BibTeX) atau <b>.ris</b>, lalu unggah di sini. Referensinya langsung masuk koleksi, siap di-export jadi daftar pustaka.</p>' +
+    '<div class="card"><h3>Impor Referensi ' + tic("download") + '</h3><p class="tiny muted">Punya daftar referensi di Mendeley, Zotero, atau Google Scholar? Export dari sana sebagai file <b>.bib</b> (BibTeX) atau <b>.ris</b>, lalu unggah di sini. Referensinya langsung masuk koleksi, siap di-export jadi daftar pustaka.</p>' +
     '<input type="file" id="impFile" accept=".bib,.ris,.txt">' +
-    '<button class="btn btn-primary btn-block" id="btnImpor" style="margin-top:10px">📥 Impor ke Koleksi</button>' +
+    '<button class="btn btn-primary btn-block" id="btnImpor" style="margin-top:10px">' + tic("download") + ' Impor ke Koleksi</button>' +
     '<div id="imporHasil"></div></div>' +
     '<div id="listKoleksi">' +
       (arr.length ? arr.map((it, i) =>
@@ -1682,7 +1682,7 @@ function riwayatDetailHTML(e) {
   if (t === "sitasi") {
     return '<p class="muted">Gaya: <b>' + esc(d.gaya || "-") + "</b></p>" +
       '<div class="sitasi-hasil"><pre>' + esc(d.sitasi || "") + "</pre></div>" +
-      '<button class="btn btn-accent" data-salin-sitasi="' + esc(e.id) + '">📋 Salin</button>';
+      '<button class="btn btn-accent" data-salin-sitasi="' + esc(e.id) + '">' + tic("clipboard") + ' Salin</button>';
   }
   if (t === "jurnal") {
     const hsl = Array.isArray(d.hasil) ? d.hasil : [];
@@ -1699,8 +1699,8 @@ function riwayatDetailHTML(e) {
   if (t === "topik") {
     const saran = Array.isArray(d.saran) ? d.saran : [];
     let h = '<p class="muted">Keyword: <b>' + esc(d.keyword || "") + "</b></p>";
-    if (d.ide) h += '<div class="card"><h3>Ide judul dari AI 💡</h3><div>' + mdRapi(d.ide) + "</div></div>";
-    if (saran.length) h += '<div class="card"><h3>Saran topik &amp; research gap 💡</h3><ul class="bersih">' +
+    if (d.ide) h += '<div class="card"><h3>Ide judul dari AI ' + tic("bulb") + '</h3><div>' + mdRapi(d.ide) + "</div></div>";
+    if (saran.length) h += '<div class="card"><h3>Saran topik &amp; research gap ' + tic("bulb") + '</h3><ul class="bersih">' +
       saran.map(s => "<li>" + esc(typeof s === "string" ? s : (s.judul || s.topik || JSON.stringify(s))) + "</li>").join("") + "</ul></div>";
     if (!d.ide && !saran.length) h += '<p class="empty">Nggak ada ide tersimpan. 😅</p>';
     return h;
@@ -1715,7 +1715,7 @@ function pageRiwayat() {
 
   const bannerTamu = isTamu
     ? '<div class="warn-box" style="margin-bottom:12px">⏰ <b>Mode tamu:</b> semua pencarian & pemakaianmu tercatat di sini, tapi cuma disimpan maksimal <b>24 jam</b> di HP-mu, habis itu <b>otomatis terhapus</b> dan nggak dikirim ke server.<br><br>🛟 <b>Amankan riwayatmu dari sekarang:</b> export jadi file pakai tombol di bawah ini, atau <a href="#/masuk"><b>login gratis</b></a> biar tersimpan permanen di akunmu tanpa batas waktu. ✨</div>' +
-      '<div style="margin-bottom:12px"><button class="btn btn-primary btn-block" id="btnRiwExport">⬇️ Export Riwayat (TXT)</button></div>'
+      '<div style="margin-bottom:12px"><button class="btn btn-primary btn-block" id="btnRiwExport">' + tic("download") + ' Export Riwayat (TXT)</button></div>'
     : "";
 
   view().innerHTML =
@@ -1909,7 +1909,7 @@ function pageMatriks() {
     '<div class="card"><p class="muted">Bikin tabel sintesis (matriks) dari koleksimu — format DOCX, siap tempel ke Bab 2. 📊</p>' +
     "<p>Koleksi saat ini: <b>" + arr.length + "</b> referensi.</p>" +
     (arr.length
-      ? '<button class="btn btn-primary btn-block" id="btnMatriks">🧩 Buat Matriks (DOCX)</button>'
+      ? '<button class="btn btn-primary btn-block" id="btnMatriks">' + tic("grid") + ' Buat Matriks (DOCX)</button>'
       : '<p class="empty">Koleksimu kosong. 📭 <a href="#/cari">Cari &amp; simpan jurnal dulu →</a></p>') +
     "</div>";
   const btn = $("#btnMatriks");
@@ -1953,7 +1953,7 @@ function statTanya(d) {
   const qid = d.qid || "";
   const ops = Array.isArray(d.opsi) ? d.opsi : [];
   const keys = Object.keys(statAnswers);
-  let html = keys.length ? '<button class="btn btn-ghost" id="statBack">⬅️ Kembali</button>' : "";
+  let html = keys.length ? '<button class="btn btn-ghost" id="statBack">← Kembali</button>' : "";
   // d.teks dibuat backend dan boleh mengandung <b>/<i> -> render sebagai HTML
   html += '<div class="card"><h3>' + (d.teks || "Pilih salah satu:") + " ❓</h3>" +
     '<div class="chip-row">' + ops.map(o => {
@@ -1977,15 +1977,15 @@ function statHasil(d) {
   const r = d.hasil || {};
   const syarat = Array.isArray(r.syarat) ? r.syarat : [];
   $("#statBox").innerHTML =
-    '<div class="ok-box"><h3 style="margin-top:0">Hasil 🎯</h3>' +
+    '<div class="ok-box"><h3 style="margin-top:0">Hasil ' + tic("target") + '</h3>' +
     "<p><b>" + esc(r.nama || "Uji statistik") + "</b></p>" +
     (r.kapan ? "<p>" + esc(r.kapan) + "</p>" : "") +
     (syarat.length ? "<p><b>Syarat:</b></p><ul>" + syarat.map(s => "<li>" + esc(s) + "</li>").join("") + "</ul>" : "") +
     (r.baca ? "<p><b>Cara baca hasil:</b> " + esc(r.baca) + "</p>" : "") +
     (r.contoh ? '<p class="muted tiny"><b>Contoh:</b> ' + esc(r.contoh) + "</p>" : "") +
     "</div>" +
-    '<button class="btn btn-primary btn-block" id="statUlang">🔄 Mulai dari awal</button>' +
-    '<button class="btn btn-block" id="statAi" style="margin-top:8px">✨ Bantu tuliskan interpretasinya (AI)</button>' +
+    '<button class="btn btn-primary btn-block" id="statUlang">' + tic("refresh") + ' Mulai dari awal</button>' +
+    '<button class="btn btn-block" id="statAi" style="margin-top:8px">' + tic("spark") + ' Bantu tuliskan interpretasinya (AI)</button>' +
     '<div id="statAiOut" style="margin-top:10px"></div>';
   $("#statUlang").addEventListener("click", () => pageStatistik());
   const btnAi = $("#statAi");
@@ -2020,8 +2020,8 @@ function pageTemplate() {
   view().innerHTML =
     "<h2>"+tic("pencil")+" Template Skripsi</h2>" +
     '<div class="card"><p class="muted">Template proposal &amp; skripsi format DOCX, tinggal isi. Pilih jenis penelitianmu: 👇</p>' +
-    '<button class="btn btn-primary btn-block" data-tmpl="kuantitatif">📊 Template Kuantitatif</button>' +
-    '<button class="btn btn-primary btn-block" data-tmpl="kualitatif">📖 Template Kualitatif</button></div>';
+    '<button class="btn btn-primary btn-block" data-tmpl="kuantitatif">' + tic("chart") + ' Template Kuantitatif</button>' +
+    '<button class="btn btn-primary btn-block" data-tmpl="kualitatif">' + tic("books") + ' Template Kualitatif</button></div>';
   $$("[data-tmpl]", view()).forEach(b => b.addEventListener("click", async () => {
     const jenis = b.dataset.tmpl;
     setLoading(b, true, "Lagi nyiapin template...");
@@ -2041,7 +2041,7 @@ function pageTerjemah() {
     '<p class="muted tiny"><span id="tjHitung">0</span>/3.000 karakter</p>' +
     '<label for="tjFile" style="margin-top:8px">Atau unggah file jurnal (.pdf/.docx/.txt)</label>' +
     '<input type="file" id="tjFile" accept="' + ACCEPT_DOK + '">' +
-    '<button class="btn btn-primary btn-block" id="btnTj" style="margin-top:12px">🌐 Terjemahkan</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnTj" style="margin-top:12px">' + tic("globe") + ' Terjemahkan</button></div>' +
     '<div id="hasilTj"></div>';
   const ta = $("#tjTeks");
   const hitung = () => { const el = $("#tjHitung"); if (el) el.textContent = ta.value.length; };
@@ -2072,7 +2072,7 @@ function pageTerjemah() {
     if (!res.ok) { if (!kuotaTamuBox(box, res)) netErr(box, res); return; }
     if (d.sumber === "sudah_indonesia") { box.innerHTML = '<div class="warn-box">Teksnya sudah berbahasa Indonesia, tidak perlu diterjemahkan 😉</div>'; return; }
     if (!d.hasil) { box.innerHTML = '<div class="warn-box">Hasil terjemahannya kosong, coba lagi ya 😅</div>'; return; }
-    box.innerHTML = '<div class="card"><h3>Hasil terjemahan ✨</h3><p style="white-space:pre-wrap">' + esc(d.hasil) + '</p><button class="btn" id="tjCopy">📋 Salin</button></div>';
+    box.innerHTML = '<div class="card"><h3>Hasil terjemahan ' + tic("spark") + '</h3><p style="white-space:pre-wrap">' + esc(d.hasil) + '</p><button class="btn" id="tjCopy">' + tic("clipboard") + ' Salin</button></div>';
     $("#tjCopy").addEventListener("click", () => copyText(d.hasil));
     toast(d.sumber === "mymemory" ? "Diterjemahkan 🤖 (terjemahan mesin)" : "Diterjemahkan 🤖");
   });
@@ -2111,7 +2111,7 @@ function pageParafrase() {
     '<label for="pfFile" style="margin-top:10px">Atau unggah file satu bab (.docx/.pdf/.txt)</label>' +
     '<input type="file" id="pfFile" accept="' + ACCEPT_DOK + '">' +
     '<p class="muted tiny">Teks panjang (dari tempel atau file) otomatis diproses per potongan ±750 karakter secara berurutan. Tiap potongan dihitung 1x pemakaian parafrase.</p>' +
-    '<button class="btn btn-primary btn-block" id="btnPf" style="margin-top:12px">🔁 Parafrase-kan!</button></div>' +
+    '<button class="btn btn-primary btn-block" id="btnPf" style="margin-top:12px">' + tic("refresh") + ' Parafrase-kan!</button></div>' +
     '<div id="hasilPf"></div>';
   $("#pfFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
@@ -2137,12 +2137,12 @@ function pageParafrase() {
       const res = await apiPOST("/parafrase", { teks: potongan[i] });
       if (!res.ok) {
         if (kuotaTamuBox(box, res)) {
-          if (hasilBagian.length) box.innerHTML += '<div class="card"><h3>Hasil parafrase sebagian ✨</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>";
+          if (hasilBagian.length) box.innerHTML += '<div class="card"><h3>Hasil parafrase sebagian ' + tic("spark") + '</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>";
           gagalDi = i + 1;
           break;
         }
         box.innerHTML = '<div class="warn-box">Potongan ke-' + (i + 1) + " gagal diproses. 😅 " + (hasilBagian.length ? "Bagian sebelumnya tetap ditampilkan di bawah." : "Coba lagi ya.") + "</div>" +
-          (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ✨</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
+          (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ' + tic("spark") + '</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
         gagalDi = i + 1;
         break;
       }
@@ -2150,7 +2150,7 @@ function pageParafrase() {
       const h = d.hasil || d.parafrase || d.text;
       if (!h) {
         box.innerHTML = '<div class="warn-box">Hasil potongan ke-' + (i + 1) + ' kosong. 😅' + (hasilBagian.length ? " Bagian sebelumnya tetap ditampilkan di bawah." : "") + "</div>" +
-          (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ✨</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
+          (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ' + tic("spark") + '</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
         gagalDi = i + 1;
         break;
       }
@@ -2160,9 +2160,9 @@ function pageParafrase() {
     if (!hasilBagian.length) { if (!gagalDi) box.innerHTML = '<div class="warn-box">Hasilnya kosong. 😅 Coba teks yang lebih panjang ya.</div>'; return; }
     const gabung = hasilBagian.join("\n\n");
     if (!gagalDi) {
-      box.innerHTML = '<div class="card"><h3>Hasil parafrase ✨</h3>' +
+      box.innerHTML = '<div class="card"><h3>Hasil parafrase ' + tic("spark") + '</h3>' +
         (potongan.length > 1 ? '<p class="muted tiny">Diproses dalam ' + potongan.length + " potongan.</p>" : "") +
-        '<p style="white-space:pre-wrap">' + esc(gabung) + '</p><button class="btn" id="pfCopy">📋 Salin</button></div>';
+        '<p style="white-space:pre-wrap">' + esc(gabung) + '</p><button class="btn" id="pfCopy">' + tic("clipboard") + ' Salin</button></div>';
       // I4 (audit 2026-10-13): parafrase dicatat sebagai riwayat chat
       riwTamuCatat("chat", teks, { sumber: "parafrase", text: teks, hasil: gabung });
       $("#pfCopy").addEventListener("click", () => copyText(gabung));
@@ -2189,7 +2189,7 @@ function pageKemiripan() {
     '<input type="file" id="kmFileNaskah" accept=".docx,.txt,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">' +
     '<label for="kmFileSumber" style="margin-top:8px">File sumber (.docx/.txt/.pdf)</label>' +
     '<input type="file" id="kmFileSumber" accept=".docx,.txt,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">' +
-    '<button class="btn btn-primary btn-block" id="btnKm" style="margin-top:12px">🔍 Cek Kemiripan</button>' +
+    '<button class="btn btn-primary btn-block" id="btnKm" style="margin-top:12px">' + tic("search") + ' Cek Kemiripan</button>' +
     '<p class="muted" style="margin-top:8px">Teksmu diproses seketika dan tidak disimpan. Tips parafrase: <a href="/panduan/cara-parafrase-yang-benar">panduan parafrase yang benar</a>.</p></div>' +
     '<div id="hasilKm"></div>';
   $("#btnKm").addEventListener("click", async () => {
@@ -2512,7 +2512,7 @@ function popupJatahHabis() {
           '<p class="muted" style="text-align:left">Tidak mau menunggu? Top up saja. Mulai <b>Rp5.000</b> kamu dapat <b>25x</b> jatah AI. Saldonya tidak hangus dan bisa dipakai kapan saja.</p>'
         : '<p class="muted" style="text-align:left">Limit harian mode tamu sudah terpakai semua. Tamu dapat <b>5x per hari</b> buat semua fitur, AI dan non-AI dihitung bareng. Tenang, jatahnya balik lagi otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok kamu bisa lanjut lagi.</p>' +
           '<p class="muted" style="text-align:left">Tidak mau dibatasi limit harian? <b>Daftar gratis</b> saja, tidak sampai semenit. Begitu punya akun, fitur non-AI seperti cari jurnal, sitasi, convert, dan cek kemiripan bisa kamu pakai <b>sepuasnya</b> tanpa limit harian, jatah AI tetap 10x per hari, plus koleksi dan riwayatmu tersimpan aman di akun.</p>') +
-      '<a class="btn btn-primary btn-block" id="kpJatahCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "⚡ Top Up Jatah AI" : "🔑 Daftar Gratis") + '</a>' +
+      '<a class="btn btn-primary btn-block" id="kpJatahCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "" + tic('bolt') + " Top Up Jatah AI" : "" + tic('key') + " Daftar Gratis") + '</a>' +
       '<button class="btn btn-block" id="kpJatahTutup" type="button" style="margin-top:9px">Nanti Saja</button>' +
     '</div>';
   document.body.appendChild(el);
@@ -2570,7 +2570,7 @@ function popupPremiumTopup() {
         ? '<p class="muted" style="text-align:left">Claude Haiku 4.5 dan Perplexity Sonar adalah model premium. Sekali pakai memotong <b>1x saldo top up</b>, dan saldonya hanya terpotong kalau modelnya berhasil menjawab.</p>' +
           '<p class="muted" style="text-align:left">Saldo kamu sekarang <b>0x</b>. Top up mulai <b>Rp5.000</b> dapat <b>25x</b>, saldonya tidak hangus dan bisa dipakai kapan saja.</p>'
         : '<p class="muted" style="text-align:left">Claude Haiku 4.5 dan Perplexity Sonar adalah model premium yang memakai <b>saldo top up</b>. Mode tamu belum punya saldo, jadi daftar gratis dulu yuk, tidak sampai semenit.</p>') +
-      '<a class="btn btn-primary btn-block" id="kpPremCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "⚡ Top Up Sekarang" : "🔑 Daftar Gratis") + '</a>' +
+      '<a class="btn btn-primary btn-block" id="kpPremCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "" + tic('bolt') + " Top Up Sekarang" : "" + tic('key') + " Daftar Gratis") + '</a>' +
       '<button class="btn btn-block" id="kpPremTutup" type="button" style="margin-top:9px">Nanti Saja</button>' +
     '</div>';
   document.body.appendChild(el);
@@ -2655,7 +2655,7 @@ function pageAI() {
       (k.kind === "abstrak" ? '<input type="text" id="aiJudul' + i + '" placeholder="Judul penelitian (opsional, buat abstrak)" autocomplete="off" style="margin-bottom:8px">' : "") +
       '<textarea id="aiIn' + i + '" placeholder="' + esc(k.ph) + '"></textarea>' +
       '<label class="muted tiny" style="display:block;margin-top:8px">Atau isi dari file draf (.docx/.pdf/.txt)<input type="file" class="aiFile" data-aii="' + i + '" accept="' + ACCEPT_DOK + '" style="margin-top:4px"></label>' +
-      '<button class="btn btn-primary btn-block" data-aigen="' + i + '" style="margin-top:10px">✨ Generate</button>' +
+      '<button class="btn btn-primary btn-block" data-aigen="' + i + '" style="margin-top:10px">' + tic("spark") + ' Generate</button>' +
       '<div id="aiOut' + i + '"></div></div>'
     ).join("") + "</div>";
 
@@ -2724,7 +2724,7 @@ function pageAI() {
     const hasil = d.hasil || d.result || d.text;
     if (!hasil) { out.innerHTML = '<div class="warn-box">AI-nya bengong, nggak ngasih hasil. 😅 Coba lagi ya.</div>'; return; }
     const hid = "aiCopy" + i;
-    out.innerHTML = '<div class="hasil-ai">' + mdRapi(hasil) + '</div>' + labelModelHTML(d) + '<button class="btn" id="' + hid + '" style="margin-top:8px">📋 Salin Hasil</button>';
+    out.innerHTML = '<div class="hasil-ai">' + mdRapi(hasil) + '</div>' + labelModelHTML(d) + '<button class="btn" id="' + hid + '" style="margin-top:8px">' + tic("clipboard") + ' Salin Hasil</button>';
     riwTamuCatat("chat", teks, { sumber: "ai", kind: k.kind, text: teks, hasil: hasil });
     $("#" + hid).addEventListener("click", () => copyText(hasil));
     ambilKuota().then(kuotaBadgeUpdate);
@@ -2849,7 +2849,7 @@ function pageTopup() {
       '<div class="card"><h3>Sisa jatahmu</h3>' +
       '<p>🎁 Gratis hari ini: <b id="tamuSisa">' + tamuHarian() + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
       '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Jatah tamu 5x/hari itu gabungan semua fitur (AI dan non-AI). Login gratis biar fitur non-AI sepuasnya, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman. 🔐</p></div>' +
-      '<div class="card center"><a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk / Daftar — gratis!</a></div>';
+      '<div class="card center"><a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk / Daftar — gratis!</a></div>';
     // Samakan angka dengan sisa asli dari server (tamu bisa sudah memakai sebagian).
     apiJSON("/topup").then(res => {
       const el = $("#tamuSisa");
@@ -2863,9 +2863,9 @@ function pageTopup() {
     "<h2>"+tic("bolt")+" Jatah AI</h2>" +
     '<div id="topInfo"><p class="loading">Lagi ngecek jatah AI... ⏳</p></div>' +
     '<div id="topPay"></div>' +
-    '<div class="card" id="redCard"><h3>Punya kode redeem? 🎟️</h3>' +
+    '<div class="card" id="redCard"><h3>Punya kode redeem? ' + tic("ticket") + '</h3>' +
     '<label for="kodeRed">Kode redeem</label><input type="text" id="kodeRed" placeholder="Tempel kodemu di sini" autocomplete="off">' +
-    '<button class="btn btn-accent btn-block" id="btnRedeem" style="margin-top:12px">🎟️ Redeem Sekarang</button></div>' +
+    '<button class="btn btn-accent btn-block" id="btnRedeem" style="margin-top:12px">' + tic("ticket") + ' Redeem Sekarang</button></div>' +
     '<div class="card"><h3>Kode referralmu 🎁</h3><p class="muted tiny">Ajak teman pakai KhairyPustaka, tiap 3 teman dapat bonus jatah AI!</p>' +
     '<div id="refBox"><p class="loading">Lagi ngambil kode... ⏳</p></div></div>';
 
@@ -2886,11 +2886,11 @@ function pageTopup() {
           : '<p>🎁 Gratis hari ini: <b>' + harian + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>') +
         '<p>💰 Saldo top-up: <b>' + saldo + 'x</b> <span class="muted tiny">(tidak hangus)</span></p></div>';
       if (d.pay_enabled && !isAdm) {
-        html += '<div class="card"><h3>Tambah jatah ⚡</h3>' +
+        html += '<div class="card"><h3>Tambah jatah ' + tic("bolt") + '</h3>' +
           '<p class="muted">Rp' + Number(perU).toLocaleString("id-ID") + ' per 1x pakai AI, minimal ' + minU + 'x. Bayar via QRIS, masuk otomatis.</p>' +
           '<label for="topUses">Jumlah jatah (x)</label><input type="number" id="topUses" min="' + minU + '" value="' + minU + '" step="1" inputmode="numeric">' +
           '<p class="muted tiny">Total bayar: <b id="topTotal"></b></p>' +
-          '<button class="btn btn-primary btn-block" id="btnTopup">⚡ Top-up via QRIS</button></div>';
+          '<button class="btn btn-primary btn-block" id="btnTopup">' + tic("bolt") + ' Top-up via QRIS</button></div>';
       }
       box.innerHTML = html;
       // Admin: kartu redeem disembunyikan (kuota admin tanpa batas).
@@ -2936,7 +2936,7 @@ function pageTopup() {
   function tampilkanQR(payBox, refId, total, qrB64) {
     const qr = amanB64(qrB64);
     payBox.innerHTML =
-      '<div class="card center"><h3>📱 Scan QRIS buat bayar ' + esc(total) + '</h3>' +
+      '<div class="card center"><h3>' + tic("grid") + ' Scan QRIS buat bayar ' + esc(total) + '</h3>' +
       (qr ? '<img src="data:image/png;base64,' + qr + '" alt="QRIS" style="max-width:260px;width:100%;border-radius:12px">' : '<p class="muted">QR nggak kebaca, coba lagi ya.</p>') +
       '<p class="muted tiny" id="payStat">Menunggu pembayaran... ⏳ (otomatis dicek tiap 8 detik)</p></div>';
     const timer = regTimer(setInterval(async () => {
@@ -2977,7 +2977,7 @@ function pageTopup() {
     box.innerHTML = kode
       ? '<p><b class="ref-code">' + esc(kode) + '</b></p>' +
         '<p class="muted tiny">Tiap 3 teman gabung = +' + reward + 'x Jatah AI 🎉</p>' +
-        '<button class="btn" id="refCopy">📋 Salin Link Referral</button>'
+        '<button class="btn" id="refCopy">' + tic("clipboard") + ' Salin Link Referral</button>'
       : '<p class="muted tiny">Belum ada kode referral. 😅</p>';
     const cp = $("#refCopy");
     if (cp) cp.addEventListener("click", () => copyText(location.origin + "/?ref=" + kode));
@@ -3027,7 +3027,7 @@ function pageBantuan() {
   view().innerHTML =
     "<h2>"+tic("help")+" Bantuan</h2>" +
     faq.map(f => '<div class="card"><h3>' + f[0] + "</h3><p>" + f[1] + "</p></div>").join("") +
-    '<div class="card center"><h3>Masih bingung? 💬</h3><p class="muted">Chat admin langsung, fast respon di jam kerja. ✨</p>' +
+    '<div class="card center"><h3>Masih bingung? ' + tic("chat") + '</h3><p class="muted">Chat admin langsung, fast respon di jam kerja. ' + tic("spark") + '</p>' +
     '<a class="btn btn-primary" href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">' + tic("ig") + ' Hubungi Admin</a></div>';
 }
 
@@ -3271,22 +3271,22 @@ function popupKonfirmasiHapusAkun(uname, onYa) {
 function pageAdmin() {
   if (!AUTH.login) {
     view().innerHTML =
-      "<h2>🛡️ Panel Admin</h2>" +
+      "<h2>" + tic('shield') + " Panel Admin</h2>" +
       '<div class="card center"><p class="muted">Kamu lagi mode tamu. Halaman admin hanya bisa dibuka setelah login.</p>' +
-      '<a class="btn btn-primary btn-block" href="#/masuk">🔑 Masuk</a></div>';
+      '<a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk</a></div>';
     return;
   }
   if (!AUTH.admin) {
     view().innerHTML =
-      "<h2>🛡️ Panel Admin</h2>" +
+      "<h2>" + tic('shield') + " Panel Admin</h2>" +
       '<div class="card center"><p class="muted">Halaman ini khusus akun admin. Kalau kamu merasa ini salah, hubungi admin lewat halaman Bantuan ya. 🙂</p>' +
       '<a class="btn btn-primary btn-block" href="#/beranda">Ke Beranda</a></div>';
     return;
   }
   view().innerHTML =
-    "<h2>🛡️ Panel Admin</h2>" +
-    '<div class="card"><h3>📊 Ringkasan</h3><div id="admStat"><p class="muted">Memuat data...</p></div></div>' +
-    '<div class="card"><h3>🎟️ Kode Jatah AI</h3>' +
+    "<h2>" + tic('shield') + " Panel Admin</h2>" +
+    '<div class="card"><h3>' + tic("chart") + ' Ringkasan</h3><div id="admStat"><p class="muted">Memuat data...</p></div></div>' +
+    '<div class="card"><h3>' + tic("ticket") + ' Kode Jatah AI</h3>' +
     '<p class="muted">Buat kode redeem buat dibagikan ke member. Satu kode dipakai satu member, sekali pakai.</p>' +
     '<label class="muted" for="admKodeJml">Jumlah kode</label>' +
     '<input type="number" id="admKodeJml" value="5" min="1" max="200">' +
@@ -3300,19 +3300,19 @@ function pageAdmin() {
     '<button class="btn btn-primary btn-block" id="admKodeBtn">Generate Kode</button>' +
     '<p class="pf-msg" id="admKodeMsg"></p>' +
     '<div id="admKodeBaru"></div></div>' +
-    '<div class="card"><h3>📜 Daftar Kode</h3><div id="admKodeList"><p class="muted">Memuat...</p></div>' +
+    '<div class="card"><h3>' + tic("doc") + ' Daftar Kode</h3><div id="admKodeList"><p class="muted">Memuat...</p></div>' +
     '<button class="btn btn-block" id="admKodeRefresh">Muat Ulang</button></div>' +
-    '<div class="card"><h3>➕ Tambah Jatah AI</h3>' +
+    '<div class="card"><h3>' + tic("plus") + ' Tambah Jatah AI</h3>' +
     '<p class="muted">Cari member lalu tambah saldo jatah AI langsung ke akunnya.</p>' +
     '<input type="text" id="admCari" placeholder="ketik username, nama, atau email" autocomplete="off">' +
     '<button class="btn btn-block" id="admCariBtn">Cari Member</button>' +
     '<div id="admCariHasil"></div>' +
     '<p class="pf-msg" id="admGrantMsg"></p></div>' +
-    '<div class="card"><h3>💾 Backup Data</h3>' +
+    '<div class="card"><h3>' + tic("download") + ' Backup Data</h3>' +
     '<p class="muted">Unduh seluruh data aplikasi (member, kuota, koleksi, riwayat, kode) sebagai satu file JSON. Simpan di tempat aman sebagai cadangan.</p>' +
-    '<button class="btn btn-block" id="admBackupBtn">⬇️ Download Backup Sekarang</button>' +
+    '<button class="btn btn-block" id="admBackupBtn">' + tic("download") + ' Download Backup Sekarang</button>' +
     '<p class="pf-msg" id="admBackupMsg"></p></div>' +
-    '<div class="card"><h3>🗑️ Hapus Akun</h3>' +
+    '<div class="card"><h3>' + tic("trash") + ' Hapus Akun</h3>' +
     '<p class="muted">Hapus permanen satu akun dari username-nya, misalnya akun uji. Data terkaitnya (token, kuota, koleksi, riwayat) ikut dibersihkan. Akun admin tidak bisa dihapus. Tindakan ini tidak bisa dibatalkan.</p>' +
     '<input type="text" id="admHapusUser" placeholder="username akun yang mau dihapus" autocomplete="off">' +
     '<button class="btn btn-danger btn-block" id="admHapusBtn">Hapus Akun Ini</button>' +
@@ -3508,9 +3508,9 @@ async function pasangAplikasi() {
 }
 
 function kartuPasangAppHTML() {
-  return '<div class="card center"><h3>📲 Pasang Aplikasi</h3>' +
+  return '<div class="card center"><h3>' + tic("download") + ' Pasang Aplikasi</h3>' +
     '<p class="muted">Pasang KhairyPustaka ke layar utama HP-mu. Dibuka kayak aplikasi beneran, lebih cepat dan praktis.</p>' +
-    '<button class="btn btn-primary btn-block" id="btnPasangApp" type="button">📲 Pasang Sekarang</button>' +
+    '<button class="btn btn-primary btn-block" id="btnPasangApp" type="button">' + tic("download") + ' Pasang Sekarang</button>' +
     '<p class="muted tiny" id="pasangAppInfo"></p></div>';
 }
 
