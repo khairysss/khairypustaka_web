@@ -811,6 +811,8 @@ def migrate_guest(old_uid, new_uid):
             d["referred_by"] = by
             # --- codes: kepemilikan kode KP- tamu pindah ke akun baru
             refmod._move_code_locked(d, old_uid, new_uid)
+            # --- event share: data event tamu ikut pindah ke akun baru
+            refmod._move_event_locked(d, old_uid, new_uid)
             refmod._save(d)
     except Exception as e:
         log.warning("migrasi referral gagal: %s", e)
