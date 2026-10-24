@@ -2250,11 +2250,41 @@ def ref_register():
     except Exception:
         return jsonify({"ok": False})
     tercatat = rid is not None
+    if tercatat:
+        # Event share: join ini juga dihitung untuk tangga event referrer
+        # (kantong terpisah; reward referral lama di atas tetap jalan).
+        try:
+            refmod.event_record_join(rid, refmod.event_key(g.uid))
+        except Exception as e:
+            log.warning("event share join gagal dicatat: %s", e)
     if milestone:
         new_bal = sai.ai_topup(rid, refmod.REWARD_USES)
         return jsonify({"ok": True, "tercatat": tercatat, "milestone": True,
                         "reward": refmod.REWARD_USES, "saldo": new_bal})
     return jsonify({"ok": True, "tercatat": tercatat, "milestone": False})
+
+
+@app.get("/api/event-share")
+@with_rl
+def event_share_status():
+    """Status event share untuk sesi ini + kode referral pemiliknya."""
+    return jsonify({**refmod.event_status(g.uid),
+                    "kode": refmod.my_code(g.uid)})
+
+
+@app.post("/api/event-share/share")
+@with_rl
+def event_share_claim():
+    """Catat share event (sekali per akun; share ulang tidak nambah).
+
+    Wajib login: klaim tamu tidak dicatat, supaya satu orang tidak bisa
+    mengulang klaim lewat sesi tamu baru. Tamu yang login akan membawa
+    data eventnya lewat migrate_guest.
+    """
+    if not g.user:
+        return jsonify({"ok": False, "need_login": True}), 401
+    st, baru = refmod.event_claim_share(g.uid)
+    return jsonify({"ok": True, "baru": baru, **st})
 
 
 # ------------------------------------------------------------------- auth
@@ -2346,6 +2376,12 @@ def auth_verifikasi():
         kode_ref = authmod.consume_pending_ref(uid)
         if kode_ref:
             rid, milestone = refmod.register(uid, kode_ref)
+            if rid:
+                # Event share: join via verifikasi email juga dihitung.
+                try:
+                    refmod.event_record_join(rid, refmod.event_key(uid))
+                except Exception as e:
+                    log.warning("event share join gagal dicatat: %s", e)
             if milestone:
                 sai.ai_topup(rid, refmod.REWARD_USES)
     except Exception as e:
