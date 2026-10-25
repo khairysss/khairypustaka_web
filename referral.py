@@ -313,6 +313,179 @@ def register(new_uid, payload):
     return ref_key, milestone
 
 
+# ---------------------------------------------------------------- event share
+# Event share KhairyPustaka (keputusan Sul 2026-10-25, periode selamanya).
+# Tangga hadiah pemakaian AI premium, DIKUNCI (total, bukan tambahan):
+#   share saja            -> 5x
+#   share + 1 teman gabung -> total 10x (bukan 15x)
+#   3 teman gabung        -> total 15x
+#   5 teman gabung        -> total 20x
+#   7 teman gabung        -> total 25x (mentok; teman ke 8 tidak nambah)
+# Hadiah dicatat di kantong event TERPISAH ("saldo_event") di file web ini,
+# bukan ditambah ke saldo top-up biasa. Jalur premium yang memotong kantong
+# ini dibangun terpisah; sampai saat itu saldo_event hanya tercatat.
+# Join HANYA dihitung mulai peluncuran event (tidak mengimpor hitungan
+# referral lama). Klaim share dan join dicatat dalam satu transaksi
+# read-modify-write di bawah _LOCK, sama seperti referral biasa.
+EVENT_MAX = 25
+EVENT_TIERS = ((0, 5), (1, 10), (3, 15), (5, 20), (7, 25))
+
+
+def event_tier(teman, sudah_share):
+    """Total hadiah event untuk jumlah teman gabung dan status share."""
+    if not sudah_share:
+        return 0
+    hadiah = 5
+    for ambang, total in EVENT_TIERS:
+        if teman >= ambang:
+            hadiah = total
+    return hadiah
+
+
+def event_key(uid):
+    """Kunci identitas event untuk uid: ID Telegram bila terhubung, else uid."""
+    u = str(uid or "").strip()
+    if u.isdigit():
+        return u
+    return _tg_of_uid(u) or u
+
+
+def _event_doc(d):
+    """Bagian event di dokumen referral; dibuat bila belum ada."""
+    ev = d.get("event")
+    if not isinstance(ev, dict):
+        ev = {"shared": [], "joined": {}, "diberikan": {}, "saldo_event": {}}
+        d["event"] = ev
+    for k, v in (("shared", []), ("joined", {}),
+                 ("diberikan", {}), ("saldo_event", {})):
+        if not isinstance(ev.get(k), type(v)):
+            ev[k] = v
+    return ev
+
+
+def _event_status_dari(ev, key):
+    shared = key in (ev.get("shared") or [])
+    teman = len((ev.get("joined") or {}).get(key) or [])
+    hadiah = event_tier(teman, shared)
+    berikutnya = None
+    if shared and hadiah < EVENT_MAX:
+        for ambang, total in EVENT_TIERS:
+            if total > hadiah:
+                berikutnya = ambang - teman
+                break
+    return {"shared": shared, "teman": teman, "hadiah": hadiah,
+            "diberikan": int((ev.get("diberikan") or {}).get(key, 0) or 0),
+            "saldo_event": int((ev.get("saldo_event") or {}).get(key, 0) or 0),
+            "berikutnya": berikutnya, "maks": EVENT_MAX}
+
+
+def _event_bayar_locked(ev, key):
+    """Bayarkan selisih tier terbaru ke kantong event (idempoten).
+
+    Hanya menambah bila tier naik; tidak pernah mengurangi dan tidak
+    pernah membayar dua kali untuk tier yang sama.
+    """
+    st = _event_status_dari(ev, key)
+    tier = st["hadiah"]
+    lama = int((ev.get("diberikan") or {}).get(key, 0) or 0)
+    if tier > lama:
+        ev.setdefault("diberikan", {})[key] = tier
+        saldo = ev.setdefault("saldo_event", {})
+        saldo[key] = int(saldo.get(key, 0) or 0) + (tier - lama)
+    return _event_status_dari(ev, key)
+
+
+def event_status(uid):
+    """Status event untuk user (tanpa mengubah data)."""
+    key = event_key(uid)
+    ev = _load().get("event") or {}
+    return _event_status_dari(ev, key)
+
+
+def event_claim_share(uid):
+    """Catat share pertama user. Return (status, baru).
+
+    Share ke 2, ke 10, ke 100 dari akun yang sama: baru=False dan
+    hadiah TIDAK bertambah (hadiah share hanya sekali per akun).
+    """
+    key = event_key(uid)
+    with _LOCK:
+        d = _load()
+        ev = _event_doc(d)
+        shared = ev["shared"]
+        if key in shared:
+            return _event_status_dari(ev, key), False
+        shared.append(key)
+        st = _event_bayar_locked(ev, key)
+        _save(d)
+        return st, True
+
+
+def event_record_join(ref_key, new_key):
+    """Catat satu teman gabung untuk event. Return status referrer/None.
+
+    None bila: referrer sama dengan teman baru (akun sendiri), atau
+    teman baru sudah tercatat di referrer mana pun (tidak dobel).
+    Join dari referrer yang belum share tetap dicatat, tapi hadiahnya
+    0 sampai referrer itu share (klaim share lalu membayar tier penuh).
+    """
+    ref = str(ref_key or "").strip()
+    new = str(new_key or "").strip()
+    if not ref or not new or ref == new:
+        return None
+    with _LOCK:
+        d = _load()
+        ev = _event_doc(d)
+        joined = ev["joined"]
+        for lst in joined.values():
+            if new in lst:
+                return None
+        joined.setdefault(ref, []).append(new)
+        st = _event_bayar_locked(ev, ref)
+        _save(d)
+        return st
+
+
+def _move_event_locked(d, old_uid, new_uid):
+    """Pindahkan data event tamu ke akun baru (dipanggil dengan _LOCK).
+
+    Dipakai migrate_guest di auth.py, di samping pemindahan kode KP-.
+    Bila akun baru sudah punya data event sendiri, hitungan digabung
+    (union teman, jumlah saldo) bukan ditimpa.
+    """
+    ev = d.get("event")
+    if not isinstance(ev, dict):
+        return
+    old = str(old_uid or "").strip()
+    new = str(new_uid or "").strip()
+    if not old or not new or old == new:
+        return
+    ev = _event_doc(d)
+    shared = ev["shared"]
+    if old in shared:
+        shared = [x for x in shared if x != old]
+        if new not in shared:
+            shared.append(new)
+        ev["shared"] = shared
+    joined = ev["joined"]
+    if old in joined:
+        lst = joined.pop(old)
+        gab = joined.setdefault(new, [])
+        for x in lst:
+            if x not in gab:
+                gab.append(x)
+    for lst in joined.values():
+        for i, x in enumerate(lst):
+            if x == old:
+                lst[i] = new
+    for field in ("diberikan", "saldo_event"):
+        m = ev[field]
+        if old in m:
+            v = int(m.pop(old, 0) or 0)
+            m[new] = int(m.get(new, 0) or 0) + v
+    d["event"] = ev
+
+
 def merge_referral_to_tg(uids, tg_id):
     """Satukan hitungan referral uid web lama ke identitas Telegram.
 
