@@ -579,3 +579,12 @@ ol.langkah,ul.bersih{padding-left:20px}
 option{background:#0d2438;color:#eef7f9}
 ::placeholder{color:#75909e;opacity:1}
 ::selection{background:rgba(45,212,216,.35);color:#eef7f9}
+
+/* Banner event share di paling atas Beranda (Sul 2026-10-25) */
+.event-share-card{border:1.5px solid var(--teal);margin-bottom:16px}
+.event-share-top{display:flex;align-items:center;gap:14px}
+.event-share-angka{font-size:2.6rem;font-weight:800;color:var(--teal);line-height:1}
+.event-share-ladder{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
+.event-share-ladder span{background:rgba(45,212,216,.12);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:.8rem}
+.event-share-bar{height:10px;border-radius:999px;background:#102c44;overflow:hidden;margin:6px 0}
+.event-share-bar div{height:100%;background:var(--teal);border-radius:999px}
