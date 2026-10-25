@@ -1042,6 +1042,18 @@ function pageBeranda() {
     ).join("");
   }
   view().innerHTML =
+    '<section class="card event-share-card" id="eventShareCard">' +
+      '<div class="event-share-top"><span class="event-share-angka">25x</span>' +
+      '<div><h3 style="margin:0">Event Share KhairyPustaka</h3>' +
+      '<p class="muted tiny" style="margin:2px 0 0">Berlaku selamanya. Bagikan tautanmu, ajak teman gabung, dan kumpulkan pemakaian AI premium.</p></div></div>' +
+      '<div class="event-share-ladder">' +
+        '<span>Share saja: 5x</span><span>1 teman gabung: total 10x</span>' +
+        '<span>3 teman gabung: total 15x</span><span>5 teman gabung: total 20x</span>' +
+        '<span>7 teman gabung: total 25x</span>' +
+      '</div>' +
+      '<p class="muted tiny">Hadiah share cuma sekali per akun. Tiap teman dihitung sekali.</p>' +
+      '<div id="eventShareBody"><p class="muted tiny">Memuat progress event...</p></div>' +
+    '</section>' +
     '<section class="hero">' +
       '<img src="maskot.jpg" class="hero-maskot" alt="Maskot KhairyPustaka">' +
       "<h1>KhairyPustaka</h1>" +
@@ -1059,6 +1071,62 @@ function pageBeranda() {
       '<p class="muted">Video dan postingan edukasi dari akun resmi kami. Ketuk gambarnya buat buka langsung. 🎓</p>' +
       '<div class="kp-show-strip" id="kpShowStrip"><div class="kp-show-track" id="kpShowTrack">' + showcaseHTML() + "</div></div>" +
     "</div>";
+  // Event share: kartu paling atas Beranda. Klaim share hanya lewat
+  // tombol Bagikan atau Salin di kartu ini; server yang menghitung
+  // (klik berulang dari akun yang sama tidak menambah hadiah).
+  (function muatEventShare() {
+    const body = $("#eventShareBody");
+    if (!body) return;
+    if (!AUTH.login) {
+      body.innerHTML = '<a class="btn btn-primary" href="#/masuk">' + tic("key") + ' Masuk dulu buat ikut event</a>';
+      return;
+    }
+    let tautan = "";
+    function gambarProgress(d) {
+      const persen = Math.min(100, Math.round((Number(d.hadiah || 0) / 25) * 100));
+      const menuju = (d.berikutnya === null || d.berikutnya === undefined)
+        ? "Kamu sudah di tier tertinggi."
+        : ("Butuh " + d.berikutnya + " teman lagi ke tier berikut.");
+      body.innerHTML =
+        '<p><b>Status share:</b> ' + (d.shared ? "Sudah share" : "Belum share") +
+        ' &nbsp; <b>Teman gabung:</b> ' + d.teman +
+        ' &nbsp; <b>Hadiahmu sekarang:</b> ' + d.hadiah + 'x</p>' +
+        '<div class="event-share-bar"><div style="width:' + persen + '%"></div></div>' +
+        '<p class="muted tiny">' + menuju + ' Hadiah event tersimpan di kantong eventmu.</p>' +
+        '<button class="btn btn-accent" id="eventShareBtn">' + tic("send") + ' Bagikan Sekarang</button> ' +
+        '<button class="btn" id="eventShareCopy">' + tic("clipboard") + ' Salin Tautan Referral</button>';
+      const btnBagikan = $("#eventShareBtn"), btnSalin = $("#eventShareCopy");
+      async function klaim() {
+        const res = await apiPOST("/event-share/share", {});
+        if (!res.ok) { toast("Share belum tercatat, coba lagi ya. 😅"); return; }
+        if (res.data && res.data.baru) toast("Share tercatat! Hadiahmu sekarang " + res.data.hadiah + "x 🎉");
+        else toast("Share sudah pernah tercatat, hadiahmu tetap " + (res.data ? res.data.hadiah : d.hadiah) + "x.");
+        muatEventShare();
+      }
+      if (btnBagikan) btnBagikan.addEventListener("click", async () => {
+        if (!tautan) { toast("Tautan referral lagi nggak kebaca. 😅"); return; }
+        if (navigator.share) {
+          try {
+            await navigator.share({ title: "KhairyPustaka", text: "Cobain KhairyPustaka, asisten skripsi dan nugas gratis.", url: tautan });
+            klaim();
+          } catch (e) {
+            if (e && e.name === "AbortError") toast("Batal dibagikan.");
+            else { await copyText(tautan); klaim(); }
+          }
+        } else { await copyText(tautan); toast("Tautan disalin, silakan dibagikan."); klaim(); }
+      });
+      if (btnSalin) btnSalin.addEventListener("click", async () => {
+        if (!tautan) { toast("Tautan referral lagi nggak kebaca. 😅"); return; }
+        await copyText(tautan); toast("Tautan disalin."); klaim();
+      });
+    }
+    apiJSON("/event-share").then(res => {
+      if (!res.ok || !res.data) { body.innerHTML = '<p class="muted tiny">Progress event lagi nggak kebaca. 😅</p>'; return; }
+      const kode = res.data.kode || "";
+      tautan = kode ? (location.origin + "/?ref=" + kode) : "";
+      gambarProgress(res.data);
+    });
+  })();
   $$("#view .filter-chip").forEach(ch => ch.addEventListener("click", () => {
     aktif = ch.dataset.kat;
     try { sessionStorage.setItem("kp_home_tab", aktif); } catch (e) {}
