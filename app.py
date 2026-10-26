@@ -72,7 +72,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("kpweb")
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
 # Batas ukuran body request (2 MB) — tolak payload raksasa dengan 413
 # sebelum Werkzeug menelannya ke RAM (mitigasi OOM/DoS).
 app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024
@@ -3173,6 +3173,40 @@ _SENSITIVE_PATH_RE = re.compile(
     re.IGNORECASE)
 
 
+def _kirim_statis(cand):
+    """Kirim file statis dengan header cache hemat bandwidth.
+
+    Alasan dibuat (2026-10-26): rute statis bawaan Flask mengirim
+    no-cache sehingga Cloudflare selalu BYPASS dan tiap pengunjung
+    mengunduh ulang dari Render. File berversi (?v=) aman di-cache
+    setahun + immutable; gambar/ikon/video tanpa versi 7 hari;
+    sisanya 1 hari.
+    """
+    res = send_file(cand)
+    ext = os.path.splitext(cand)[1].lower()
+    if request.args.get("v"):
+        res.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif ext in (".js", ".css", ".png", ".jpg", ".jpeg", ".webp",
+                 ".svg", ".ico", ".mp4", ".webmanifest"):
+        res.headers["Cache-Control"] = "public, max-age=604800"
+    else:
+        res.headers["Cache-Control"] = "public, max-age=86400"
+    return res
+
+
+@app.get("/static/<path:fname>")
+def _static_file(fname):
+    if _SENSITIVE_PATH_RE.search(fname):
+        return "tidak ditemukan", 404
+    base = os.path.realpath(_STATIC_DIR)
+    cand = os.path.realpath(os.path.join(_STATIC_DIR, fname))
+    if not cand.startswith(base + os.sep):
+        return "tidak ditemukan", 404
+    if os.path.isfile(cand):
+        return _kirim_statis(cand)
+    return "tidak ditemukan", 404
+
+
 @app.route("/<path:path>", methods=["GET", "HEAD", "POST", "PUT", "DELETE",
                                     "PATCH", "OPTIONS"])
 def _spa_static(path):
@@ -3189,25 +3223,10 @@ def _spa_static(path):
     if not cand.startswith(base + os.sep):
         return send_file(os.path.join(_STATIC_DIR, "index.html"))
     if os.path.isfile(cand):
-        res = send_file(cand)
-        # HEMAT BANDWIDTH (keputusan Sul 2026-10-26, target maks 5GB/bulan):
-        # file statis WAJIB bisa di-cache Cloudflare, sebelumnya Flask
-        # mengirim no-cache sehingga Cloudflare selalu BYPASS dan tiap
-        # pengunjung mengunduh ulang dari Render. File berversi (?v=)
-        # aman di-cache setahun + immutable karena versinya berubah tiap
-        # update; gambar/ikon/video tanpa versi di-cache 7 hari; sisanya
-        # 1 hari. index.html fallback di bawah tetap no-cache bawaan
-        # Flask supaya update tampilan langsung menyebar.
-        ext = os.path.splitext(cand)[1].lower()
-        if request.args.get("v"):
-            res.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        elif ext in (".js", ".css", ".png", ".jpg", ".jpeg", ".webp",
-                     ".svg", ".ico", ".mp4", ".webmanifest"):
-            res.headers["Cache-Control"] = "public, max-age=604800"
-        else:
-            res.headers["Cache-Control"] = "public, max-age=86400"
-        return res
-    return send_file(os.path.join(_STATIC_DIR, "index.html"))
+        return _kirim_statis(cand)
+    res = send_file(os.path.join(_STATIC_DIR, "index.html"))
+    res.headers["Cache-Control"] = "no-cache"
+    return res
 
 
 if __name__ == "__main__":
