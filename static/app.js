@@ -1045,7 +1045,7 @@ function pageBeranda() {
     '<section class="card event-share-card" id="eventShareCard">' +
       '<div class="event-share-top"><span class="event-share-angka">25x</span>' +
       '<div><h3 style="margin:0">Event Share KhairyPustaka</h3>' +
-      '<p class="muted tiny" style="margin:2px 0 0">Berlaku selamanya. Bagikan tautanmu, ajak teman gabung, dan kumpulkan pemakaian AI premium.</p></div></div>' +
+      '<p class="muted tiny" style="margin:2px 0 0">Event waktu terbatas. Bagikan tautanmu, ajak teman gabung, dan kumpulkan pemakaian AI premium.</p></div></div>' +
       '<button class="event-share-toggle" id="eventShareToggle" aria-expanded="false" aria-controls="eventShareDetail">Lihat detail event &#9660;</button>' +
       '<div id="eventShareDetail" class="event-share-detail" hidden>' +
       '<div class="event-share-ladder">' +
@@ -1078,6 +1078,11 @@ function pageBeranda() {
   // tombol Bagikan atau Salin di kartu ini; server yang menghitung
   // (klik berulang dari akun yang sama tidak menambah hadiah).
   (function muatEventShare() {
+    if (Date.now() >= Date.parse("2026-11-09T16:00:00Z")) {
+      const kartu = $("#eventShareCard");
+      if (kartu) kartu.remove();
+      return;
+    }
     const body = $("#eventShareBody");
     if (!body) return;
     const tog = $("#eventShareToggle"), det = $("#eventShareDetail");
