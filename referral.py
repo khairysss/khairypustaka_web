@@ -30,6 +30,8 @@ import os
 import re
 import secrets
 import threading
+import time
+from datetime import datetime, timezone
 
 import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 
@@ -329,6 +331,16 @@ def register(new_uid, payload):
 # read-modify-write di bawah _LOCK, sama seperti referral biasa.
 EVENT_MAX = 25
 EVENT_TIERS = ((0, 5), (1, 10), (3, 15), (5, 20), (7, 25))
+# Batas event (keputusan Sul 2026-10-26): kartu hilang dari dashboard
+# mulai 10 Nov 2026 00.00 WITA. Tanggal batas TIDAK ditampilkan di
+# dashboard, hanya label event waktu terbatas. Hadiah yang sudah
+# didapat sebelum batas tetap tersimpan di kantong event.
+EVENT_END_TS = int(datetime(2026, 11, 9, 16, 0, tzinfo=timezone.utc).timestamp())
+
+
+def event_berakhir():
+    """True bila waktu sekarang sudah melewati batas event."""
+    return time.time() >= EVENT_END_TS
 
 
 def event_tier(teman, sudah_share):
@@ -412,6 +424,8 @@ def event_claim_share(uid):
     with _LOCK:
         d = _load()
         ev = _event_doc(d)
+        if event_berakhir():
+            return _event_status_dari(ev, key), False
         shared = ev["shared"]
         if key in shared:
             return _event_status_dari(ev, key), False
@@ -431,6 +445,8 @@ def event_record_join(ref_key, new_key):
     """
     ref = str(ref_key or "").strip()
     new = str(new_key or "").strip()
+    if event_berakhir():
+        return None
     if not ref or not new or ref == new:
         return None
     with _LOCK:
