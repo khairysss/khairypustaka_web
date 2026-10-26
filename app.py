@@ -252,7 +252,10 @@ def _session():
 
 @app.after_request
 def _set_sid(resp):
-    if getattr(g, "new_sid", False):
+    # File statis tidak butuh sesi: jangan set cookie di sini, karena
+    # respons yang membawa Set-Cookie membuat Cloudflare BYPASS cache
+    # walau Cache-Control sudah public. Homepage tetap set cookie.
+    if getattr(g, "new_sid", False) and not request.path.startswith("/static/"):
         resp.set_cookie(SID_COOKIE, g.sid, max_age=SID_TTL,
                         httponly=True, samesite="Lax", secure=True)
     # Security headers — meniru set Caddy di VPS lama (audit 2026-10-12),
