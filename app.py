@@ -3097,7 +3097,9 @@ _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 @app.get("/")
 def _spa_root():
-    return send_file(os.path.join(_STATIC_DIR, "index.html"))
+    res = send_file(os.path.join(_STATIC_DIR, "index.html"))
+    res.headers["Cache-Control"] = "no-cache"
+    return res
 
 
 # PWA (2026-10-18): manifest + service worker wajib MIME benar, dan
@@ -3132,7 +3134,9 @@ def _panduan(slug=None):
     fname = _PANDUAN_PAGES.get(key)
     if not fname:
         return send_file(os.path.join(_STATIC_DIR, "index.html"))
-    return send_file(os.path.join(_STATIC_DIR, fname))
+    res = send_file(os.path.join(_STATIC_DIR, fname))
+    res.headers["Cache-Control"] = "public, max-age=86400"
+    return res
 
 
 @app.get("/robots.txt")
@@ -3185,7 +3189,24 @@ def _spa_static(path):
     if not cand.startswith(base + os.sep):
         return send_file(os.path.join(_STATIC_DIR, "index.html"))
     if os.path.isfile(cand):
-        return send_file(cand)
+        res = send_file(cand)
+        # HEMAT BANDWIDTH (keputusan Sul 2026-10-26, target maks 5GB/bulan):
+        # file statis WAJIB bisa di-cache Cloudflare, sebelumnya Flask
+        # mengirim no-cache sehingga Cloudflare selalu BYPASS dan tiap
+        # pengunjung mengunduh ulang dari Render. File berversi (?v=)
+        # aman di-cache setahun + immutable karena versinya berubah tiap
+        # update; gambar/ikon/video tanpa versi di-cache 7 hari; sisanya
+        # 1 hari. index.html fallback di bawah tetap no-cache bawaan
+        # Flask supaya update tampilan langsung menyebar.
+        ext = os.path.splitext(cand)[1].lower()
+        if request.args.get("v"):
+            res.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif ext in (".js", ".css", ".png", ".jpg", ".jpeg", ".webp",
+                     ".svg", ".ico", ".mp4", ".webmanifest"):
+            res.headers["Cache-Control"] = "public, max-age=604800"
+        else:
+            res.headers["Cache-Control"] = "public, max-age=86400"
+        return res
     return send_file(os.path.join(_STATIC_DIR, "index.html"))
 
 
