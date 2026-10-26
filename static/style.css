@@ -582,6 +582,8 @@ option{background:#0d2438;color:#eef7f9}
 
 /* Banner event share di paling atas Beranda (Sul 2026-10-25) */
 .event-share-card{border:1.5px solid var(--teal);margin-bottom:16px}
+.event-share-toggle{margin-top:10px;background:transparent;border:1px solid var(--line);border-radius:999px;color:var(--teal);padding:6px 14px;font-size:.85rem;cursor:pointer}
+.event-share-detail[hidden]{display:none}
 .event-share-top{display:flex;align-items:center;gap:14px}
 .event-share-angka{font-size:2.6rem;font-weight:800;color:var(--teal);line-height:1}
 .event-share-ladder{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 4px}
