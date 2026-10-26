@@ -1046,6 +1046,8 @@ function pageBeranda() {
       '<div class="event-share-top"><span class="event-share-angka">25x</span>' +
       '<div><h3 style="margin:0">Event Share KhairyPustaka</h3>' +
       '<p class="muted tiny" style="margin:2px 0 0">Berlaku selamanya. Bagikan tautanmu, ajak teman gabung, dan kumpulkan pemakaian AI premium.</p></div></div>' +
+      '<button class="event-share-toggle" id="eventShareToggle" aria-expanded="false" aria-controls="eventShareDetail">Lihat detail event &#9660;</button>' +
+      '<div id="eventShareDetail" class="event-share-detail" hidden>' +
       '<div class="event-share-ladder">' +
         '<span>Share saja: 5x</span><span>1 teman gabung: total 10x</span>' +
         '<span>3 teman gabung: total 15x</span><span>5 teman gabung: total 20x</span>' +
@@ -1053,6 +1055,7 @@ function pageBeranda() {
       '</div>' +
       '<p class="muted tiny">Hadiah share cuma sekali per akun. Tiap teman dihitung sekali.</p>' +
       '<div id="eventShareBody"><p class="muted tiny">Memuat progress event...</p></div>' +
+      '</div>' +
     '</section>' +
     '<section class="hero">' +
       '<img src="maskot.jpg" class="hero-maskot" alt="Maskot KhairyPustaka">' +
@@ -1077,6 +1080,13 @@ function pageBeranda() {
   (function muatEventShare() {
     const body = $("#eventShareBody");
     if (!body) return;
+    const tog = $("#eventShareToggle"), det = $("#eventShareDetail");
+    if (tog && det) tog.addEventListener("click", () => {
+      const buka = det.hasAttribute("hidden");
+      if (buka) det.removeAttribute("hidden"); else det.setAttribute("hidden", "");
+      tog.setAttribute("aria-expanded", buka ? "true" : "false");
+      tog.innerHTML = buka ? "Tutup detail event &#9650;" : "Lihat detail event &#9660;";
+    });
     if (!AUTH.login) {
       body.innerHTML = '<a class="btn btn-primary" href="#/masuk">' + tic("key") + ' Masuk dulu buat ikut event</a>';
       return;
