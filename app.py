@@ -2123,7 +2123,7 @@ def admin_backup():
 
 
 @app.post("/api/backup-snapshot")
-    @with_rl
+@with_rl
 def backup_snapshot():
     """Snapshot seluruh kp_kv untuk cadangan eksternal otomatis.
 
