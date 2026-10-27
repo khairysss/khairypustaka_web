@@ -91,7 +91,7 @@ async def ide_topik_ai(keyword, top, gaps, premium=False):
     """Rumuskan 5 ide judul penelitian via AI, Bahasa Indonesia.
 
     top/gaps: hasil trending_topics (boleh kosong — AI tetap bisa berkreasi
-    dari pengetahuannya). Premium -> Sonar (riset tren) dulu. Kembalikan str | None.
+    dari pengetahuannya). Kembalikan str | None.
     """
     try:
         import ai_providers
@@ -113,7 +113,7 @@ async def ide_topik_ai(keyword, top, gaps, premium=False):
             "Variasikan: campur ide kuantitatif dan kualitatif. "
             "Akhiri dengan 1 baris tips memilih topik yang paling feasible.")
         # Prompt meminta maksimal 350 kata -> 1200 token longgar.
-        out = await ai_providers.generate(prompt, premium=premium,
+        out = await ai_providers.generate(prompt,
                                           search=True, max_tokens=1200)
         return (out or "").strip() or None
     except Exception as e:

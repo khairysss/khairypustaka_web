@@ -82,7 +82,9 @@ SID_TTL = 2 * 365 * 24 * 3600  # 2 tahun
 
 AI_KINDS = ("kerangka", "abstrak", "kuesioner", "latarbelakang", "simpulan",
             "sidang", "kisi", "metode", "pembahasan", "bab2",
-            "ringkas", "interpretasi")  # STRATEGI1: AI tempel
+            "ringkas", "interpretasi",
+            # PORT 2026-10-28: 4 kind baru dari patch khairypustaka-web.
+            "idejudul", "bahasa", "sidanglanjut", "konsep")
 
 # Ekonomi AI (audit 2026-10-17): batas input per kind di endpoint.
 # _prompt() di skripsi_ai memakai maksimal 1000 karakter teks/extra, jadi
@@ -93,6 +95,8 @@ AI_KIND_INPUT_CAP = {
     "latarbelakang": 2000, "simpulan": 2000, "sidang": 2000,
     "kisi": 2000, "metode": 2000,
     "pembahasan": 4000, "bab2": 4000, "ringkas": 4000, "interpretasi": 4000,
+    # PORT 2026-10-28: kind baru memakai cap default 2000 (eksplisit).
+    "idejudul": 2000, "bahasa": 2000, "sidanglanjut": 2000, "konsep": 2000,
 }
 
 # peta bidang Indonesia -> Inggris untuk publisher internasional (dari bot.py)
@@ -807,38 +811,23 @@ def topik():
         return _err("gagal mengambil tren publikasi", 502)
     ide, kuota_habis = None, False
     pilihan = _pilihan_model(body)
-    info, premium_gagal, premium_terkunci = {}, False, False
-    if pilihan in _MODEL_PREMIUM:
-        poolp, errp = _gerbang_premium(g.uid)
-        if errp:
-            premium_terkunci = True
+    info = {}
+    # REVOKASI 2026-10-28: tidak ada lagi jalur premium di sini; semua
+    # pilihan (termasuk kunci lama) memakai jalur gratis yang sama.
+    pool = _ai_consume_uid(g.uid)
+    if pool:
+        try:
+            ide, info = _run(topik_mod.ide_topik_ai_pilihan(
+                keyword, top, gaps, pilihan=pilihan))
+        except Exception as e:
+            log.warning("topik ide gagal: %s", e)
+            ide, info = None, {}
+        if not ide:
+            _ai_refund_uid(g.uid, pool)
         else:
-            try:
-                ide, info = _run(topik_mod.ide_topik_ai_pilihan(
-                    keyword, top, gaps, pilihan=pilihan))
-            except Exception as e:
-                log.warning("topik ide premium gagal: %s", e)
-                ide, info = None, {}
-            if not ide:
-                _refund_premium(g.uid, poolp)
-                premium_gagal = True
-            else:
-                sai.track_tool("topik", g.uid)
+            sai.track_tool("topik", g.uid)
     else:
-        pool = _ai_consume_uid(g.uid)
-        if pool:
-            try:
-                ide, info = _run(topik_mod.ide_topik_ai_pilihan(
-                    keyword, top, gaps, pilihan=pilihan))
-            except Exception as e:
-                log.warning("topik ide gagal: %s", e)
-                ide, info = None, {}
-            if not ide:
-                _ai_refund_uid(g.uid, pool)
-            else:
-                sai.track_tool("topik", g.uid)
-        else:
-            kuota_habis = True
+        kuota_habis = True
     saran = [] if ide else topik_mod.topic_suggestions(keyword, top, gaps)
     # R5 (audit 2026-10-13): jangan catat entri zonk (ide None dan saran kosong)
     if g.user and (ide or saran):
@@ -848,9 +837,6 @@ def topik():
     return jsonify({
         "tren": top, "gaps": gaps, "ide": ide, "saran": saran,
         "kuota_habis": kuota_habis,
-        "premium_gagal": premium_gagal,
-        "premium_terkunci": premium_terkunci,
-        "premium": bool(ide) and pilihan in _MODEL_PREMIUM,
         "model_label": info.get("label") if ide else None,
         "dialihkan": bool(info.get("dialihkan")) if ide else False,
         "model_pilihan": _MODEL_LABEL[pilihan],
@@ -1357,6 +1343,23 @@ def jadwal():
     return jsonify(data)
 
 
+# ---------------------------------------------------------------- daftar model
+@app.get("/api/models")
+def models():
+    """Registry model picker (port 2026-10-28): id + label + provider saja.
+
+    Hanya label, tanpa key apa pun. Frontend produksi memakai daftar
+    statis MODEL_OPSI sendiri; endpoint ini untuk verifikasi dan klien
+    masa depan, bukan pintu untuk memaksa model (pilihan tetap divalidasi
+    _pilihan_model di setiap endpoint AI).
+    """
+    import ai_providers as ai_prov
+    out = [{"key": "auto", "id": None, "label": "Otomatis",
+            "provider": None, "group": None}]
+    out.extend(ai_prov.registry_public())
+    return jsonify({"models": out})
+
+
 # ---------------------------------------------------------------- AI studio
 @app.post("/api/ai")
 @with_rl
@@ -1374,31 +1377,8 @@ def ai():
         return _err(f"teks kepanjangan (maksimal {cap} karakter)", 400)
     extra = (body.get("extra") or "").strip()
     pilihan = _pilihan_model(body)
-    if pilihan in _MODEL_PREMIUM:
-        poolp, errp = _gerbang_premium(g.uid)
-        if errp:
-            return errp
-        try:
-            hasil, info = _run(sai.generate_pilihan(
-                kind, text, extra, chat_id=g.uid, pilihan=pilihan))
-        except Exception as e:
-            log.warning("ai premium %s error: %s", kind, e)
-            hasil, info = None, {}
-        if not hasil:
-            _refund_premium(g.uid, poolp)
-            return jsonify({
-                "error": "premium_gagal", "model": _MODEL_LABEL[pilihan],
-                "pesan": _MODEL_LABEL[pilihan] + " lagi bermasalah saat "
-                         "ini. Saldo kamu tidak terpotong."}), 503
-        sai.track_tool("ai", g.uid)
-        if g.user:
-            histmod.catat(g.uid, "chat", text,
-                          {"sumber": "ai", "kind": kind,
-                           "text": text[:2000], "hasil": hasil})
-        return jsonify({"hasil": hasil, "kind": kind, "premium": True,
-                        "model_label": info.get("label"),
-                        "saldo": sai.ai_balance(g.uid),
-                        "sisa": _ai_left_uid(g.uid)})
+    # REVOKASI 2026-10-28: cabang premium dihapus total; semua pilihan
+    # memakai jalur gratis yang sama di bawah.
     pool = _ai_consume_uid(g.uid)
     if not pool:
         return jsonify({"error": "kuota_habis",
@@ -1448,31 +1428,8 @@ def tanya():
                         for e in tanya_mod.related(entry)],
         })
     pilihan = _pilihan_model(body)
-    if pilihan in _MODEL_PREMIUM:
-        poolp, errp = _gerbang_premium(g.uid)
-        if errp:
-            return errp
-        try:
-            jawaban, info = _run(tanya_mod.gemini_answer_pilihan(
-                q[:500], pilihan=pilihan))
-        except Exception as e:
-            log.warning("tanya premium error: %s", e)
-            jawaban, info = None, {}
-        if not jawaban:
-            _refund_premium(g.uid, poolp)
-            return jsonify({
-                "error": "premium_gagal", "model": _MODEL_LABEL[pilihan],
-                "pesan": _MODEL_LABEL[pilihan] + " lagi bermasalah saat "
-                         "ini. Saldo kamu tidak terpotong."}), 503
-        sai.track_tool("tanya", g.uid)
-        if g.user:
-            histmod.catat(g.uid, "chat", q,
-                          {"sumber": "tanya", "tipe_jawab": "ai",
-                           "q": q[:500], "jawaban": jawaban})
-        return jsonify({"tipe": "ai", "jawaban": jawaban, "premium": True,
-                        "model_label": info.get("label"),
-                        "saldo": sai.ai_balance(g.uid),
-                        "sisa": _ai_left_uid(g.uid)})
+    # REVOKASI 2026-10-28: cabang premium dihapus total; semua pilihan
+    # memakai jalur gratis yang sama di bawah.
     pool = _ai_consume_uid(g.uid)
     if not pool:
         return jsonify({"error": "kuota_habis",
@@ -1576,7 +1533,6 @@ def history_clear():
 def kuota():
     harian, saldo = _ai_info_uid(g.uid)
     return jsonify({"sisa": harian, "saldo": saldo,
-                    "premium": _ai_premium_uid(g.uid),
                     "admin": _is_web_admin()})
 
 
@@ -1862,58 +1818,33 @@ def _ai_info_uid(uid):
     return sai.ai_quota_info(uid)
 
 
-def _ai_premium_uid(uid):
-    """Admin web diperlakukan premium, seperti owner di bot Telegram."""
-    return _is_web_admin() or sai.is_premium(uid)
-
-
 # ------------------------------------------------------------ pemilih model
-# Fitur pemilih model (keputusan Sul 2026-10-19). Kunci pilihan dari klien
+# (REVOKASI 2026-10-28: helper premium di /api/kuota dihapus total
+# bersama gerbang premium; /api/kuota tidak lagi mengembalikan field premium.)
+# Fitur pemilih model (keputusan Sul 2026-10-19; daftar diperbarui port
+# 2026-10-28; premium DIREVOKASI 2026-10-28). Kunci pilihan dari klien
 # divalidasi terhadap daftar putih ini; nilai apa pun di luar daftar
-# diperlakukan sebagai "auto" dan TIDAK PERNAH bisa menjadi premium.
-_MODEL_PILIHAN = {"auto", "gptoss", "qwen", "gemini", "llama",
-                  "claude", "sonar"}
-_MODEL_PREMIUM = {"claude", "sonar"}
-_MODEL_LABEL = {"auto": "Otomatis", "gptoss": "GPT-OSS 120B",
-                "qwen": "Qwen 3.8 27B", "gemini": "Gemini",
-                "llama": "Llama 3.3 70B", "claude": "Claude Haiku 4.5",
-                "sonar": "Perplexity Sonar"}
+# diperlakukan sebagai "auto". "auto" tetap default seperti produksi.
+# 9 pilihan model = 2 Cerebras + 1 Gemini Flash + 6 OpenRouter gratis.
+# Tidak ada lagi konstanta premium: konstanta itu dihapus bersama gerbang
+# premium di bawah. Nilai lama (llama/claude/sonar) dari klien lama
+# otomatis jatuh ke "auto" lewat _pilihan_model di bawah.
+_MODEL_PILIHAN = {"auto", "gptoss", "qwen", "gemini",
+                  "gemma31", "gemma26", "nemotron_ultra", "inkling",
+                  "nemotron_lightning", "nemotron_nano"}
+_MODEL_LABEL = {"auto": "Otomatis", "gptoss": "GPT OSS 120B",
+                "qwen": "Qwen 3.8 27B", "gemini": "Gemini Flash",
+                "gemma31": "Gemma 4 31B (Gratis)",
+                "gemma26": "Gemma 4 26B (Gratis)",
+                "nemotron_ultra": "Nemotron 3 Ultra (Gratis)",
+                "inkling": "Inkling (Gratis)",
+                "nemotron_lightning": "Nemotron 3.5 Lightning (Gratis)",
+                "nemotron_nano": "Nemotron 3 Nano Reasoning (Gratis)"}
 
 
 def _pilihan_model(body):
     v = str((body or {}).get("model") or "auto").strip().lower()
     return v if v in _MODEL_PILIHAN else "auto"
-
-
-def _gerbang_premium(uid):
-    """Gerbang server jalur premium. Return (pool, err_response).
-
-    Lolos -> pool "saldo" (1x saldo SUDAH direservasi atomik) atau "admin"
-    (tanpa potongan). Gagal -> err_response 403 premium_terkunci.
-    Ini SATU-SATUNYA pintu model premium: wajib login + saldo top-up > 0.
-    Reservasi dikembalikan pemanggil via _refund_premium bila generate
-    premium gagal, jadi saldo hanya terpotong bila premium benar-benar
-    berhasil melayani.
-    """
-    if _is_web_admin():
-        return "admin", None
-    if not g.user or _tamu_web_uid(uid):
-        return None, (jsonify({
-            "error": "premium_terkunci",
-            "pesan": "Model premium khusus member yang punya saldo top-up. "
-                     "Login dulu yuk."}), 403)
-    pool = sai.ai_try_consume_saldo(uid)
-    if not pool:
-        return None, (jsonify({
-            "error": "premium_terkunci",
-            "pesan": "Saldo top-up kamu kosong. Top up dulu buat pakai "
-                     "model premium ya."}), 403)
-    return pool, None
-
-
-def _refund_premium(uid, pool):
-    if pool == "saldo":
-        sai.ai_refund(uid, "saldo")
 
 
 def _wita_midnight_ts():
@@ -1968,9 +1899,8 @@ def admin_statistik():
     qd = sai._load() if hasattr(sai, "_load") else {}
     tools_ai = qd.get("tools") or {}
     ai_rows, ai_h, ai_t = _agregasi_pakai(tools_ai, today)
-    prem = qd.get("premium") or {}
-    premium_n = sum(1 for exp in (prem.values() if isinstance(prem, dict)
-                                 else []) if isinstance(exp, str) and exp >= today)
+    # REVOKASI 2026-10-28: hitungan akun premium dihapus; data lama
+    # "premium" di store (bila ada) tidak lagi dibaca/ditampilkan.
     saldo_total = 0
     bal = qd.get("ai_balance") or {}
     if isinstance(bal, dict):
@@ -1984,8 +1914,7 @@ def admin_statistik():
     return jsonify({"ok": True, "hari_ini": today,
                     "member": {"total": len(users),
                                "per_provider": per_provider,
-                               "baru_hari_ini": baru_hari_ini,
-                               "premium": premium_n},
+                               "baru_hari_ini": baru_hari_ini},
                     "ai": {"hari_ini": ai_h, "total": ai_t,
                            "per_fitur": ai_rows},
                     "nonai": {"hari_ini": nonai_h, "total": nonai_t,

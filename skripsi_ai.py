@@ -1,7 +1,7 @@
 """Fitur AI skripsi: /kerangka, /abstrak, /kuesioner, /latarbelakang.
 
-Pakai rotasi provider AI (ai_providers) + kuota harian
-gratis agar siap jadi fitur premium (user premium = tanpa batas).
+Pakai rotasi provider AI gratis (ai_providers) + kuota harian umum.
+REVOKASI 2026-10-28: tidak ada lagi fitur premium di sini.
 """
 import hashlib
 import json
@@ -160,86 +160,27 @@ def _admin_id():
 
 
 def is_premium(chat_id):
-    """True bila langganan masih berlaku (berbasis tanggal kedaluwarsa).
+    """SELALU False sejak revokasi premium 2026-10-28 (keputusan Sul).
 
-    Admin/pemilik bot selalu premium tanpa batas.
+    Tidak ada lagi pembedaan member premium vs non-premium: semua user
+    diperlakukan sama di rotasi gratis dan kuota harian umum. Fungsi ini
+    dipertahankan sebagai stub agar 15+ pemanggil lama tetap jalan tanpa
+    perubahan perilaku selain hilangnya jalur tanpa-batas; data "premium"
+    lama di store tidak lagi dibaca di sini. Admin web tanpa batas tetap
+    diatur terpisah di app.py via _is_web_admin, bukan lewat fungsi ini.
     """
-    if _admin_id() and str(chat_id) == _admin_id():
-        return True
-    exp = _load().get("premium", {}).get(str(chat_id))
-    return bool(exp) and exp >= _today()
+    return False
 
 
 def premium_until(chat_id):
-    """Tanggal kedaluwarsa 'YYYY-MM-DD', 'selamanya' untuk admin, atau None."""
-    if _admin_id() and str(chat_id) == _admin_id():
-        return "selamanya"
-    exp = _load().get("premium", {}).get(str(chat_id))
-    return exp if exp and exp >= _today() else None
+    """Selalu None sejak revokasi premium 2026-10-28 (tidak ada lagi flag)."""
+    return None
 
 
-def set_premium(chat_id, days=30):
-    """Aktifkan/perpanjang premium N hari.
-
-    Dihitung dari expiry lama bila masih aktif (extend), bukan dari hari
-    ini — jadi beli dua kali / perpanjang dini tidak menghanguskan sisa hari.
-    """
-    d = _load()
-    if isinstance(d.get("premium"), list):  # jaga-jaga format lama
-        d["premium"] = {}
-    today = datetime.now(_WITA).date()
-    cur = d["premium"].get(str(chat_id))
-    try:
-        base = max(date.fromisoformat(cur), today) if cur else today
-    except (ValueError, TypeError):
-        base = today
-    exp = (base + timedelta(days=days)).isoformat()
-    d["premium"][str(chat_id)] = exp
-    _save(d)
-    return exp
-
-
-def del_premium(chat_id):
-    d = _load()
-    if isinstance(d.get("premium"), dict):
-        d["premium"].pop(str(chat_id), None)
-        _save(d)
-
-
-def premium_sweep():
-    """Dipakai background loop: kembalikan (expired, remind_h3, remind_h1).
-
-    - expired: chat_id yang langganannya habis hari ini (dihapus).
-    - remind_h3 / remind_h1: perlu diingatkan H-3 / H-1 (sekali saja).
-    """
-    d = _load()
-    today = _today()
-    prem = d.get("premium", {})
-    if isinstance(prem, list):
-        prem = {str(c): "2099-12-31" for c in prem}
-        d["premium"] = prem
-    rem = d.setdefault("reminded", [])
-    expired, r3, r1 = [], [], []
-    for cid, exp in list(prem.items()):
-        try:
-            delta = (date.fromisoformat(exp) - date.fromisoformat(today)).days
-        except ValueError:
-            continue
-        if delta < 0:
-            expired.append(cid)
-            del prem[cid]
-        elif delta == 3 and f"{cid}:h3" not in rem:
-            r3.append(cid)
-            rem.append(f"{cid}:h3")
-        elif delta == 1 and f"{cid}:h1" not in rem:
-            r1.append(cid)
-            rem.append(f"{cid}:h1")
-    _save(d)
-    return expired, r3, r1
 
 
 def ai_quota_left(chat_id):
-    """Sisa jatah AI gratis hari ini (premium -> 999 = tak terbatas)."""
+    """Sisa jatah AI gratis hari ini (kuota harian umum)."""
     if is_premium(chat_id):
         return 999
     u = _load().get("users", {}).get(str(chat_id))
@@ -542,41 +483,6 @@ def ai_refund(chat_id, pool=None):
         _save(d)
 
 
-def ai_try_consume_saldo(chat_id):
-    """Reservasi 1x KHUSUS dari saldo top-up (jalur premium pemilih model).
-
-    Atomik di bawah _LOCK yang sama dengan ai_try_consume. Return "saldo"
-    bila saldo > 0 dan berhasil direservasi, None bila saldo kosong.
-    Jatah harian TIDAK pernah disentuh fungsi ini — gerbang premium di
-    app.py memakai ini agar model premium mustahil terlayani dari jatah
-    gratis. Kembalikan reservasi gagal pakai ai_refund(chat_id, "saldo").
-    """
-    pid = _tg_pid(chat_id)
-    if pid:
-        _ensure_tg_migrated(chat_id, pid)
-    with _LOCK:
-        if pid:
-            try:
-                bd = _bot_load()
-                if bd is None:
-                    return None
-                bb = bd.setdefault("ai_balance", {})
-                saldo = int(bb.get(pid, 0) or 0)
-                if saldo > 0:
-                    bb[pid] = saldo - 1
-                    _bot_save(bd)
-                    return "saldo"
-            except Exception as e:
-                log.warning("pakai saldo premium bot gagal: %s", e)
-            return None
-        d = _load()
-        bal = d.setdefault("ai_balance", {})
-        saldo = int(bal.get(str(chat_id), 0) or 0)
-        if saldo > 0:
-            bal[str(chat_id)] = saldo - 1
-            _save(d)
-            return "saldo"
-        return None
 
 
 def ai_balance(chat_id):
@@ -636,7 +542,7 @@ def ai_topup(chat_id, uses):
 
 
 def ai_quota_info(chat_id):
-    """(sisa_harian, saldo). Premium -> (999, saldo)."""
+    """(sisa_harian, saldo) untuk kuota harian umum."""
     if is_premium(chat_id):
         return 999, ai_balance(chat_id)
     return ai_quota_left(chat_id), ai_balance(chat_id)
@@ -700,7 +606,9 @@ def first_seen(chat_id):
 AI_TOOLS = {"topik", "tanya", "kerangka", "abstrak", "kuesioner",
             "latarbelakang", "simpulan", "sidang", "kisi",
             "metode", "pembahasan", "bab2",
-            "ringkas", "interpretasi", "jadwalai"}  # STRATEGI1: AI tempel
+            "ringkas", "interpretasi", "jadwalai",
+            # PORT 2026-10-28: 4 kind baru dari patch khairypustaka-web.
+            "idejudul", "bahasa", "sidanglanjut", "konsep"}
 
 
 def track_tool(name, chat_id=None):
@@ -735,19 +643,14 @@ def track_tool(name, chat_id=None):
 
 
 def usage_stats():
-    """Statistik untuk admin: member (total/premium/non-premium, TANPA admin)
+    """Statistik untuk admin: member (total, TANPA admin)
     + pemakaian fitur AI vs non-AI (hari ini & keseluruhan, hitungan kali pakai)."""
     d = _load()
     today = _today()
     admin = _admin_id()
     seen = d.get("seen", {})
     total = sum(1 for k in seen if not (admin and str(k) == admin))
-    prem = d.get("premium", {})
-    if isinstance(prem, list):
-        prem = {}
-    premium_n = sum(1 for cid, exp in prem.items()
-                    if isinstance(exp, str) and exp >= today
-                    and not (admin and str(cid) == admin))
+    # REVOKASI 2026-10-28: tidak ada lagi hitungan premium di statistik.
     ai_hari = ai_total = nonai_hari = nonai_total = 0
     for name, t in (d.get("tools") or {}).items():
         if not isinstance(t, dict):
@@ -773,8 +676,7 @@ def usage_stats():
         ((nm, int(tt.get("total", 0))) for nm, tt in (d.get("tools") or {}).items()
          if isinstance(tt, dict)),
         key=lambda x: -x[1])[:8]
-    return {"total": total, "premium": premium_n,
-            "free": max(0, total - premium_n),
+    return {"total": total,
             "ai_hari": ai_hari, "ai_total": ai_total,
             "nonai_hari": nonai_hari, "nonai_total": nonai_total,
             "aktif_hari": aktif_hari, "kembali": kembali,
@@ -785,10 +687,7 @@ def quota_footer(chat_id):
     """Footer transparan sisa kuota di tiap balasan AI.
 
     Dipanggil SETELAH ai_record() agar angkanya mutakhir.
-    Premium -> string kosong (tidak diganggu footer).
     """
-    if is_premium(chat_id):
-        return ""
     harian, saldo = ai_quota_info(chat_id)
     s = f"\n\n<i>⚡ Sisa AI hari ini: {harian}x"
     if saldo > 0:
@@ -912,6 +811,43 @@ def _prompt(kind, text, extra=""):
                 "(per minggu bila sisa lebih dari 14 hari, per hari bila 14 hari atau kurang), "
                 "tiap tahap ada target konkret, sisakan 20% waktu terakhir untuk revisi & cadangan. "
                 "Tutup dengan 1 kalimat penyemangat.")
+    # PORT 2026-10-28: 4 kind baru, prompt disalin persis dari patch
+    # khairypustaka-web (aturan sama: draf saja, marker [butuh sitasi] /
+    # [sesuaikan], tanpa angka karangan, netral jurusan).
+    if kind == "idejudul":
+        return (BASE +
+                "Buatkan 3 ide judul skripsi dari topik/jurusan berikut.\n\nTopik/jurusan: " + text +
+                "\n\nJawab maksimal 350 kata: tiap judul harus KONKRET (menyebut variabel atau "
+                "fokus, populasi/lokasi bila relevan, dan konteksnya), bukan judul generik. "
+                "Di bawah tiap judul, tulis 1 kalimat research gap: kesenjangan apa yang "
+                "diisi judul itu. Sisipkan [sesuaikan] pada bagian yang harus diisi data "
+                "atau konteks sebenarnya oleh user. Netral jurusan.")
+    if kind == "bahasa":
+        return (BASE +
+                "Perbaiki kalimat berikut menjadi bahasa akademik yang baku, tanpa mengubah "
+                "maksudnya.\n\nKalimat: " + text +
+                "\n\nJawab maksimal 300 kata: tulis dulu versi perbaikannya, lalu daftar singkat "
+                "perubahan yang dilakukan (mis. diksi, struktur kalimat, tanda baca). "
+                "Jangan menambah klaim, data, atau angka baru. Bila kalimat asli mengandung "
+                "klaim yang butuh referensi, sisipkan [butuh sitasi] di tempat itu.")
+    if kind == "sidanglanjut":
+        return (BASE +
+                "Ini latihan sidang lanjutan (single-shot). Judul dan jawaban user atas "
+                "pertanyaan dosen ada di bawah.\n\nBahan: " + text +
+                "\n\nJawab maksimal 300 kata: (1) feedback singkat atas jawaban user "
+                "(apa yang sudah kuat, apa yang perlu diperbaiki, tanpa mengarang data "
+                "penelitiannya); (2) 1 pertanyaan lanjutan dari dosen penguji yang nyambung "
+                "dengan jawaban itu, beserta 2-3 poin kunci jawaban. Sisipkan [sesuaikan] "
+                "pada bagian yang harus diisi data sebenarnya.")
+    if kind == "konsep":
+        return (BASE +
+                "Jelaskan konsep/istilah akademik berikut dalam Bahasa Indonesia yang mudah "
+                "dipahami mahasiswa.\n\nKonsep/istilah: " + text +
+                "\n\nJawab maksimal 350 kata dengan struktur: (1) definisi singkat dan jelas; "
+                "(2) 1 contoh konkret dari dunia skripsi/tugas kuliah; (3) kesalahan umum "
+                "dalam memahami atau memakai konsep ini; (4) istilah terkait yang sering "
+                "tertukar dengannya. Jangan mengarang angka atau klaim penelitian; bila ada "
+                "klaim yang butuh referensi, sisipkan [butuh sitasi]. Netral jurusan.")
     raise ValueError("kind AI tidak dikenal: " + kind)
 
 
@@ -929,6 +865,11 @@ HEADERS = {
     "ringkas": "✨ <b>Ringkasan AI</b>\n\n",
     "interpretasi": "✨ <b>Contoh Interpretasi (AI)</b>\n\n",
     "jadwalai": "✨ <b>Rencana Pengerjaan (AI)</b>\n\n",
+    # PORT 2026-10-28 (disalin dari patch khairypustaka-web).
+    "idejudul": "💡 <b>Ide Judul + Research Gap</b>\n\n",
+    "bahasa": "✏️ <b>Bahasa Akademik</b>\n\n",
+    "sidanglanjut": "🛡️ <b>Latihan Sidang Lanjutan</b>\n\n",
+    "konsep": "📚 <b>Penjelasan Konsep</b>\n\n",
 }
 
 FOOTERS = {
@@ -945,10 +886,15 @@ FOOTERS = {
     "ringkas": "\n\n💡 <i>Ringkasan AI — tetap baca jurnal aslinya sebelum dikutip ya.</i>",
     "interpretasi": "\n\n💡 <i>Ganti penanda [...] dengan angka hasil ujimu yang sebenarnya.</i>",
     "jadwalai": "\n\n💡 <i>Sesuaikan ritmenya dengan jadwal kuliahmu — yang penting konsisten.</i>",
+    # PORT 2026-10-28 (disalin dari patch khairypustaka-web).
+    "idejudul": "\n\n💡 <i>Ini ide awal — diskusikan dengan dosen pembimbing dan cek kelayakan datanya sebelum dipakai.</i>",
+    "bahasa": "\n\n💡 <i>Baca ulang versi perbaikannya dengan suaramu sendiri sebelum dipakai di naskah.</i>",
+    "sidanglanjut": "\n\n💡 <i>Latih jawaban lanjutanmu dengan suara lantang biar pede saat sidang nanti.</i>",
+    "konsep": "\n\n💡 <i>Kalau konsep ini dipakai di Bab 2, lengkapi sitasi pada [butuh sitasi] dari sumber aslinya.</i>",
 }
 
 
-# fitur yang lebih cocok dijawab model riset (Sonar) dibanding model tulis
+# kind yang memakai pencarian (search=True) di rotasi AI
 _SEARCH_KINDS = {"tanya", "topik"}
 
 
@@ -960,17 +906,18 @@ AI_KIND_MAXTOK = {
     "abstrak": 1200, "latarbelakang": 1200, "simpulan": 1200,
     "kisi": 1200, "pembahasan": 1200, "bab2": 1200,
     "ringkas": 800, "interpretasi": 800,
+    # PORT 2026-10-28: prompt baru maksimal 300-350 kata -> 1200 longgar.
+    "idejudul": 1200, "bahasa": 1200, "sidanglanjut": 1200, "konsep": 1200,
 }
 
 
 async def generate(kind, text, extra="", chat_id=None):
-    """Generate via rotasi AI. User premium -> model berbayar (Haiku/Sonar),
-    fallback otomatis ke rotasi gratis bila gagal."""
+    """Generate via rotasi AI gratis (revokasi premium 2026-10-28:
+    tidak ada lagi parameter premium di jalur ini)."""
     try:
-        premium = bool(chat_id) and is_premium(chat_id)
         return await ai_providers.generate(
             _prompt(kind, text, extra),
-            premium=premium, search=kind in _SEARCH_KINDS,
+            search=kind in _SEARCH_KINDS,
             max_tokens=AI_KIND_MAXTOK.get(kind, 1200))
     except Exception as e:
         log.warning("generate %s gagal: %s", kind, e)

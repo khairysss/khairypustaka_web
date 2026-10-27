@@ -679,47 +679,26 @@ def related(entry, n=2):
 _GEMINI_MODELS = None  # daftar model terurut (cache per proses)
 _GEMINI_OK = 0        # indeks model yang terakhir berhasil
 
+# PORT 2026-10-28, kunci Gemini: HANYA varian Flash. Daftar dinamis dari
+# API Google sengaja TIDAK dipakai lagi, karena daftar itu memuat semua
+# model akun termasuk varian Pro yang berbayar, dan fallback bisa nyasar
+# ke Pro begitu Flash gagal 404. Daftar statis ini satu-satunya yang
+# boleh dipanggil; gemini_generate menolak nama di luar daftar.
+GEMINI_FLASH_MODELS = (
+    "models/gemini-flash-latest",
+    "models/gemini-3.8-flash", "models/gemini-3.6-flash",
+    "models/gemini-3.5-flash", "models/gemini-3.5-flash-lite",
+    "models/gemini-3.1-flash-lite",
+    "models/gemini-2.5-flash", "models/gemini-2.0-flash",
+)
+
 
 async def _gemini_ranked_models(key):
-    """Daftar kandidat model terurut: alias latest dulu, lalu versi terbaru."""
+    """Daftar kandidat Flash saja, urutan terbaru dulu (statis, terkunci)."""
     global _GEMINI_MODELS
     if _GEMINI_MODELS is not None:
         return _GEMINI_MODELS
-    import httpx
-    import re as _re
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as cli:
-            r = await cli.get(
-                "https://generativelanguage.googleapis.com/v1beta/models",
-                params={"key": key, "pageSize": 100})
-            r.raise_for_status()
-            names = [m.get("name") for m in r.json().get("models", [])
-                     if "generateContent" in (m.get("supportedGenerationMethods") or [])
-                     and m.get("name")]
-    except Exception as e:
-        log.warning("gemini list models gagal: %s", e)
-        names = []
-    for extra in ("models/gemini-flash-latest",
-                  "models/gemini-3.8-flash", "models/gemini-3.6-flash",
-                  "models/gemini-3.5-flash", "models/gemini-3.5-flash-lite",
-                  "models/gemini-3.1-flash-lite",
-                  "models/gemini-2.5-flash", "models/gemini-2.0-flash"):
-        if extra not in names:
-            names.append(extra)
-
-    def _rank(n):
-        nl = n.lower()
-        if "latest" in nl:
-            return 0
-        m = _re.search(r"(\d+)\.(\d+)", nl)
-        if m:
-            return 100 - (int(m.group(1)) * 10 + int(m.group(2)))
-        if "flash" in nl:
-            return 50
-        return 90
-
-    _GEMINI_MODELS = sorted(names, key=_rank)
+    _GEMINI_MODELS = list(GEMINI_FLASH_MODELS)
     return _GEMINI_MODELS
 
 
@@ -752,6 +731,12 @@ async def gemini_generate(prompt, max_output_tokens=1500):
     order = [models[(_GEMINI_OK + i) % n] for i in range(n)]
     async with httpx.AsyncClient(timeout=30) as cli:
         for model in order:
+            # Jaring kedua (port 2026-10-28): nama di luar daftar Flash
+            # terkunci tidak pernah dikirim, walau cache somehow berubah.
+            if model not in GEMINI_FLASH_MODELS:
+                log.warning("gemini dikunci: lewati model di luar Flash: %s",
+                            model)
+                continue
             for attempt in (1, 2):
                 try:
                     r = await cli.post(
@@ -800,7 +785,9 @@ async def gemini_generate(prompt, max_output_tokens=1500):
 
 
 async def gemini_answer(q, premium=False):
-    """Jawaban AI via rotasi provider. Premium -> Sonar (riset) dulu."""
+    """Jawaban AI via rotasi gratis. Argumen premium dipertahankan demi
+    kompatibilitas pemanggil lama tapi DIABAIKAN sejak revokasi
+    2026-10-28 (tidak ada lagi model berbayar)."""
     import ai_providers
     prompt = (
         "Kamu asisten skripsi/tugas akhir untuk mahasiswa Indonesia semua jurusan. "
@@ -810,7 +797,7 @@ async def gemini_answer(q, premium=False):
         "arahkan kembali ke topik skripsi.\n\nPertanyaan: " + q
     )
     # Prompt meminta maksimal 250 kata -> 1000 token longgar.
-    return await ai_providers.generate(prompt, premium=premium, search=True,
+    return await ai_providers.generate(prompt, search=True,
                                        max_tokens=1000)
 
 
