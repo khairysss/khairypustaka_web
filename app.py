@@ -271,6 +271,27 @@ def _set_sid(resp):
     resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     resp.headers.setdefault("Permissions-Policy",
                             "camera=(), microphone=(), geolocation=()")
+    # CSP (2026-10-28, menutup temuan scan "Missing CSP"): ketat tapi
+    # disesuaikan ke sumber daya nyata situs ini — script inline hanya
+    # satu (modal intro di index.html) sehingga diizinkan via hash
+    # sha256, BUKAN 'unsafe-inline'; beacon Cloudflare Web Analytics
+    # adalah satu-satunya script eksternal. Kalau index.html diubah,
+    # hash di bawah WAJIB dihitung ulang atau modal intro tidak jalan.
+    resp.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        "script-src 'self' "
+        "'sha256-2hGOU2HQQ2FL51aFd5ePfu6s2EZQiDsCepGuxxYw+z0=' "
+        "https://static.cloudflareinsights.com; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "media-src 'self'; "
+        "font-src 'self'; "
+        "connect-src 'self'; "
+        "frame-ancestors 'self'; "
+        "base-uri 'self'; "
+        "form-action 'self'; "
+        "object-src 'none'")
     return resp
 
 
