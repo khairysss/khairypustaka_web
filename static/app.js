@@ -155,7 +155,7 @@ let AUTH_SIAP = false; // R2 (audit 2026-10-13): true setelah /auth/status perta
 let _riwAntre = [];    // R2: entri tamu yang dicatat sebelum status auth pasti
 
 /* Jatah harian: tamu = ember gabungan 5x/hari buat semua fitur
-   (AI + non-AI, keputusan Sul 2026-10-19); login = jatah AI 10x/hari. */
+   (AI + non-AI, keputusan Sul 2026-10-19); login = jatah AI 15x/hari. */
 function aiHarian() { return 10; }
 function tamuHarian() { return 5; }
 
@@ -1042,21 +1042,6 @@ function pageBeranda() {
     ).join("");
   }
   view().innerHTML =
-    '<section class="card event-share-card" id="eventShareCard">' +
-      '<div class="event-share-top"><span class="event-share-angka">25x</span>' +
-      '<div><h3 style="margin:0">Event Share KhairyPustaka</h3>' +
-      '<p class="muted tiny" style="margin:2px 0 0">Event waktu terbatas. Bagikan tautanmu, ajak teman gabung, dan kumpulkan pemakaian AI.</p></div></div>' +
-      '<button class="event-share-toggle" id="eventShareToggle" aria-expanded="false" aria-controls="eventShareDetail">Lihat detail event &#9660;</button>' +
-      '<div id="eventShareDetail" class="event-share-detail" hidden>' +
-      '<div class="event-share-ladder">' +
-        '<span>Share saja: 5x</span><span>1 teman gabung: total 10x</span>' +
-        '<span>3 teman gabung: total 15x</span><span>5 teman gabung: total 20x</span>' +
-        '<span>7 teman gabung: total 25x</span>' +
-      '</div>' +
-      '<p class="muted tiny">Hadiah share cuma sekali per akun. Tiap teman dihitung sekali.</p>' +
-      '<div id="eventShareBody"><p class="muted tiny">Memuat progress event...</p></div>' +
-      '</div>' +
-    '</section>' +
     '<section class="hero">' +
       '<img src="maskot.jpg" class="hero-maskot" alt="Maskot KhairyPustaka">' +
       "<h1>KhairyPustaka</h1>" +
@@ -1074,74 +1059,6 @@ function pageBeranda() {
       '<p class="muted">Video dan postingan edukasi dari akun resmi kami. Ketuk gambarnya buat buka langsung. 🎓</p>' +
       '<div class="kp-show-strip" id="kpShowStrip"><div class="kp-show-track" id="kpShowTrack">' + showcaseHTML() + "</div></div>" +
     "</div>";
-  // Event share: kartu paling atas Beranda. Klaim share hanya lewat
-  // tombol Bagikan atau Salin di kartu ini; server yang menghitung
-  // (klik berulang dari akun yang sama tidak menambah hadiah).
-  (function muatEventShare() {
-    if (Date.now() >= Date.parse("2026-11-09T16:00:00Z")) {
-      const kartu = $("#eventShareCard");
-      if (kartu) kartu.remove();
-      return;
-    }
-    const body = $("#eventShareBody");
-    if (!body) return;
-    const tog = $("#eventShareToggle"), det = $("#eventShareDetail");
-    if (tog && det) tog.addEventListener("click", () => {
-      const buka = det.hasAttribute("hidden");
-      if (buka) det.removeAttribute("hidden"); else det.setAttribute("hidden", "");
-      tog.setAttribute("aria-expanded", buka ? "true" : "false");
-      tog.innerHTML = buka ? "Tutup detail event &#9650;" : "Lihat detail event &#9660;";
-    });
-    if (!AUTH.login) {
-      body.innerHTML = '<a class="btn btn-primary" href="#/masuk">' + tic("key") + ' Masuk dulu buat ikut event</a>';
-      return;
-    }
-    let tautan = "";
-    function gambarProgress(d) {
-      const persen = Math.min(100, Math.round((Number(d.hadiah || 0) / 25) * 100));
-      const menuju = (d.berikutnya === null || d.berikutnya === undefined)
-        ? "Kamu sudah di tier tertinggi."
-        : ("Butuh " + d.berikutnya + " teman lagi ke tier berikut.");
-      body.innerHTML =
-        '<p><b>Status share:</b> ' + (d.shared ? "Sudah share" : "Belum share") +
-        ' &nbsp; <b>Teman gabung:</b> ' + d.teman +
-        ' &nbsp; <b>Hadiahmu sekarang:</b> ' + d.hadiah + 'x</p>' +
-        '<div class="event-share-bar"><div style="width:' + persen + '%"></div></div>' +
-        '<p class="muted tiny">' + menuju + ' Hadiah event tersimpan di kantong eventmu.</p>' +
-        '<button class="btn btn-accent" id="eventShareBtn">' + tic("send") + ' Bagikan Sekarang</button> ' +
-        '<button class="btn" id="eventShareCopy">' + tic("clipboard") + ' Salin Tautan Referral</button>';
-      const btnBagikan = $("#eventShareBtn"), btnSalin = $("#eventShareCopy");
-      async function klaim() {
-        const res = await apiPOST("/event-share/share", {});
-        if (!res.ok) { toast("Share belum tercatat, coba lagi ya. 😅"); return; }
-        if (res.data && res.data.baru) toast("Share tercatat! Hadiahmu sekarang " + res.data.hadiah + "x 🎉");
-        else toast("Share sudah pernah tercatat, hadiahmu tetap " + (res.data ? res.data.hadiah : d.hadiah) + "x.");
-        muatEventShare();
-      }
-      if (btnBagikan) btnBagikan.addEventListener("click", async () => {
-        if (!tautan) { toast("Tautan referral lagi nggak kebaca. 😅"); return; }
-        if (navigator.share) {
-          try {
-            await navigator.share({ title: "KhairyPustaka", text: "Cobain KhairyPustaka, asisten skripsi dan nugas gratis.", url: tautan });
-            klaim();
-          } catch (e) {
-            if (e && e.name === "AbortError") toast("Batal dibagikan.");
-            else { await copyText(tautan); klaim(); }
-          }
-        } else { await copyText(tautan); toast("Tautan disalin, silakan dibagikan."); klaim(); }
-      });
-      if (btnSalin) btnSalin.addEventListener("click", async () => {
-        if (!tautan) { toast("Tautan referral lagi nggak kebaca. 😅"); return; }
-        await copyText(tautan); toast("Tautan disalin."); klaim();
-      });
-    }
-    apiJSON("/event-share").then(res => {
-      if (!res.ok || !res.data) { body.innerHTML = '<p class="muted tiny">Progress event lagi nggak kebaca. 😅</p>'; return; }
-      const kode = res.data.kode || "";
-      tautan = kode ? (location.origin + "/?ref=" + kode) : "";
-      gambarProgress(res.data);
-    });
-  })();
   $$("#view .filter-chip").forEach(ch => ch.addEventListener("click", () => {
     aktif = ch.dataset.kat;
     try { sessionStorage.setItem("kp_home_tab", aktif); } catch (e) {}
@@ -2581,13 +2498,13 @@ function popupJatahHabis() {
         '<svg width="26" height="26" viewBox="0 0 24 24" fill="#f0a832" aria-hidden="true"><path d="M13 2 4.5 13.5H11L9.8 22 19 10h-6.5L13 2z"/></svg></div>' +
       '<h3 style="margin:10px 0 0">' + (login ? "Jatah AI Harianmu Habis" : "Jatah Tamu Hari Ini Habis") + '</h3>' +
       '<div style="margin-top:12px;background:#102c44;border-radius:10px;padding:8px 10px;text-align:left">' +
-        '<div style="display:flex;justify-content:space-between;font-size:.8rem"><span>' + (login ? "Jatah gratis hari ini" : "Jatah tamu hari ini") + '</span><span><b>' + (login ? "10 dari 10" : "5 dari 5") + '</b> terpakai</span></div>' +
+        '<div style="display:flex;justify-content:space-between;font-size:.8rem"><span>' + (login ? "Jatah gratis hari ini" : "Jatah tamu hari ini") + '</span><span><b>' + (login ? "15 dari 15" : "5 dari 5") + '</b> terpakai</span></div>' +
         '<div style="height:8px;background:#0a1f30;border-radius:99px;margin-top:6px;overflow:hidden"><div style="width:100%;height:100%;background:#f0a832"></div></div></div>' +
       (login
-        ? '<p class="muted" style="text-align:left">Jatah AI gratis memang cuma <b>10x per hari</b>. Tenang, jatahnya reset otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok bisa kamu pakai lagi seperti biasa.</p>' +
+        ? '<p class="muted" style="text-align:left">Jatah AI gratis memang cuma <b>15x per hari</b>. Tenang, jatahnya reset otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok bisa kamu pakai lagi seperti biasa.</p>' +
           '<p class="muted" style="text-align:left">Tidak mau menunggu? Top up saja. Mulai <b>Rp5.000</b> kamu dapat <b>25x</b> jatah AI. Saldonya tidak hangus dan bisa dipakai kapan saja.</p>'
         : '<p class="muted" style="text-align:left">Limit harian mode tamu sudah terpakai semua. Tamu dapat <b>5x per hari</b> buat semua fitur, AI dan non-AI dihitung bareng. Tenang, jatahnya balik lagi otomatis <b>tengah malam pukul 00.00 WITA</b>, jadi besok kamu bisa lanjut lagi.</p>' +
-          '<p class="muted" style="text-align:left">Tidak mau dibatasi limit harian? <b>Daftar gratis</b> saja, tidak sampai semenit. Begitu punya akun, fitur non-AI seperti cari jurnal, sitasi, convert, dan cek kemiripan bisa kamu pakai <b>sepuasnya</b> tanpa limit harian, jatah AI tetap 10x per hari, plus koleksi dan riwayatmu tersimpan aman di akun.</p>') +
+          '<p class="muted" style="text-align:left">Tidak mau dibatasi limit harian? <b>Daftar gratis</b> saja, tidak sampai semenit. Begitu punya akun, fitur non-AI seperti cari jurnal, sitasi, convert, dan cek kemiripan bisa kamu pakai <b>sepuasnya</b> tanpa limit harian, jatah AI tetap 15x per hari, plus koleksi dan riwayatmu tersimpan aman di akun.</p>') +
       '<a class="btn btn-primary btn-block" id="kpJatahCta" href="' + (login ? "#/topup" : "#/masuk") + '">' + (login ? "" + tic('bolt') + " Top Up Jatah AI" : "" + tic('key') + " Daftar Gratis") + '</a>' +
       '<button class="btn btn-block" id="kpJatahTutup" type="button" style="margin-top:9px">Nanti Saja</button>' +
     '</div>';
@@ -2614,12 +2531,12 @@ const MODEL_OPSI = [
   { k: "gptoss", n: "GPT OSS 120B",    d: "Cepat dan serba bisa buat nulis dan analisis." },
   { k: "qwen",   n: "Qwen 3.8 27B",    d: "Kuat di penalaran dan bahasa." },
   { k: "gemini", n: "Gemini Flash",  d: "Model Google, enak buat tanya jawab cepat." },
-  { k: "gemma31", n: "Gemma 4 31B (Gratis)", d: "Model Google terkuat di daftar gratis, stabil buat nulis panjang." },
-  { k: "gemma26", n: "Gemma 4 26B (Gratis)", d: "Lebih ringan dan cepat buat jawaban pendek." },
-  { k: "nemotron_ultra", n: "Nemotron 3 Ultra (Gratis)", d: "Penalaran berat, dokumen panjang." },
-  { k: "inkling", n: "Inkling (Gratis)", d: "Penalaran umum dan struktur berpikir rapi." },
-  { k: "nemotron_lightning", n: "Nemotron 3.5 Lightning (Gratis)", d: "Kecil dan cepat buat penjelasan singkat." },
-  { k: "nemotron_nano", n: "Nemotron 3 Nano Reasoning (Gratis)", d: "Penalaran terstruktur dan interpretasi hasil uji." }
+  { k: "gemma31", n: "Gemma 4 31B", d: "Model Google terkuat di daftar gratis, stabil buat nulis panjang." },
+  { k: "gemma26", n: "Gemma 4 26B", d: "Lebih ringan dan cepat buat jawaban pendek." },
+  { k: "nemotron_ultra", n: "Nemotron 3 Ultra", d: "Penalaran berat, dokumen panjang." },
+  { k: "inkling", n: "Inkling", d: "Penalaran umum dan struktur berpikir rapi." },
+  { k: "nemotron_lightning", n: "Nemotron 3.5 Lightning", d: "Kecil dan cepat buat penjelasan singkat." },
+  { k: "nemotron_nano", n: "Nemotron 3 Nano Reasoning", d: "Penalaran terstruktur dan interpretasi hasil uji." }
 ];
 let KP_INFO = { sisa: null, saldo: 0, admin: false };
 async function ambilInfoKuota() {
@@ -2680,7 +2597,7 @@ function pageAI() {
     "<h2>"+tic("spark")+" AI Studio</h2>" +
     '<p><span class="kuota" id="kuotaBadge">cek kuota... ⏳</span></p>' +
     '<p class="muted tiny">' + (AUTH.login
-      ? 'Gratis <b>10x/hari</b> buat akun login. Pakai bijak ya! 😉'
+      ? 'Gratis <b>15x/hari</b> buat akun login. Pakai bijak ya! 😉'
       : 'Tamu dapat <b>5x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! 😉') + '</p>' +
     pickerHTML("ai") +
     '<div class="ai-grid">' + AI_KINDS.map((k, i) =>
@@ -3023,7 +2940,7 @@ function pageTopup() {
 function pageBantuan() {
   const faq = [
     ["KhairyPustaka itu apa? ❓", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, sampai 14 generator AI naskah. Gratis! 🎓"],
-    ["Beneran gratis? 💰", "Iya! Buat tamu, semua fitur berbagi jatah gabungan " + tamuHarian() + "x/hari (AI dan non-AI dihitung bareng). Login gratis bikin fitur non-AI sepuasnya, jatah AI tetap 10x/hari, dan datamu tersimpan. 😉"],
+    ["Beneran gratis? 💰", "Iya! Buat tamu, semua fitur berbagi jatah gabungan " + tamuHarian() + "x/hari (AI dan non-AI dihitung bareng). Login gratis bikin fitur non-AI sepuasnya, jatah AI tetap 15x/hari, dan datamu tersimpan. 😉"],
     ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage). Buat tamu, koleksi otomatis terhapus setelah 24 jam; login gratis biar tidak kena batas waktu itu. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang, jadi rajin-rajin export ya!"],
     ["Sitasi gaya apa aja yang didukung? 📑", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
     ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp200/x, minimal 25x (Rp5.000), nggak hangus."],
@@ -3064,7 +2981,6 @@ const ROUTES = {
   "/ai": pageAI,
   "/tanya": pageTanya,
   "/topup": pageTopup,
-  "/premium": pageTopup,
   "/bantuan": pageBantuan,
   "/admin": pageAdmin
 };

@@ -16,7 +16,7 @@ import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 
 log = logging.getLogger("skripsi_ai")
 
-FREE_AI_PER_DAY = 10        # login: jatah AI gratis harian
+FREE_AI_PER_DAY = 15        # login: jatah AI gratis harian (revisi Sul 2026-10-28: dari 10x)
 FREE_AI_PER_DAY_TAMU = 5    # tamu web (uid "web_*"): lebih ketat
 GUEST_IP_AI_DAILY_CAP = 25  # hitung ganda: plafon gabungan per alamat IP
 # untuk SEMUA tamu dari IP itu (lintas identitas browser). Longgar supaya
@@ -35,7 +35,7 @@ _LOCK = threading.Lock()  # jaga read-modify-write kuota lintas thread
 
 
 def limit_ai_harian(uid):
-    """Limit jatah AI gratis harian: tamu 5x, login 10x."""
+    """Limit jatah AI gratis harian: tamu 5x, login 15x."""
     try:
         if str(uid or "").startswith("web_"):
             return FREE_AI_PER_DAY_TAMU
@@ -73,7 +73,7 @@ def _save(d):
 # ------------------------------------------------------------ saldo shared bot
 # Saldo top-up (ai_balance) milik user yang login via Telegram disimpan di
 # file data MILIK BOT (/root/jurnal-bot/data/ai_quota.json, key = Telegram
-# numeric id) supaya bisa dipakai di KEDUA platform. Jatah harian 10x TIDAK
+# numeric id) supaya bisa dipakai di KEDUA platform. Jatah harian 15x TIDAK
 # digabung — tetap per platform (file web, key = uid web).
 _BOT_DATA_DIR = os.environ.get("BOT_DATA_DIR", "/root/jurnal-bot/data")
 
@@ -192,7 +192,7 @@ def ai_quota_left(chat_id):
 def ai_try_consume(chat_id):
     """Reservasi 1 jatah AI secara ATOMIK.
 
-    Urutan pakai: jatah harian gratis (tamu 5x / login 10x) dulu, lalu saldo top-up.
+    Urutan pakai: jatah harian gratis (tamu 5x / login 15x) dulu, lalu saldo top-up.
     Kembalikan pool yang dipakai ("harian"/"saldo"), atau None bila keduanya habis.
     Premium selalu "harian" tanpa mencatat. Dipakai sebelum generate AI;
     bila AI gagal, kembalikan dengan ai_refund(chat_id, pool).
@@ -357,8 +357,8 @@ def ai_quota_info_guest(uid, ip):
 # untuk SEMUA fitur (AI dan non-AI dihitung bareng).
 # Menggantikan skema lama: AI 5x/hari sendiri + non-AI 10x/hari per fitur.
 # REVISI Sul 2026-10-19: ember tamu diturunkan 10 -> 5x/hari supaya
-# pengunjung terdorong bikin akun (member: AI 10x/hari, non-AI sepuasnya).
-# Member login TIDAK lewat sini (AI 10x/hari, non-AI sepuasnya).
+# pengunjung terdorong bikin akun (member: AI 15x/hari, non-AI sepuasnya).
+# Member login TIDAK lewat sini (AI 15x/hari, non-AI sepuasnya).
 GUEST_ALL_DAILY_LIMIT = 5   # per identitas tamu, gabungan semua fitur
 GUEST_ALL_IP_DAILY_CAP = 50  # plafon gabungan per alamat IP (lintas browser)
 
@@ -565,7 +565,7 @@ def ai_record(chat_id):
     _save(d)
 
 
-QUOTA_MSG = ("⏳ <b>Jatah AI harianmu habis</b> (10x/hari).\n"
+QUOTA_MSG = ("⏳ <b>Jatah AI harianmu habis</b> (15x/hari).\n"
              "Besok reset lagi — atau tambah jatah sekarang:\n"
              "⚡ <b>Rp5.000 = 25x pakai AI</b> (tidak hangus) — ketik /topup.")
 

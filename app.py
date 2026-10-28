@@ -170,7 +170,7 @@ def track_penggunaan(tool):
 # Keputusan Sul 2026-10-18: tamu memakai SATU ember gabungan
 # untuk SEMUA fitur (AI + non-AI), disimpan di skripsi_ai (guest_all_*).
 # Revisi Sul 2026-10-19: ember tamu diturunkan jadi 5x/hari.
-# Login = non-AI unlimited + jatah AI 10x/hari (jalur terpisah).
+# Login = non-AI unlimited + jatah AI 15x/hari (jalur terpisah).
 
 
 def _is_tamu():
@@ -183,11 +183,11 @@ def _is_tamu():
 
 def pesan_ai_habis():
     """Pesan ramah saat jatah habis (tamu: ember gabungan 5x/hari
-    semua fitur; login: jatah AI 10x/hari)."""
+    semua fitur; login: jatah AI 15x/hari)."""
     if _is_tamu():
         return ("Jatah harian tamu habis (5x/hari buat semua fitur). "
                 "Login gratis biar fitur non-AI sepuasnya! ✨")
-    return ("Jatah AI gratis harianmu habis (10x/hari). "
+    return ("Jatah AI gratis harianmu habis (15x/hari). "
             "Besok reset lagi.")
 
 
@@ -1855,12 +1855,12 @@ _MODEL_PILIHAN = {"auto", "gptoss", "qwen", "gemini",
                   "nemotron_lightning", "nemotron_nano"}
 _MODEL_LABEL = {"auto": "Otomatis", "gptoss": "GPT OSS 120B",
                 "qwen": "Qwen 3.8 27B", "gemini": "Gemini Flash",
-                "gemma31": "Gemma 4 31B (Gratis)",
-                "gemma26": "Gemma 4 26B (Gratis)",
-                "nemotron_ultra": "Nemotron 3 Ultra (Gratis)",
-                "inkling": "Inkling (Gratis)",
-                "nemotron_lightning": "Nemotron 3.5 Lightning (Gratis)",
-                "nemotron_nano": "Nemotron 3 Nano Reasoning (Gratis)"}
+                "gemma31": "Gemma 4 31B",
+                "gemma26": "Gemma 4 26B",
+                "nemotron_ultra": "Nemotron 3 Ultra",
+                "inkling": "Inkling",
+                "nemotron_lightning": "Nemotron 3.5 Lightning",
+                "nemotron_nano": "Nemotron 3 Nano Reasoning"}
 
 
 def _pilihan_model(body):
