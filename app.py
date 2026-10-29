@@ -1074,14 +1074,27 @@ def _teks_dari_bytes(raw, nama):
         return None, "ukuran file maksimal 2 MB ya"
     if nama.endswith(".pdf") or raw[:4] == b"%PDF":
         try:
+            import gc
             from pypdf import PdfReader
             reader = PdfReader(BytesIO(raw))
             if reader.is_encrypted:
                 return None, ("PDF-nya terkunci kata sandi, jadi teksnya "
                               "tidak bisa dibaca. Lepas kuncinya dulu ya")
-            bagian = [(hal.extract_text() or "")
-                      for hal in reader.pages[:200]]
+            # LAPIS OOM 2026-10-29: ekstrak per halaman + gc.collect()
+            # tiap halaman. Pola lama (list comprehension sekaligus)
+            # menahan sampah siklik pypdf sampai akhir dan memuncak
+            # ~450 MB untuk satu PDF jurnal 6 halaman, cukup untuk
+            # membunuh instance gratis 512 MB. Pola ini memuncak
+            # ~120 MB dengan teks hasil yang identik.
+            bagian = []
+            for i in range(min(200, len(reader.pages))):
+                hal = reader.pages[i]
+                bagian.append(hal.extract_text() or "")
+                del hal
+                gc.collect()
             teks = "\n".join(bagian)
+            del bagian, reader
+            gc.collect()
         except Exception:
             return None, ("file PDF-nya tidak bisa dibaca, mungkin rusak. "
                           "Coba file lain, atau salin teksnya lalu tempel "
