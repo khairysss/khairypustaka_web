@@ -2529,12 +2529,8 @@ function popupJatahHabis() {
 const MODEL_OPSI = [
   { k: "auto",   n: "Otomatis",        d: "Rekomendasi. Sistem pilihkan model terbaik yang lagi sehat." },
   { k: "gptoss", n: "GPT OSS 120B",    d: "Cepat dan serba bisa buat nulis dan analisis." },
-  { k: "qwen",   n: "Qwen 3.8 27B",    d: "Kuat di penalaran dan bahasa." },
   { k: "gemini", n: "Gemini Flash",  d: "Model Google, enak buat tanya jawab cepat." },
-  { k: "gemma31", n: "Gemma 4 31B", d: "Model Google terkuat di daftar gratis, stabil buat nulis panjang." },
-  { k: "gemma26", n: "Gemma 4 26B", d: "Lebih ringan dan cepat buat jawaban pendek." },
   { k: "nemotron_ultra", n: "Nemotron 3 Ultra", d: "Penalaran berat, dokumen panjang." },
-  { k: "inkling", n: "Inkling", d: "Penalaran umum dan struktur berpikir rapi." },
   { k: "nemotron_lightning", n: "Nemotron 3.5 Lightning", d: "Kecil dan cepat buat penjelasan singkat." },
   { k: "nemotron_nano", n: "Nemotron 3 Nano Reasoning", d: "Penalaran terstruktur dan interpretasi hasil uji." }
 ];

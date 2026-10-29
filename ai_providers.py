@@ -7,9 +7,10 @@ tanpa keluar biaya. Semua provider cadangan memakai API OpenAI-compatible
 PORT 2026-10-28 (merge patch AI khairypustaka-web ke kode produksi,
 TANPA deploy): jalur premium berbayar OpenRouter (Claude Haiku /
 Perplexity Sonar) DINONAKTIFKAN TOTAL, dan semua provider dikunci.
-Satu-satunya model yang boleh dipanggil adalah 9 pilihan picker di
-MODEL_REGISTRY di bawah (2 Cerebras + 1 Gemini Flash + 6 OpenRouter
-gratis) plus mode "auto" yang memakai rotasi yang sama. Env
+Satu-satunya model yang boleh dipanggil adalah 5 pilihan picker di
+MODEL_REGISTRY di bawah (1 Cerebras + 1 Gemini Flash + 3 OpenRouter
+gratis; dipangkas dari 9 pada 2026-10-29 karena 4 model gagal menetap)
+plus mode "auto" yang memakai rotasi yang sama. Env
 OPENROUTER_MODEL, OPENROUTER_MODEL_PREMIUM*, CEREBRAS_MODEL, dan
 GROQ_MODEL sengaja TIDAK dibaca lagi untuk memilih model — nilai lama
 di Render tidak boleh melesetkan request ke model berbayar/mati.
@@ -27,28 +28,20 @@ import time
 log = logging.getLogger("ai_providers")
 
 
-# Registry 9 model picker (port patch 2026-10-28). "key" = kunci picker
+# Registry 5 model picker (port patch 2026-10-28; dipangkas 2026-10-29:
+# Qwen/Gemma 31/Gemma 26/Inkling dihapus karena gagal menetap di retest
+# live 2026-10-29: Qwen gagal diam-diam, Gemma 429, Inkling 403).
+# "key" = kunci picker
 # produksi (yang dikirim frontend di field "model"); "id" = id model
 # sebenarnya yang dikirim ke provider. Hanya berisi id + label + provider;
 # TIDAK ada rahasia di sini.
 MODEL_REGISTRY = [
     {"key": "gptoss", "id": "gpt-oss-120b", "label": "GPT OSS 120B",
      "provider": "cerebras", "group": "cerebras"},
-    {"key": "qwen", "id": "qwen-3.8-27b", "label": "Qwen 3.8 27B",
-     "provider": "cerebras", "group": "cerebras"},
     {"key": "gemini", "id": "gemini-flash", "label": "Gemini Flash",
      "provider": "gemini", "group": "google"},
-    {"key": "gemma31", "id": "google/gemma-4-31b-it:free",
-     "label": "Gemma 4 31B",
-     "provider": "openrouter", "group": "openrouter"},
-    {"key": "gemma26", "id": "google/gemma-4-26b-a4b-it:free",
-     "label": "Gemma 4 26B",
-     "provider": "openrouter", "group": "openrouter"},
     {"key": "nemotron_ultra", "id": "nvidia/nemotron-3-ultra-550b-a55b:free",
      "label": "Nemotron 3 Ultra",
-     "provider": "openrouter", "group": "openrouter"},
-    {"key": "inkling", "id": "thinkingmachines/inkling:free",
-     "label": "Inkling",
      "provider": "openrouter", "group": "openrouter"},
     {"key": "nemotron_lightning",
      "id": "nvidia/nemotron-3.5-lightning:free",
@@ -522,7 +515,7 @@ async def generate_pilihan(prompt, pilihan="auto", budget=40.0,
         sasaran = _sasaran_pilihan(pilihan)
         if sasaran:
             out, label = await _coba_eps(sasaran, prompt, max_tokens, sisa,
-                                         batas=min(22.0, budget * 0.55))
+                                         batas=min(30.0, budget * 0.75))
             if out:
                 return {"teks": out, "label": label, "dialihkan": False,
                         "status": "ok"}

@@ -1846,19 +1846,17 @@ def _ai_info_uid(uid):
 # 2026-10-28; premium DIREVOKASI 2026-10-28). Kunci pilihan dari klien
 # divalidasi terhadap daftar putih ini; nilai apa pun di luar daftar
 # diperlakukan sebagai "auto". "auto" tetap default seperti produksi.
-# 9 pilihan model = 2 Cerebras + 1 Gemini Flash + 6 OpenRouter gratis.
+# 5 pilihan model = 1 Cerebras + 1 Gemini Flash + 3 OpenRouter gratis
+# (dipangkas dari 9 pada 2026-10-29: Qwen/Gemma 31/Gemma 26/Inkling gagal menetap).
 # Tidak ada lagi konstanta premium: konstanta itu dihapus bersama gerbang
 # premium di bawah. Nilai lama (llama/claude/sonar) dari klien lama
 # otomatis jatuh ke "auto" lewat _pilihan_model di bawah.
-_MODEL_PILIHAN = {"auto", "gptoss", "qwen", "gemini",
-                  "gemma31", "gemma26", "nemotron_ultra", "inkling",
+_MODEL_PILIHAN = {"auto", "gptoss", "gemini",
+                  "nemotron_ultra",
                   "nemotron_lightning", "nemotron_nano"}
 _MODEL_LABEL = {"auto": "Otomatis", "gptoss": "GPT OSS 120B",
-                "qwen": "Qwen 3.8 27B", "gemini": "Gemini Flash",
-                "gemma31": "Gemma 4 31B",
-                "gemma26": "Gemma 4 26B",
+                "gemini": "Gemini Flash",
                 "nemotron_ultra": "Nemotron 3 Ultra",
-                "inkling": "Inkling",
                 "nemotron_lightning": "Nemotron 3.5 Lightning",
                 "nemotron_nano": "Nemotron 3 Nano Reasoning"}
 
