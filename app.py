@@ -429,7 +429,11 @@ _HEAVY = {}            # ip -> jumlah request mahal yang sedang berjalan
 _HEAVY_LOCK = threading.Lock()
 _HEAVY_GLOBAL = 0      # total request mahal yang sedang berjalan
 _HEAVY_PER_IP = 3      # longgar untuk manusia (3 tab bersamaan masih lolos)
-_HEAVY_GLOBAL_MAX = 5  # sisakan thread untuk endpoint murah & health check
+# LAPIS 2026-10-29 (anti-sumbat): 5 -> 3. Harus SELALU di bawah jumlah
+# thread waitress terkecil yang mungkin (4 bila start command dashboard
+# tidak menyetel --threads) supaya endpoint murah & health check selalu
+# punya thread bebas, apa pun start command yang terpasang.
+_HEAVY_GLOBAL_MAX = 3  # sisakan thread untuk endpoint murah & health check
 
 
 def _heavy_masuk():
@@ -1059,8 +1063,13 @@ def _teks_dari_file(fs):
     """Ekstrak teks dari file unggahan (.docx/.txt/.pdf). File TIDAK
     disimpan: dibaca di memori lalu dibuang. Return (teks, None) /
     (None, pesan)."""
-    nama = (fs.filename or "").lower()
-    raw = fs.read()
+    return _teks_dari_bytes(fs.read(), fs.filename or "")
+
+
+def _teks_dari_bytes(raw, nama):
+    """Inti _teks_dari_file untuk bytes yang sudah dibaca (dipakai
+    sitasi-pdf agar file bisa diproses di thread tenggat)."""
+    nama = (nama or "").lower()
     if len(raw) > 2 * 1024 * 1024:
         return None, "ukuran file maksimal 2 MB ya"
     if nama.endswith(".pdf") or raw[:4] == b"%PDF":
@@ -1289,18 +1298,20 @@ def _tebak_meta_pdf(teks):
             "pages": None, "is_oa": False, "pdf_url": None}
 
 
-@app.post("/api/sitasi-pdf")
-@with_rl
-def sitasi_pdf():
-    """Buat Sitasi dari file jurnal: cari DOI di teks file lalu ambil
-    metadata akurat dari database jurnal; bila DOI tidak ada, tebak
-    metadata dari halaman pertama (hasilnya dilabeli perlu dicek)."""
-    fs = request.files.get("file")
-    if not fs or not fs.filename:
-        return _err("pilih file jurnalnya dulu ya")
-    teks, errm = _teks_dari_file(fs)
+class _SitasiErr(Exception):
+    def __init__(self, pesan, kode=422):
+        super().__init__(pesan)
+        self.pesan = pesan
+        self.kode = kode
+
+
+def _sitasi_pdf_proses(raw, nama):
+    """Proses sitasi-pdf tanpa konteks request (boleh jalan di thread
+    tenggat): ekstrak teks, cari DOI, tebak metadata. Return
+    (work, sumber); gagal -> raise _SitasiErr."""
+    teks, errm = _teks_dari_bytes(raw, nama)
     if errm:
-        return _err(errm, 422)
+        raise _SitasiErr(errm, 422)
     work, sumber = None, "teks"
     doi = doi_in_text(teks or "")
     if doi:
@@ -1314,8 +1325,54 @@ def sitasi_pdf():
     if not work:
         work = _tebak_meta_pdf(teks or "")
     if not work or not work.get("title"):
-        return _err("judulnya tidak ketemu dari file itu, "
-                    "isi manual saja ya", 422)
+        raise _SitasiErr("judulnya tidak ketemu dari file itu, "
+                         "isi manual saja ya", 422)
+    return work, sumber
+
+
+@app.post("/api/sitasi-pdf")
+@with_rl
+@with_heavy
+def sitasi_pdf():
+    """Buat Sitasi dari file jurnal: cari DOI di teks file lalu ambil
+    metadata akurat dari database jurnal; bila DOI tidak ada, tebak
+    metadata dari halaman pertama (hasilnya dilabeli perlu dicek).
+
+    LAPIS 2026-10-29 (anti-sumbat): endpoint ini tadinya TANPA
+    with_heavy padahal memproses file + fetch eksternal, jadi satu
+    unggahan lambat bisa menahan thread di luar anggaran 3 thread
+    berat. Sekarang masuk anggaran berat DAN diproses di thread
+    tenggat 60 detik: lewat dari itu dibalas error ramah, thread
+    waitress dibebaskan, dan request tidak pernah menggantung sampai
+    Cloudflare 524. File dibaca di thread utama dulu (aman untuk
+    objek upload), pemrosesan saja yang pindah ke thread tenggat.
+    """
+    fs = request.files.get("file")
+    if not fs or not fs.filename:
+        return _err("pilih file jurnalnya dulu ya")
+    raw = fs.read()
+    nama = fs.filename or ""
+    out = {}
+
+    def _kerja():
+        try:
+            out["hasil"] = _sitasi_pdf_proses(raw, nama)
+        except Exception as e:  # noqa: BLE001 - diteruskan ke thread utama
+            out["error"] = e
+
+    t = threading.Thread(target=_kerja, daemon=True)
+    t.start()
+    t.join(timeout=60)
+    if t.is_alive():
+        return _err("file-nya kelamaan diproses, coba file yang "
+                    "lebih kecil ya", 504)
+    if "error" in out:
+        e = out["error"]
+        if isinstance(e, _SitasiErr):
+            return _err(e.pesan, e.kode)
+        log.warning("sitasi-pdf gagal: %s", e)
+        return _err("sitasi dari PDF gagal, coba lagi nanti", 502)
+    work, sumber = out["hasil"]
     track_penggunaan("sitasi-pdf")
     return jsonify({"work": to_web_work(work), "sumber": sumber})
 

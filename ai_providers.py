@@ -129,11 +129,20 @@ def _endpoints():
     # meleset ke model berbayar); OpenRouter SELALU 6 model gratis di
     # atas bila key ada (dulu hanya bila OPENROUTER_MODEL diisi manual,
     # dan nilai env itu bisa berbayar — sekarang env itu diabaikan).
+    # LAPIS 2026-10-29 (perintah Sul, anti-sumbat): rotasi OTOMATIS
+    # mencoba Gemini DULU sebelum Cerebras. Alasan: antrean Shared
+    # Cerebras untuk gpt-oss-120b yang melambat adalah sumber utama
+    # thread waitress tertahan puluhan detik pada 2026-10-29; Gemini
+    # gagalnya cepat (429 langsung) sehingga thread cepat bebas dan
+    # rotasi tetap jatuh ke Cerebras bila Gemini gagal. Pilihan model
+    # eksplisit di picker TIDAK berubah: model yang dipilih user tetap
+    # dicoba dulu (lihat _sasaran_pilihan); yang berubah hanya urutan
+    # rotasi "auto" dan fallback.
+    if os.environ.get("GEMINI_API_KEY", "").strip():
+        eps.append(("gemini", None, None))
     add("cerebras", "https://api.cerebras.ai/v1",
         os.environ.get("CEREBRAS_API_KEY"),
         list(CEREBRAS_MODELS))
-    if os.environ.get("GEMINI_API_KEY", "").strip():
-        eps.append(("gemini", None, None))
     add("openrouter", "https://openrouter.ai/api/v1",
         os.environ.get("OPENROUTER_API_KEY"),
         list(OPENROUTER_FREE_MODELS))
