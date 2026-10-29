@@ -100,8 +100,13 @@ def _pool():
         if _pg_pool_obj is not None:
             return _pg_pool_obj
         try:
+            # LAPIS POOL 2026-10-29: maks 4 koneksi terbukti habis saat
+            # beban bersamaan (polling job 3 detik + worker AI + verifikasi
+            # bersamaan -> "connection pool exhausted" 11:22 WITA, job-status
+            # gagal dan user melihat error AI). 16 masih jauh di bawah batas
+            # Neon, dan tiap koneksi hanya dipegang selama satu query.
             _pg_pool_obj = pgpool.ThreadedConnectionPool(
-                1, 4, dsn, connect_timeout=5)
+                1, 16, dsn, connect_timeout=5)
             # smoke test
             conn = _pg_pool_obj.getconn()
             try:
