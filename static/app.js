@@ -451,8 +451,22 @@ function pageSitasi() {
     cek.innerHTML = '<p class="muted tiny" style="margin-top:8px">Lagi membaca file... ⏳</p>';
     const fd = new FormData();
     fd.append("file", f);
-    const res = await unggahForm("/api/sitasi-pdf", fd);
+    let res = await unggahForm("/api/sitasi-pdf/job", fd);
     if (!res.ok) { cek.innerHTML = ""; toast("😅 " + errFile(res)); return; }
+    const sjid = res.data && res.data.id;
+    if (!sjid) { cek.innerHTML = ""; toast("😅 " + errFile(res)); return; }
+    // LAPIS 4 (2026-10-29): pemrosesan jalan di antrean worker; poll
+    // status tiap 3 detik sampai selesai/gagal.
+    let sdata = null;
+    while (true) {
+      await new Promise(r => setTimeout(r, 3000));
+      if (!cek.isConnected) return;
+      const st = await apiJSON("/api/sitasi-pdf/job-status?id=" + encodeURIComponent(sjid));
+      const sd = st.data || {};
+      if (!st.ok || sd.status === "gagal") { cek.innerHTML = ""; toast("😅 " + (sd.error || errFile(st))); return; }
+      if (sd.status === "selesai") { sdata = sd; break; }
+    }
+    res = { ok: true, data: sdata };
     const w = (res.data && res.data.work) || {};
     if (w.judul) $("#sitJudul").value = w.judul;
     if (Array.isArray(w.penulis) && w.penulis.length) $("#sitPenulis").value = w.penulis.join(", ");
@@ -2640,20 +2654,53 @@ function pageAI() {
       const judul = ($("#aiJudul" + i) || {}).value;
       if (judul && judul.trim()) body.extra = judul.trim();
     }
-    const res = await apiPOST("/ai", body);
+    const resJob = await apiPOST("/ai/job", body);
     if (btn) setLoading(btn, false);
-    const d = res.data || {};
+    const dj = resJob.data || {};
     // 429 kuota_habis harus dicek SEBELUM !res.ok (apiJSON memetakan semua
     // non-2xx ke ok:false, jadi cabang ini mati bila ditaruh setelahnya)
-    if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
+    if (!resJob.ok && (dj.error === "kuota_habis" || dj.kuota_habis)) {
       out.innerHTML = kuotaHabisBox(); popupJatahHabis();
       kuotaBadgeUpdate(0);
       return;
     }
-    if (!res.ok) { out.innerHTML = ""; netErr(out, res); return; }
-    if (d.error === "kuota_habis" || d.kuota_habis) {
+    if (!resJob.ok) { out.innerHTML = ""; netErr(out, resJob); return; }
+    if (dj.error === "kuota_habis" || dj.kuota_habis) {
       out.innerHTML = kuotaHabisBox(); popupJatahHabis();
       kuotaBadgeUpdate(0);
+      return;
+    }
+    const jid = dj.id;
+    if (!jid) { out.innerHTML = ""; netErr(out, resJob); return; }
+    // LAPIS 4 (2026-10-29): generasi jalan di antrean worker, bukan di
+    // thread web. Poll status tiap 3 detik sampai selesai/gagal; bila
+    // kartu sudah tidak tampil (pindah halaman), polling berhenti.
+    if (btn) setLoading(btn, true, "AI lagi nulis...");
+    out.innerHTML = '<p class="loading">Masuk antrean... sabar ya ⏳</p>';
+    let d = null;
+    let gagalPesan = null;
+    while (true) {
+      await new Promise(r => setTimeout(r, 3000));
+      if (!out.isConnected) { if (btn) setLoading(btn, false); return; }
+      const st = await apiJSON("/ai/job-status?id=" + encodeURIComponent(jid));
+      const sd = st.data || {};
+      if (!st.ok) { gagalPesan = "AI-nya lagi gangguan, coba lagi bentar ya"; break; }
+      if (sd.status === "antre") {
+        out.innerHTML = '<p class="loading">Antrean ke-' + (sd.posisi_antrean || 1) + '... sabar ya ⏳</p>';
+        continue;
+      }
+      if (sd.status === "memproses") {
+        out.innerHTML = '<p class="loading">AI lagi nulis... sabar ya ⏳</p>';
+        continue;
+      }
+      if (sd.status === "selesai") { d = sd; break; }
+      gagalPesan = sd.error || "AI-nya lagi gangguan, coba lagi bentar ya";
+      break;
+    }
+    if (btn) setLoading(btn, false);
+    if (!d) {
+      out.innerHTML = '<div class="warn-box">' + esc(gagalPesan) + '</div>';
+      ambilKuota().then(kuotaBadgeUpdate);
       return;
     }
     const hasil = d.hasil || d.result || d.text;

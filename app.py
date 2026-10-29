@@ -1482,6 +1482,274 @@ def ai():
                     "sisa": _ai_left_uid(g.uid)})
 
 
+# ------------------------------------------------- antrean kerja lambat
+# LAPIS 4 (2026-10-29, perintah Sul): pekerjaan lambat TIDAK BOLEH lagi
+# menahan thread waitress. Pola ini meniru convert yang sudah terbukti
+# (job in-memory + ThreadPoolExecutor + polling status): request web
+# hanya antre + polling cepat, generasi AI & proses sitasi-pdf jalan di
+# 2 worker khusus. Bila service restart, job yang belum selesai hilang
+# (status jadi "tidak ketemu") dan user mengulang — kuota yang sudah
+# dipotong untuk job gagal DIKEMBALIKAN, jadi tidak ada jatah hangus.
+_SLOW_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="slowjob")
+_AI_JOBS = {}
+_AI_LOCK = threading.Lock()
+_AI_AKTIF_PER_USER = 2   # job antre/memproses per pengguna (AI lebih berat dari convert)
+_AI_GLOBAL_MAX = 20      # total job antre/memproses (batas memori)
+_SITASI_JOBS = {}
+_SITASI_LOCK = threading.Lock()
+
+
+def _ai_bersih():
+    """Buang job selesai/gagal berumur > 1 jam (dipanggil sambil lock)."""
+    batas = time.time() - 3600
+    for jid in [k for k, j in _AI_JOBS.items()
+                if j["status"] in ("selesai", "gagal")
+                and (j.get("selesai_ts") or 0) < batas]:
+        _AI_JOBS.pop(jid, None)
+
+
+def _ai_job_refund(job):
+    """Kembalikan jatah job gagal. Dipanggil dari worker (tanpa konteks
+    request) sehingga memakai ip/is_admin yang disimpan saat antre."""
+    if job.get("is_admin"):
+        return
+    try:
+        if job.get("tamu"):
+            sai.guest_all_refund(job["uid"], job["ip"])
+        else:
+            sai.ai_refund(job["uid"], job.get("pool"))
+    except Exception as e:  # noqa: BLE001 - refund gagal tidak boleh membatalkan status job
+        log.warning("ai job refund gagal: %s", e)
+
+
+def _ai_job_sisa(job):
+    if job.get("is_admin"):
+        return 999
+    try:
+        if job.get("tamu"):
+            return sai.guest_all_left(job["uid"], job["ip"])
+        return sai.ai_quota_left(job["uid"])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ai_job_status_json(job):
+    data = {"id": job["id"], "status": job["status"],
+            "tahap": job["tahap"],
+            "detik_berjalan": int(time.time() - job["dibuat"])}
+    if job["status"] == "antre":
+        with _AI_LOCK:
+            data["posisi_antrean"] = sum(
+                1 for j in _AI_JOBS.values()
+                if j["status"] == "antre" and j["dibuat"] <= job["dibuat"])
+    if job["status"] == "selesai":
+        data.update({"hasil": job["hasil"], "kind": job["kind"],
+                     "model_label": job["model_label"],
+                     "dialihkan": job["dialihkan"],
+                     "model_pilihan": job["model_pilihan"],
+                     "sisa": job["sisa"]})
+    if job["status"] == "gagal":
+        data["error"] = job["error"]
+    return data
+
+
+def _ai_kerja(jid):
+    with _AI_LOCK:
+        job = _AI_JOBS.get(jid)
+        if not job:
+            return
+        job["status"] = "memproses"
+        job["tahap"] = "AI lagi nulis..."
+        job["mulai"] = time.time()
+    try:
+        hasil, info = _run(sai.generate_pilihan(
+            job["kind"], job["text"], job["extra"],
+            chat_id=job["uid"], pilihan=job["pilihan"]))
+    except Exception as e:  # noqa: BLE001
+        log.warning("ai job %s error: %s", jid, e)
+        hasil, info = None, {}
+    with _AI_LOCK:
+        job["selesai_ts"] = time.time()
+        if not hasil:
+            job["status"] = "gagal"
+            job["tahap"] = "Gagal"
+            job["error"] = "AI-nya lagi gangguan, coba lagi bentar ya"
+            _ai_job_refund(job)
+            return
+        job["status"] = "selesai"
+        job["tahap"] = "Selesai"
+        job["hasil"] = hasil
+        job["model_label"] = info.get("label")
+        job["dialihkan"] = bool(info.get("dialihkan"))
+        job["model_pilihan"] = _MODEL_LABEL[job["pilihan"]]
+        job["sisa"] = _ai_job_sisa(job)
+    try:
+        sai.track_tool("ai", job["uid"])
+        if job.get("user_login"):
+            histmod.catat(job["uid"], "chat", job["text"],
+                          {"sumber": "ai", "kind": job["kind"],
+                           "text": job["text"][:2000], "hasil": hasil})
+    except Exception as e:  # noqa: BLE001 - pencatatan gagal tidak membatalkan hasil
+        log.warning("ai job %s catat gagal: %s", jid, e)
+
+
+@app.post("/api/ai/job")
+@with_rl
+def ai_job():
+    """Antrekan AI Studio: validasi + potong kuota + antre, langsung
+    dibalas (tanpa menunggu generasi). Frontend mem-poll
+    /api/ai/job-status sampai selesai/gagal. Rute sinkron /api/ai tetap
+    ada untuk pemakaian sebaris (ringkas/interpretasi di halaman lain).
+    """
+    body = request.get_json(silent=True) or {}
+    kind = (body.get("kind") or "").strip().lower()
+    if kind not in AI_KINDS:
+        return _err(f"kind harus salah satu: {', '.join(AI_KINDS)}")
+    text = (body.get("text") or "").strip()
+    if not text:
+        return _err("text kosong")
+    cap = AI_KIND_INPUT_CAP.get(kind, 2000)
+    if len(text) > cap:
+        return _err(f"teks kepanjangan (maksimal {cap} karakter)", 400)
+    extra = (body.get("extra") or "").strip()
+    pilihan = _pilihan_model(body)
+    with _AI_LOCK:
+        _ai_bersih()
+        aktif = sum(1 for j in _AI_JOBS.values()
+                    if j["uid"] == g.uid
+                    and j["status"] in ("antre", "memproses"))
+        if aktif >= _AI_AKTIF_PER_USER:
+            return _err("tunggu AI yang lagi jalan selesai dulu ya, "
+                        "baru mulai yang baru", 429)
+        total = sum(1 for j in _AI_JOBS.values()
+                    if j["status"] in ("antre", "memproses"))
+        if total >= _AI_GLOBAL_MAX:
+            return _err("antrean AI lagi penuh, coba lagi sebentar ya", 429)
+    pool = _ai_consume_uid(g.uid)
+    if not pool:
+        return jsonify({"error": "kuota_habis",
+                        "pesan": pesan_ai_habis()}), 429
+    jid = uuid.uuid4().hex[:16]
+    with _AI_LOCK:
+        _AI_JOBS[jid] = {
+            "id": jid, "uid": g.uid, "ip": _ip(),
+            "is_admin": bool(_is_web_admin()),
+            "tamu": bool(_tamu_web_uid(g.uid)),
+            "user_login": bool(getattr(g, "user", None)),
+            "kind": kind, "text": text, "extra": extra,
+            "pilihan": pilihan, "pool": pool,
+            "status": "antre", "tahap": "Menunggu giliran",
+            "dibuat": time.time(), "mulai": None, "selesai_ts": None,
+            "hasil": None, "model_label": None, "dialihkan": False,
+            "model_pilihan": None, "sisa": None, "error": None,
+        }
+        job = _AI_JOBS[jid]
+    _SLOW_POOL.submit(_ai_kerja, jid)
+    return jsonify(_ai_job_status_json(job))
+
+
+@app.get("/api/ai/job-status")
+@with_rl
+def ai_job_status():
+    """Status job AI untuk polling frontend (±3 detik)."""
+    jid = (request.args.get("id") or "").strip()
+    with _AI_LOCK:
+        job = _AI_JOBS.get(jid)
+        if not job or job["uid"] != g.uid:
+            return _err("job tidak ketemu", 404)
+        return jsonify(_ai_job_status_json(job))
+
+
+def _sitasi_job_status_json(job):
+    data = {"id": job["id"], "status": job["status"],
+            "tahap": job["tahap"],
+            "detik_berjalan": int(time.time() - job["dibuat"])}
+    if job["status"] == "selesai":
+        data.update({"work": job["work"], "sumber": job["sumber"]})
+    if job["status"] == "gagal":
+        data["error"] = job["error"]
+    return data
+
+
+def _sitasi_kerja(jid):
+    with _SITASI_LOCK:
+        job = _SITASI_JOBS.get(jid)
+        if not job:
+            return
+        job["status"] = "memproses"
+        job["tahap"] = "Lagi membaca file..."
+        job["mulai"] = time.time()
+    try:
+        work, sumber = _sitasi_pdf_proses(job["raw"], job["nama"])
+    except _SitasiErr as e:
+        with _SITASI_LOCK:
+            job["status"] = "gagal"
+            job["tahap"] = "Gagal"
+            job["error"] = e.pesan
+            job["selesai_ts"] = time.time()
+        return
+    except Exception as e:  # noqa: BLE001
+        log.warning("sitasi job %s gagal: %s", jid, e)
+        with _SITASI_LOCK:
+            job["status"] = "gagal"
+            job["tahap"] = "Gagal"
+            job["error"] = "sitasi dari PDF gagal, coba lagi nanti"
+            job["selesai_ts"] = time.time()
+        return
+    with _SITASI_LOCK:
+        job["status"] = "selesai"
+        job["tahap"] = "Selesai"
+        job["work"] = to_web_work(work)
+        job["sumber"] = sumber
+        job["selesai_ts"] = time.time()
+    try:
+        track_penggunaan("sitasi-pdf")
+    except Exception as e:  # noqa: BLE001
+        log.warning("sitasi job %s track gagal: %s", jid, e)
+
+
+@app.post("/api/sitasi-pdf/job")
+@with_rl
+def sitasi_pdf_job():
+    """Antrekan sitasi-pdf: unggah langsung dibalas dengan id job,
+    pemrosesan jalan di worker. Frontend mem-poll
+    /api/sitasi-pdf/job-status. Rute sinkron /api/sitasi-pdf tetap ada
+    (sudah berpenjaga + tenggat 60 detik dari Lapis 1)."""
+    fs = request.files.get("file")
+    if not fs or not fs.filename:
+        return _err("pilih file jurnalnya dulu ya")
+    raw = fs.read()
+    if len(raw) > 2 * 1024 * 1024:
+        return _err("ukuran file maksimal 2 MB ya", 422)
+    jid = uuid.uuid4().hex[:16]
+    with _SITASI_LOCK:
+        for k in [k for k, j in _SITASI_JOBS.items()
+                  if j["status"] in ("selesai", "gagal")
+                  and (j.get("selesai_ts") or 0) < time.time() - 3600]:
+            _SITASI_JOBS.pop(k, None)
+        _SITASI_JOBS[jid] = {
+            "id": jid, "uid": g.uid, "raw": raw, "nama": fs.filename or "",
+            "status": "antre", "tahap": "Menunggu giliran",
+            "dibuat": time.time(), "mulai": None, "selesai_ts": None,
+            "work": None, "sumber": None, "error": None,
+        }
+        job = _SITASI_JOBS[jid]
+    _SLOW_POOL.submit(_sitasi_kerja, jid)
+    return jsonify(_sitasi_job_status_json(job))
+
+
+@app.get("/api/sitasi-pdf/job-status")
+@with_rl
+def sitasi_pdf_job_status():
+    """Status job sitasi-pdf untuk polling frontend (±3 detik)."""
+    jid = (request.args.get("id") or "").strip()
+    with _SITASI_LOCK:
+        job = _SITASI_JOBS.get(jid)
+        if not job or job["uid"] != g.uid:
+            return _err("job tidak ketemu", 404)
+        return jsonify(_sitasi_job_status_json(job))
+
+
 # ---------------------------------------------------------------- tanya
 @app.post("/api/tanya")
 @with_rl
