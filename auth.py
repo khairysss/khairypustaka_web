@@ -121,8 +121,11 @@ def _secret():
 
 
 def _signer():
-    from itsdangerous import URLSafeSerializer
-    return URLSafeSerializer(_secret(), salt="kp-login-v1")
+    # Timed: stempel waktu tanda tangan ditegakkan oleh loads(max_age=...)
+    # (URLSafeSerializer polos membuang max_age sehingga cookie tidak
+    # pernah kedaluwarsa di server — temuan audit 2026-11-06).
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(_secret(), salt="kp-login-v1")
 
 
 def make_login_cookie(uid):
@@ -136,7 +139,8 @@ def parse_login_cookie(val):
 
     sess_ver: versi sesi di cookie harus cocok dengan di database. Ganti
     password me-naikkan versi -> semua sesi lain (termasuk yang dicuri)
-    otomatis mati.
+    otomatis mati. Login baru juga menaikkan versi (sesi tunggal,
+    keputusan Sul 2026-11-06) -> hanya login terakhir yang berlaku.
     """
     if not val:
         return None
@@ -146,6 +150,14 @@ def parse_login_cookie(val):
         return None
     uid = (data or {}).get("uid")
     if not uid:
+        return None
+    # Pertahanan berlapis: tegakkan TTL dari stempel waktu payload juga,
+    # jangan hanya mengandalkan serializer.
+    try:
+        issued = int(data.get("t", 0))
+    except Exception:
+        return None
+    if not issued or int(time.time()) - issued > LOGIN_TTL:
         return None
     u = _load_users().get(uid)
     if not u:
@@ -199,6 +211,21 @@ def touch_login(uid):
         d = _load_users()
         if uid in d:
             d[uid]["last_login"] = int(time.time())
+            _save_users(d)
+
+
+def rotate_session(uid):
+    """Sesi tunggal (keputusan Sul 2026-11-06): naikkan sess_ver tiap login.
+
+    Cookie yang baru diterbitkan membawa versi baru; cookie di
+    perangkat/browser lain tertinggal versi lama dan ditolak
+    parse_login_cookie, jadi satu akun hanya punya satu sesi aktif.
+    """
+    with _LOCK:
+        d = _load_users()
+        u = d.get(uid)
+        if u:
+            u["sess_ver"] = int(u.get("sess_ver") or 0) + 1
             _save_users(d)
 
 
