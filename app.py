@@ -2709,6 +2709,191 @@ def admin_feedback_status():
     return jsonify({"ok": True})
 
 
+# ------------------------------------------------------------ pengaturan
+# Fase 4 (2026-11-08): pengumuman beranda, mode pemeliharaan, sakelar
+# tool. Disimpan sebagai dokumen kp_kv data/pengaturan.json lewat
+# dbstore; dibaca dengan cache 15 detik di memori proses (satu proses
+# waitress, utas berbagi cache). Default semua normal: pemeliharaan mati
+# dan semua tool aktif, jadi deploy baru tidak pernah mengunci situs.
+TOOL_SAKELAR = ("cari", "sitasi", "ai", "idejudul", "statistik", "sidang",
+                "convert", "terjemah")
+_PENGATURAN_PATH = "data/pengaturan.json"
+_peng_cache = {"ts": 0.0, "data": None}
+_peng_lock = threading.Lock()
+
+
+def _pengaturan_default():
+    return {"pengumuman": {"aktif": False, "judul": "", "isi": "",
+                           "diperbarui": 0},
+            "pemeliharaan": False, "tool_off": {}}
+
+
+def _muat_pengaturan(segar=False):
+    now = time.time()
+    with _peng_lock:
+        if (not segar and _peng_cache["data"] is not None
+                and now - _peng_cache["ts"] < 15):
+            return _peng_cache["data"]
+        d = None
+        try:
+            d = dbstore.load_json(_PENGATURAN_PATH, None, strict=True)
+        except dbstore.DBUnavailable:
+            d = None
+        base = _pengaturan_default()
+        if isinstance(d, dict):
+            p = d.get("pengumuman")
+            if isinstance(p, dict):
+                for k in base["pengumuman"]:
+                    if k in p:
+                        base["pengumuman"][k] = p[k]
+            base["pemeliharaan"] = bool(d.get("pemeliharaan"))
+            if isinstance(d.get("tool_off"), dict):
+                base["tool_off"] = {
+                    k: bool(v) for k, v in d["tool_off"].items()
+                    if k in TOOL_SAKELAR and v}
+        _peng_cache["data"] = base
+        _peng_cache["ts"] = now
+        return base
+
+
+def _simpan_pengaturan(d):
+    dbstore.save_json(_PENGATURAN_PATH, d)
+    with _peng_lock:
+        _peng_cache["data"] = d
+        _peng_cache["ts"] = time.time()
+
+
+def _peta_tool(path, kind=None):
+    if path in ("/api/cari", "/api/carifile"):
+        return "cari"
+    if path.startswith("/api/sitasi"):
+        return "sitasi"
+    if path == "/api/terjemah":
+        return "terjemah"
+    if path == "/api/statistik":
+        return "statistik"
+    if path.startswith("/api/convert/"):
+        return "convert"
+    if path.startswith("/api/ai"):
+        if kind in ("sidang", "sidanglanjut"):
+            return "sidang"
+        if kind == "idejudul":
+            return "idejudul"
+        return "ai"
+    return None
+
+
+_GATE_IZIN_PREFIX = ("/api/health", "/api/pengumuman", "/api/auth/",
+                     "/api/admin/", "/api/backup-snapshot",
+                     "/api/feedback/status")
+
+
+@app.before_request
+def _gate_pengaturan():
+    """Gerbang pemeliharaan + sakelar tool. Fail-open: galat apa pun di
+    gerbang ini tidak boleh menjatuhkan situs. Admin selalu lolos."""
+    try:
+        pth = request.path or ""
+        if not pth.startswith("/api/"):
+            return None
+        if pth.startswith(_GATE_IZIN_PREFIX):
+            return None
+        if getattr(g, "user", None) and is_admin_user(g.user):
+            return None
+        peng = _muat_pengaturan()
+        if peng.get("pemeliharaan"):
+            return jsonify({
+                "ok": False, "pemeliharaan": True,
+                "error": "Situs lagi dalam pemeliharaan sebentar. Kami "
+                         "lagi menyiapkan perbaikan biar pengalamanmu "
+                         "makin nyaman. Coba lagi nanti ya, terima kasih "
+                         "sudah menunggu."}), 503
+        off = peng.get("tool_off") or {}
+        if off:
+            kind = None
+            if pth.startswith("/api/ai"):
+                body = request.get_json(silent=True) or {}
+                kind = body.get("kind")
+                if pth.endswith("job-status") and not kind:
+                    job = _AI_JOBS.get(body.get("job_id") or "")
+                    if job:
+                        kind = job.get("kind")
+            tool = _peta_tool(pth, kind)
+            if tool and off.get(tool):
+                return jsonify({
+                    "ok": False, "tool_nonaktif": tool,
+                    "error": "Fitur ini lagi dinonaktifkan sementara buat "
+                             "perbaikan. Fitur lain tetap bisa dipakai "
+                             "seperti biasa ya."}), 503
+    except Exception:
+        pass
+    return None
+
+
+@app.get("/api/pengumuman")
+@with_rl
+def pengumuman_publik():
+    """Info publik buat beranda: banner pengumuman aktif, status
+    pemeliharaan (admin melihat False), dan daftar tool yang nonaktif."""
+    peng = _muat_pengaturan()
+    p = peng.get("pengumuman") or {}
+    aktif = bool(p.get("aktif")) and bool(
+        (p.get("judul") or "").strip() or (p.get("isi") or "").strip())
+    admin = bool(getattr(g, "user", None)) and is_admin_user(g.user)
+    return jsonify({
+        "ok": True,
+        "pengumuman": ({"judul": p.get("judul") or "",
+                        "isi": p.get("isi") or "",
+                        "diperbarui": p.get("diperbarui") or 0}
+                       if aktif else None),
+        "pemeliharaan": bool(peng.get("pemeliharaan")) and not admin,
+        "tool_off": [k for k, v in (peng.get("tool_off") or {}).items()
+                     if v],
+    })
+
+
+@app.get("/api/admin/pengaturan")
+@with_rl
+def admin_pengaturan_get():
+    err = _need_admin()
+    if err:
+        return err
+    return jsonify({"ok": True, "pengaturan": _muat_pengaturan(segar=True)})
+
+
+@app.post("/api/admin/pengaturan")
+@with_rl
+def admin_pengaturan_post():
+    err = _need_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    peng = _muat_pengaturan(segar=True)
+    if isinstance(body.get("pengumuman"), dict):
+        b = body["pengumuman"]
+        peng["pengumuman"] = {
+            "aktif": bool(b.get("aktif")),
+            "judul": str(b.get("judul") or "").strip()[:120],
+            "isi": str(b.get("isi") or "").strip()[:500],
+            "diperbarui": int(time.time()),
+        }
+    if "pemeliharaan" in body:
+        peng["pemeliharaan"] = bool(body["pemeliharaan"])
+    if isinstance(body.get("tool_off"), dict):
+        for k in TOOL_SAKELAR:
+            if k in body["tool_off"]:
+                if body["tool_off"][k]:
+                    peng["tool_off"][k] = True
+                else:
+                    peng["tool_off"].pop(k, None)
+    try:
+        _simpan_pengaturan(peng)
+    except dbstore.DBUnavailable:
+        return _err("Basis data lagi tidak bisa dihubungi, coba lagi ya",
+                    503)
+    return jsonify({"ok": True, "pengaturan": peng})
+
+
 @app.get("/api/admin/pertanyaan")
 @with_rl
 def admin_pertanyaan():

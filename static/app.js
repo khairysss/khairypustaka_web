@@ -1118,7 +1118,11 @@ async function muatBannerPengumuman() {
   if (!box) return;
   try {
     const r = await apiJSON("/pengumuman");
-    if (!r.ok || !r.data || !r.data.pengumuman) return;
+    if (!r.ok || !r.data) return;
+    _infoSitus = r.data;
+    _infoSitusTs = Date.now();
+    terapkanInfoSitus();
+    if (!r.data.pengumuman) return;
     const p = r.data.pengumuman;
     const kunci = String(p.id || p.diperbarui || "");
     try {
@@ -3080,6 +3084,76 @@ function pageBantuan() {
     '<a class="btn btn-primary" href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">' + tic("ig") + ' Hubungi Admin</a></div>';
 }
 
+/* ---------- Info situs: pemeliharaan + sakelar tool (Fase 4) ---------- */
+let _infoSitus = null;
+let _infoSitusTs = 0;
+const KP_RUTE_AUTH = ["/masuk", "/daftar", "/lupa", "/reset", "/verifikasi", "/konfirmasi-email"];
+
+async function muatInfoSitus() {
+  if (_infoSitus && Date.now() - _infoSitusTs < 30000) {
+    terapkanInfoSitus();
+    return;
+  }
+  try {
+    const r = await apiJSON("/pengumuman");
+    if (r.ok && r.data) {
+      _infoSitus = r.data;
+      _infoSitusTs = Date.now();
+    }
+  } catch (e) {}
+  terapkanInfoSitus();
+}
+
+function terapkanInfoSitus() {
+  const h = (location.hash || "#/beranda").replace(/^#/, "").split("?")[0];
+  let ov = document.getElementById("kpPemeliharaan");
+  const aktif = !!(_infoSitus && _infoSitus.pemeliharaan && !AUTH.admin &&
+    KP_RUTE_AUTH.indexOf(h) < 0);
+  if (aktif) {
+    if (!ov) {
+      ov = document.createElement("div");
+      ov.id = "kpPemeliharaan";
+      ov.className = "kp-maint";
+      ov.innerHTML =
+        '<div class="kp-maint-box">' + maskotSVG(64) +
+        "<h2>Situs lagi pemeliharaan sebentar</h2>" +
+        "<p>Kami lagi menyiapkan perbaikan biar pengalamanmu memakai KhairyPustaka makin nyaman. Coba lagi nanti ya, terima kasih sudah menunggu dan tetap semangat ngerjain tugasnya.</p>" +
+        (AUTH.login ? "" : '<a class="btn btn-ghost" href="#/masuk">Masuk</a>') +
+        "</div>";
+      document.body.appendChild(ov);
+    }
+  } else if (ov) {
+    ov.remove();
+  }
+  tandaiToolNonaktif();
+}
+
+function tandaiToolNonaktif() {
+  const off = (_infoSitus && _infoSitus.tool_off) || [];
+  $$(".feat[data-tool]").forEach(function(el) {
+    const mati = off.indexOf(el.dataset.tool) >= 0;
+    el.classList.toggle("tool-off", mati);
+    let b = el.querySelector(".tool-off-badge");
+    if (mati && !b) {
+      b = document.createElement("span");
+      b.className = "tool-off-badge";
+      b.textContent = "Lagi nonaktif";
+      el.appendChild(b);
+    } else if (!mati && b) {
+      b.remove();
+    }
+    if (!el.dataset.kpOffGuard) {
+      el.dataset.kpOffGuard = "1";
+      el.addEventListener("click", function(e) {
+        if (el.classList.contains("tool-off")) {
+          e.preventDefault();
+          toast("Fitur ini lagi dinonaktifkan sementara buat perbaikan. Fitur lain tetap bisa dipakai ya.");
+        }
+      });
+    }
+  });
+}
+
 /* ---------- Kritik dan Saran + popup penilaian (Fase 3) ---------- */
 const _bintangPilih = {};
 function bintangHTML(idGrup) {
@@ -3658,6 +3732,102 @@ function admRenderFeedback() {
   });
 }
 
+let ADM_PENG = null;
+const ADM_TOOL_LABEL = { cari: "Cari Jurnal", sitasi: "Sitasi Otomatis", ai: "AI Bantu Nulis (AI Studio dan Tanya AI)", idejudul: "Ide Judul dan Research Gap", statistik: "Panduan Uji Statistik", sidang: "Simulasi Sidang", convert: "Convert File", terjemah: "Terjemah Abstrak" };
+
+async function admMuatPengaturan() {
+  try {
+    const r = await apiJSON("/admin/pengaturan");
+    if (!r.ok) throw 0;
+    ADM_PENG = r.data.pengaturan;
+    $("#admPgJudul").value = ADM_PENG.pengumuman.judul || "";
+    $("#admPgIsi").value = ADM_PENG.pengumuman.isi || "";
+    $("#admPgAktif").checked = !!ADM_PENG.pengumuman.aktif;
+    admPratinjauPengumuman();
+    admRenderSakelar();
+  } catch (e) {
+    const m = $("#admPgMsg");
+    if (m) m.textContent = "Gagal memuat pengaturan.";
+  }
+}
+
+function admPratinjauPengumuman() {
+  const box = $("#admPgPratinjau");
+  if (!box) return;
+  const judul = ($("#admPgJudul").value || "").trim();
+  const isi = ($("#admPgIsi").value || "").trim();
+  const aktif = $("#admPgAktif").checked;
+  if (!aktif || (!judul && !isi)) {
+    box.innerHTML = '<p class="muted tiny">Pratinjau: banner tidak tampil di beranda (belum aktif atau masih kosong).</p>';
+    return;
+  }
+  box.innerHTML = '<p class="muted tiny" style="margin-bottom:6px">Pratinjau banner:</p>' +
+    '<div class="banner-pengumuman"><span class="banner-tag">Pengumuman</span><p>' +
+    (judul ? "<b>" + esc(judul) + "</b> " : "") + esc(isi) + "</p></div>";
+}
+
+async function admSimpanPengumuman() {
+  const msg = $("#admPgMsg");
+  const r = await apiPOST("/admin/pengaturan", {
+    pengumuman: {
+      aktif: $("#admPgAktif").checked,
+      judul: $("#admPgJudul").value,
+      isi: $("#admPgIsi").value
+    }
+  });
+  if (!r.ok) {
+    msg.textContent = (r.data && r.data.error) || "Gagal menyimpan pengumuman.";
+    return;
+  }
+  ADM_PENG = r.data.pengaturan;
+  _infoSitusTs = 0;
+  msg.textContent = ADM_PENG.pengumuman.aktif
+    ? "Pengumuman tersimpan dan tampil di beranda."
+    : "Pengumuman tersimpan (banner tidak ditampilkan).";
+  toast("Pengaturan pengumuman tersimpan.");
+}
+
+async function admUbahPengaturan(ubah, konfirmasiMaint) {
+  if (konfirmasiMaint && ubah.pemeliharaan) {
+    if (!window.confirm("Nyalakan mode pemeliharaan? Member dan tamu tidak bisa memakai situs selama menyala. Admin tetap bisa masuk. Matikan lagi dari panel ini setelah selesai.")) return;
+  }
+  const r = await apiPOST("/admin/pengaturan", ubah);
+  const msg = $("#admSwMsg");
+  if (!r.ok) {
+    if (msg) msg.textContent = (r.data && r.data.error) || "Gagal menyimpan pengaturan.";
+    return;
+  }
+  ADM_PENG = r.data.pengaturan;
+  _infoSitusTs = 0;
+  admRenderSakelar();
+  if (msg) msg.textContent = "Pengaturan tersimpan.";
+}
+
+function admRenderSakelar() {
+  if (!ADM_PENG) return;
+  const maint = $("#admSwMaint");
+  if (maint) {
+    maint.classList.toggle("on", !!ADM_PENG.pemeliharaan);
+    maint.setAttribute("aria-checked", ADM_PENG.pemeliharaan ? "true" : "false");
+  }
+  const box = $("#admSwTools");
+  if (!box) return;
+  box.innerHTML = Object.keys(ADM_TOOL_LABEL).map(function(k) {
+    const mati = !!ADM_PENG.tool_off[k];
+    return '<div class="switch-row"><div class="lr-main"><b>' + ADM_TOOL_LABEL[k] + "</b>" +
+      '<div class="muted tiny">' + (mati ? "Lagi nonaktif. Member melihat pemberitahuan tidak tersedia." : "Aktif dan bisa dipakai member.") + "</div></div>" +
+      '<button class="kp-switch' + (mati ? "" : " on") + '" type="button" role="switch" aria-checked="' + (!mati) + '" data-toolswitch="' + k + '" aria-label="Sakelar ' + ADM_TOOL_LABEL[k] + '"></button></div>';
+  }).join("");
+  $$("#admSwTools [data-toolswitch]").forEach(function(sw) {
+    sw.addEventListener("click", function() {
+      const k = sw.dataset.toolswitch;
+      const off = {};
+      off[k] = !((ADM_PENG.tool_off || {})[k]);
+      admUbahPengaturan({ tool_off: off }, false);
+    });
+  });
+}
+
 function admSalinTeks(t) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(t).then(
@@ -3867,8 +4037,21 @@ function pageAdmin() {
     "</div>" +
 
     '<div class="adm-pane hidden" id="admPane-pengumuman">' +
-      '<div class="card"><h3>' + tic("bell") + ' Pengumuman dan Sakelar</h3>' +
-      '<p class="muted">Bagian ini sedang disiapkan dan akan aktif di tahap berikutnya: pengumuman untuk member, mode pemeliharaan, dan sakelar fitur. Belum ada pengaturan yang bisa diubah dari sini saat ini.</p></div>' +
+      '<div class="card"><h3>' + tic("bell") + ' Pengumuman Beranda</h3>' +
+      '<div class="field"><label for="admPgJudul">Judul pengumuman</label>' +
+      '<input id="admPgJudul" maxlength="120" placeholder="Contoh: Jadwal pemeliharaan singkat"></div>' +
+      '<div class="field"><label for="admPgIsi">Isi pengumuman</label>' +
+      '<textarea id="admPgIsi" maxlength="500" style="min-height:76px" placeholder="Tulis isi pengumuman yang tampil di banner beranda"></textarea></div>' +
+      '<label class="checkline"><input type="checkbox" id="admPgAktif"> Tampilkan banner pengumuman di beranda</label>' +
+      '<div id="admPgPratinjau" style="margin:10px 0"></div>' +
+      '<button class="btn" id="admPgSimpan" type="button">Simpan Pengumuman</button>' +
+      '<p class="pf-msg" id="admPgMsg"></p></div>' +
+      '<div class="card"><h3>' + tic("wrench") + ' Mode Pemeliharaan dan Sakelar Tool</h3>' +
+      '<div class="switch-row"><div class="lr-main"><b>Mode pemeliharaan</b>' +
+      '<div class="muted tiny">Saat menyala, member dan tamu tidak bisa memakai situs. Admin tetap bisa masuk dan memakai situs seperti biasa.</div></div>' +
+      '<button class="kp-switch danger" id="admSwMaint" type="button" role="switch" aria-checked="false" aria-label="Mode pemeliharaan"></button></div>' +
+      '<div id="admSwTools"><p class="muted">Memuat sakelar...</p></div>' +
+      '<p class="pf-msg" id="admSwMsg"></p></div>' +
     "</div>" +
 
     '<div class="adm-pane hidden" id="admPane-log">' +
@@ -3886,7 +4069,7 @@ function pageAdmin() {
       '<p class="muted">Pertanyaan yang belum bisa dijawab Tanya AI, dicatat otomatis sebagai bahan perbaikan. Ketuk satu pertanyaan buat membaca teks lengkapnya.</p>' +
       '<div id="admPertanyaan"><p class="muted">Memuat...</p></div></div>' +
     "</div>";
-  let admSistemDimuat = false, admPertanyaanDimuat = false;
+  let admSistemDimuat = false, admPertanyaanDimuat = false, admPengaturanDimuat = false;
   $$("#view .adm-tabs .tab").forEach(function(tb) {
     tb.addEventListener("click", function() {
       $$("#view .adm-tabs .tab").forEach(function(x) {
@@ -3905,11 +4088,29 @@ function pageAdmin() {
         admMuatPertanyaan();
         admMuatFeedback();
       }
+      if (tb.dataset.atab === "pengumuman" && !admPengaturanDimuat) {
+        admPengaturanDimuat = true;
+        admMuatPengaturan();
+      }
     });
   });
   admMuatStatistik();
   admMuatKode();
   admMuatPertanyaan(); // sekalian buat lencana hitung di tab Log
+  // Fase 4: pratinjau + simpan pengumuman dan sakelar pemeliharaan
+  ["#admPgJudul", "#admPgIsi", "#admPgAktif"].forEach(function(sel) {
+    const el = $(sel);
+    if (el) {
+      el.addEventListener("input", admPratinjauPengumuman);
+      el.addEventListener("change", admPratinjauPengumuman);
+    }
+  });
+  const pgSimpan = $("#admPgSimpan");
+  if (pgSimpan) pgSimpan.addEventListener("click", admSimpanPengumuman);
+  const swMaint = $("#admSwMaint");
+  if (swMaint) swMaint.addEventListener("click", function() {
+    admUbahPengaturan({ pemeliharaan: !(ADM_PENG && ADM_PENG.pemeliharaan) }, true);
+  });
   $$("#admNomChips .chip").forEach(function(c) {
     c.addEventListener("click", function() {
       $("#admKodeNom").value = c.dataset.nom;
@@ -4050,6 +4251,7 @@ function router() {
   }
   RUTE_TERAKHIR = h;
   refreshAuth();
+  muatInfoSitus();
   setTimeout(cekPopupFeedback, 800);
 }
 
