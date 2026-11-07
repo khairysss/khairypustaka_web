@@ -465,3 +465,46 @@ def prune_unanswered(max_age_days=30):
         return 0
     _pg_release(conn, ok=True)
     return n
+
+
+
+def read_unanswered(limit=20):
+    """Baca entri tanya_unanswered TERBARU (untuk tab Log panel admin).
+
+    Mode file: baca ekor file jsonl. Mode Postgres: SELECT dari tabel
+    kp_unanswered urut id menurun. Mengembalikan list dict entri
+    ({"ts": epoch, "q": teks}) terbaru dulu; [] bila belum ada / gagal
+    baca (tampilan admin tidak boleh ikut tumbang karena log ini).
+    """
+    try:
+        limit = max(1, min(200, int(limit)))
+    except (TypeError, ValueError):
+        limit = 20
+    if not enabled():
+        out = []
+        try:
+            with open("data/tanya_unanswered.jsonl", encoding="utf-8") as f:
+                lines = f.readlines()
+        except Exception:
+            return []
+        for ln in lines[-limit:]:
+            try:
+                out.append(json.loads(ln))
+            except Exception:
+                pass
+        out.reverse()
+        return out
+    conn = _pg_conn()
+    if conn is None:
+        return []
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT entry FROM kp_unanswered "
+                        "ORDER BY id DESC LIMIT %s", (limit,))
+            rows = cur.fetchall()
+        return [r[0] for r in rows if r and r[0] is not None]
+    except Exception as e:
+        log.warning("dbstore.read_unanswered gagal: %s", e)
+        return []
+    finally:
+        _pg_release(conn, ok=True)

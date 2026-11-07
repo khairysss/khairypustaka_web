@@ -3143,6 +3143,24 @@ function admTabel(rows) {
     }).join("") + "</table>";
 }
 
+let ADM_STAT = null;   // cache statistik terakhir (tren + ekspor CSV)
+let ADM_TREN_HARI = 7; // rentang tren yang sedang ditampilkan
+
+function fmtWita(ts) {
+  try {
+    const d = new Date((Number(ts) || 0) * 1000);
+    if (isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("id-ID", {
+      timeZone: "Asia/Makassar", day: "numeric", month: "short",
+      hour: "2-digit", minute: "2-digit", hour12: false
+    }).format(d).replace(".", ":") + " WITA";
+  } catch (e) { return ""; }
+}
+
+function admPill(teks, kelas) {
+  return '<span class="pill ' + esc(kelas || "grey") + '">' + esc(teks) + "</span>";
+}
+
 async function admMuatStatistik() {
   const box = $("#admStat");
   if (!box) return;
@@ -3150,20 +3168,194 @@ async function admMuatStatistik() {
     const r = await apiJSON("/admin/statistik");
     if (!r.ok) throw 0;
     const d = r.data || {}, m = d.member || {}, a = d.ai || {}, n = d.nonai || {};
+    ADM_STAT = d;
     box.innerHTML =
       '<div class="admin-grid">' +
       admKartu(m.total, "Total Member") +
       admKartu(m.baru_hari_ini, "Member Baru Hari Ini") +
       admKartu(a.hari_ini, "Pemakaian AI Hari Ini") +
+      admKartu(n.hari_ini, "Pemakaian Tool Hari Ini") +
+      admKartu(d.saldo_ai_web_total, "Saldo AI Web (kredit)") +
       admKartu(a.total, "Pemakaian AI Total") +
-      admKartu(n.hari_ini, "Pemakaian Non AI Hari Ini") +
-      admKartu(n.total, "Pemakaian Non AI Total") +
-      admKartu(d.saldo_ai_web_total, "Total Saldo AI Member") +
+      admKartu(n.total, "Pemakaian Tool Total") +
       "</div>" +
-      "<h4>Per Fitur AI</h4>" + admTabel(a.per_fitur || []) +
-      "<h4>Per Fitur Non AI</h4>" + admTabel(n.per_fitur || []);
+      "<h4>Pemakaian Tool Terlaris</h4>" + admTabel(
+        ((a.per_fitur || []).concat(n.per_fitur || []))
+          .sort((x, y) => (y.total || 0) - (x.total || 0)).slice(0, 8)) +
+      "<h4>Tren Harian</h4>" +
+      '<div class="chip-row">' +
+        '<button class="chip' + (ADM_TREN_HARI === 7 ? " active" : "") + '" data-tren="7">7 hari</button>' +
+        '<button class="chip' + (ADM_TREN_HARI === 30 ? " active" : "") + '" data-tren="30">30 hari</button>' +
+      "</div>" +
+      '<div id="admTren"></div>' +
+      '<button class="btn btn-block" id="admEksporBtn">' + tic("download") + " Ekspor Laporan (CSV)</button>" +
+      '<p class="muted tiny">Unduh ringkasan statistik, pemakaian per fitur, dan tren 30 hari sebagai file CSV.</p>';
+    admRenderTren();
+    $$("#admStat [data-tren]").forEach(function(b) {
+      b.addEventListener("click", function() {
+        ADM_TREN_HARI = parseInt(b.dataset.tren, 10) || 7;
+        $$("#admStat [data-tren]").forEach(function(x) {
+          x.classList.toggle("active", x === b);
+        });
+        admRenderTren();
+      });
+    });
+    const eb = $("#admEksporBtn");
+    if (eb) eb.addEventListener("click", admEksporCSV);
   } catch (e) {
     box.innerHTML = '<p class="pf-msg">Gagal memuat statistik. Muat ulang halamannya ya.</p>';
+  }
+}
+
+function admRenderTren() {
+  const box = $("#admTren");
+  if (!box || !ADM_STAT || !ADM_STAT.tren) return;
+  const t = ADM_STAT.tren;
+  const n = Math.min(ADM_TREN_HARI, (t.tanggal || []).length);
+  if (!n) { box.innerHTML = '<p class="muted">Belum ada data tren.</p>'; return; }
+  const tgl = t.tanggal.slice(-n), ai = t.ai.slice(-n),
+        nonai = t.nonai.slice(-n), mb = t.member_baru.slice(-n);
+  const total = ai.map((v, i) => (v || 0) + (nonai[i] || 0));
+  const maks = Math.max.apply(null, total.concat([1]));
+  let totPakai = 0, totBaru = 0;
+  const cols = total.map(function(v, i) {
+    totPakai += v; totBaru += mb[i] || 0;
+    const h = Math.max(3, Math.round(v / maks * 100));
+    const tglSingkat = (tgl[i] || "").slice(5).split("-").reverse().join("/");
+    return '<div class="tcol"><span class="tval">' + (mb[i] || "") + '</span>' +
+      '<div class="tbar" style="height:' + h + '%"></div>' +
+      '<span class="tday">' + esc(tglSingkat) + "</span></div>";
+  }).join("");
+  box.innerHTML =
+    '<div class="tren-chart">' + cols + "</div>" +
+    '<p class="muted tiny"><span class="tren-kunci tren-kunci-teal"></span> Pemakaian per hari' +
+    ' &nbsp; <span class="tren-kunci tren-kunci-emas"></span> Member baru per hari (angka emas di atas batang)</p>' +
+    '<p class="muted tiny">Total ' + n + ' hari terakhir: ' + totPakai +
+    ' kali pemakaian, ' + totBaru + " member baru.</p>";
+}
+
+function admEksporCSV() {
+  if (!ADM_STAT) return;
+  const d = ADM_STAT, m = d.member || {}, a = d.ai || {}, n = d.nonai || {};
+  function q(v) { return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"'; }
+  const L = [];
+  L.push(["Laporan KhairyPustaka", d.hari_ini || ""].map(q).join(","));
+  L.push(["Total Member", m.total || 0].map(q).join(","));
+  L.push(["Member Baru Hari Ini", m.baru_hari_ini || 0].map(q).join(","));
+  L.push(["Pemakaian AI Hari Ini", a.hari_ini || 0].map(q).join(","));
+  L.push(["Pemakaian AI Total", a.total || 0].map(q).join(","));
+  L.push(["Pemakaian Tool Hari Ini", n.hari_ini || 0].map(q).join(","));
+  L.push(["Pemakaian Tool Total", n.total || 0].map(q).join(","));
+  L.push(["Saldo AI Web Total", d.saldo_ai_web_total || 0].map(q).join(","));
+  L.push("");
+  L.push(["Fitur AI", "Hari Ini", "Total"].map(q).join(","));
+  (a.per_fitur || []).forEach(function(r) { L.push([r.nama, r.hari_ini, r.total].map(q).join(",")); });
+  L.push("");
+  L.push(["Fitur Non AI", "Hari Ini", "Total"].map(q).join(","));
+  (n.per_fitur || []).forEach(function(r) { L.push([r.nama, r.hari_ini, r.total].map(q).join(",")); });
+  if (d.tren && d.tren.tanggal) {
+    L.push("");
+    L.push(["Tanggal", "Pemakaian AI", "Pemakaian Tool", "Member Baru"].map(q).join(","));
+    d.tren.tanggal.forEach(function(t, i) {
+      L.push([t, d.tren.ai[i] || 0, d.tren.nonai[i] || 0, d.tren.member_baru[i] || 0].map(q).join(","));
+    });
+  }
+  const blob = new Blob(["\ufeff" + L.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a2 = document.createElement("a");
+  a2.href = URL.createObjectURL(blob);
+  a2.download = "laporan-khairypustaka-" + (d.hari_ini || "hari-ini") + ".csv";
+  document.body.appendChild(a2);
+  a2.click();
+  a2.remove();
+  setTimeout(function() { URL.revokeObjectURL(a2.href); }, 4000);
+  toast("Laporan terunduh 📋");
+}
+
+async function admMuatSistem() {
+  const box = $("#admSistem");
+  if (!box) return;
+  try {
+    const r = await apiJSON("/admin/sistem");
+    if (!r.ok) throw 0;
+    const d = r.data || {}, s = d.server || {}, an = d.antrean || {};
+    function barisAntre(nama, j) {
+      j = j || {};
+      return '<div class="list-row"><div class="lr-main"><b>' + esc(nama) + "</b>" +
+        '<div class="muted tiny">Jalan ' + (j.jalan || 0) + " · Antre " + (j.antre || 0) +
+        " · Gagal " + (j.gagal || 0) + " · Selesai " + (j.selesai || 0) + "</div></div>" +
+        admPill(String(j.total || 0) + " pekerjaan", (j.gagal || 0) > 0 ? "warn" : "grey") + "</div>";
+    }
+    const modelRows = (d.model || []).map(function(mo) {
+      const kelas = mo.status === "sehat" ? "ok" : mo.status === "error" ? "err" :
+        mo.status === "lambat" ? "warn" : "grey";
+      const label = mo.status === "sehat" ? "Sehat" : mo.status === "error" ? "Error" :
+        mo.status === "lambat" ? "Lambat" : "Belum ada data";
+      return '<div class="list-row"><div class="lr-main"><b>' + esc(mo.label) + "</b>" +
+        '<div class="muted tiny">' + esc(mo.provider) + " · berhasil " + (mo.ok || 0) +
+        "x · gagal " + (mo.gagal || 0) + "x sejak server menyala</div></div>" +
+        admPill(label, kelas) + "</div>";
+    }).join("");
+    box.innerHTML =
+      "<h4>Kesehatan Sistem</h4>" +
+      '<div class="list-row"><div class="lr-main"><b>Server</b>' +
+      '<div class="muted tiny">Terakhir dicek ' + esc(fmtWita(s.waktu)) + "</div></div>" +
+      admPill("Berjalan normal", "ok") + "</div>" +
+      '<div class="list-row"><div class="lr-main"><b>Basis Data</b>' +
+      '<div class="muted tiny">' + (s.basis_data === "postgres" ? "Terhubung ke Postgres (Neon)" : "Mode file lokal") + "</div></div>" +
+      admPill("Terhubung", "ok") + "</div>" +
+      "<h4>Model AI yang Dirotasi</h4>" +
+      (modelRows || '<p class="muted">Belum ada data model.</p>') +
+      "<h4>Sumber Daya</h4>" +
+      '<div class="list-row"><div class="lr-main"><b>Jam dan bandwidth Render</b>' +
+      '<div class="muted tiny">' + esc((d.render || {}).catatan || "") + "</div></div>" +
+      admPill("Belum terhubung", "warn") + "</div>" +
+      '<div class="list-row"><div class="lr-main"><b>Kredit Cerebras</b>' +
+      '<div class="muted tiny">' + esc((d.cerebras || {}).catatan || "") + "</div></div>" +
+      admPill("Belum terhubung", "warn") + "</div>" +
+      "<h4>Antrean Pekerjaan</h4>" +
+      '<p class="muted tiny">Isi antrean di memori server, hilang bila server mulai ulang.</p>' +
+      barisAntre("AI Studio dan Tanya AI", an.ai) +
+      barisAntre("Sitasi dari PDF", an.sitasi) +
+      barisAntre("Convert File", an.convert) +
+      "<h4>Pengaturan Kuota</h4>" +
+      '<p class="muted">Jatah tamu: <b>' + esc(String((d.kuota || {}).tamu_per_hari || 5)) +
+      'x per hari</b> untuk semua fitur. Jatah AI member: <b>' +
+      esc(String((d.kuota || {}).member_ai_per_hari || 15)) +
+      "x per hari</b>, reset pukul 00.00 WITA. Angka ini ketetapan sistem saat ini.</p>";
+  } catch (e) {
+    box.innerHTML = '<p class="pf-msg">Gagal memuat data sistem. Coba lagi ya.</p>';
+  }
+}
+
+async function admMuatPertanyaan() {
+  const box = $("#admPertanyaan");
+  if (!box) return;
+  try {
+    const r = await apiJSON("/admin/pertanyaan");
+    if (!r.ok) throw 0;
+    const rows = r.data.pertanyaan || [];
+    const badge = $("#admLogBadge");
+    if (badge) badge.textContent = rows.length ? String(rows.length) : "";
+    if (!rows.length) {
+      box.innerHTML = '<p class="muted">Belum ada pertanyaan yang tercatat belum terjawab.</p>';
+      return;
+    }
+    box.innerHTML = rows.map(function(p, i) {
+      return '<div class="q-item"><button class="q-head" type="button" data-q="' + i + '">' +
+        '<span class="q-prev">' + esc(p.q) + '</span>' +
+        '<span class="q-waktu">' + esc(fmtWita(p.ts)) + "</span></button>" +
+        '<div class="q-full hidden" id="admQFull' + i + '">' + esc(p.q) +
+        '<div class="muted tiny" style="margin-top:6px">Masuk ' + esc(fmtWita(p.ts)) +
+        " · dicatat dari Tanya AI sebagai bahan perbaikan jawaban</div></div></div>";
+    }).join("");
+    $$("#admPertanyaan .q-head").forEach(function(h) {
+      h.addEventListener("click", function() {
+        const f = $("#admQFull" + h.dataset.q);
+        if (f) f.classList.toggle("hidden");
+      });
+    });
+  } catch (e) {
+    box.innerHTML = '<p class="pf-msg">Gagal memuat pertanyaan masuk.</p>';
   }
 }
 
@@ -3236,7 +3428,8 @@ async function admCariMember() {
       const nama = m.nama || m.username || "member";
       return '<div class="kode-row"><div style="flex:1;min-width:160px"><b>@' + esc(m.username || "?") + "</b>" +
         '<div class="muted">' + esc(m.nama || "") + (m.email ? " · " + esc(m.email) : "") + "</div>" +
-        '<div class="muted">Saldo AI: <b>' + esc(String(m.saldo)) + "</b> · sisa harian: " + esc(String(m.sisa_harian)) + "</div></div>" +
+        '<div class="muted">Saldo AI: <b>' + esc(String(m.saldo)) + "</b> · sisa harian: " + esc(String(m.sisa_harian)) + "</div>" +
+        '<div class="muted">Aktif terakhir: ' + esc(fmtWita(m.terakhir_login)) + "</div></div>" +
         '<input type="number" class="adm-jml" data-uid="' + esc(m.uid) + '" value="25" min="1" max="100000" aria-label="jumlah jatah AI">' +
         '<button class="btn btn-primary" data-grant="' + esc(m.uid) + '" data-nama="' + esc(nama) + '">Tambah</button></div>';
     }).join("");
@@ -3323,41 +3516,92 @@ function pageAdmin() {
     return;
   }
   view().innerHTML =
-    "<h2>" + tic('shield') + " Panel Admin</h2>" +
-    '<div class="card"><h3>' + tic("chart") + ' Ringkasan</h3><div id="admStat"><p class="muted">Memuat data...</p></div></div>' +
-    '<div class="card"><h3>' + tic("ticket") + ' Kode Jatah AI</h3>' +
-    '<p class="muted">Buat kode redeem buat dibagikan ke member. Satu kode dipakai satu member, sekali pakai.</p>' +
-    '<label class="muted" for="admKodeJml">Jumlah kode</label>' +
-    '<input type="number" id="admKodeJml" value="5" min="1" max="200">' +
-    '<label class="muted" for="admKodeNom">Nominal per kode (jatah AI)</label>' +
-    '<div class="chip-row" id="admNomChips">' +
-    [25, 50, 100].map(function(n) {
-      return '<button class="chip" data-nom="' + n + '">' + n + "</button>";
-    }).join("") +
+    "<h2>" + tic('shield') + ' Panel Admin <span class="badge-admin">ADMIN</span></h2>' +
+    '<div class="tabs adm-tabs" role="tablist">' +
+      '<button class="tab active" data-atab="ringkasan" type="button">Ringkasan</button>' +
+      '<button class="tab" data-atab="member" type="button">Member</button>' +
+      '<button class="tab" data-atab="sistem" type="button">Sistem</button>' +
+      '<button class="tab" data-atab="pengumuman" type="button">Pengumuman</button>' +
+      '<button class="tab" data-atab="log" type="button">Log <span class="adm-log-badge" id="admLogBadge"></span></button>' +
     "</div>" +
-    '<input type="number" id="admKodeNom" value="25" min="1" max="10000">' +
-    '<button class="btn btn-primary btn-block" id="admKodeBtn">Generate Kode</button>' +
-    '<p class="pf-msg" id="admKodeMsg"></p>' +
-    '<div id="admKodeBaru"></div></div>' +
-    '<div class="card"><h3>' + tic("doc") + ' Daftar Kode</h3><div id="admKodeList"><p class="muted">Memuat...</p></div>' +
-    '<button class="btn btn-block" id="admKodeRefresh">Muat Ulang</button></div>' +
-    '<div class="card"><h3>' + tic("plus") + ' Tambah Jatah AI</h3>' +
-    '<p class="muted">Cari member lalu tambah saldo jatah AI langsung ke akunnya.</p>' +
-    '<input type="text" id="admCari" placeholder="ketik username, nama, atau email" autocomplete="off">' +
-    '<button class="btn btn-block" id="admCariBtn">Cari Member</button>' +
-    '<div id="admCariHasil"></div>' +
-    '<p class="pf-msg" id="admGrantMsg"></p></div>' +
-    '<div class="card"><h3>' + tic("download") + ' Backup Data</h3>' +
-    '<p class="muted">Unduh seluruh data aplikasi (member, kuota, koleksi, riwayat, kode) sebagai satu file JSON. Simpan di tempat aman sebagai cadangan.</p>' +
-    '<button class="btn btn-block" id="admBackupBtn">' + tic("download") + ' Download Backup Sekarang</button>' +
-    '<p class="pf-msg" id="admBackupMsg"></p></div>' +
-    '<div class="card"><h3>' + tic("trash") + ' Hapus Akun</h3>' +
-    '<p class="muted">Hapus permanen satu akun dari username-nya, misalnya akun uji. Data terkaitnya (token, kuota, koleksi, riwayat) ikut dibersihkan. Akun admin tidak bisa dihapus. Tindakan ini tidak bisa dibatalkan.</p>' +
-    '<input type="text" id="admHapusUser" placeholder="username akun yang mau dihapus" autocomplete="off">' +
-    '<button class="btn btn-danger btn-block" id="admHapusBtn">Hapus Akun Ini</button>' +
-    '<p class="pf-msg" id="admHapusMsg"></p></div>';
+
+    '<div class="adm-pane" id="admPane-ringkasan">' +
+      '<div class="card"><h3>' + tic("chart") + ' Ringkasan</h3><div id="admStat"><p class="muted">Memuat data...</p></div></div>' +
+    "</div>" +
+
+    '<div class="adm-pane hidden" id="admPane-member">' +
+      '<div class="card"><h3>' + tic("ticket") + ' Kode Jatah AI</h3>' +
+      '<p class="muted">Buat kode redeem buat dibagikan ke member. Satu kode dipakai satu member, sekali pakai.</p>' +
+      '<label class="muted" for="admKodeJml">Jumlah kode</label>' +
+      '<input type="number" id="admKodeJml" value="5" min="1" max="200">' +
+      '<label class="muted" for="admKodeNom">Nominal per kode (jatah AI)</label>' +
+      '<div class="chip-row" id="admNomChips">' +
+      [25, 50, 100].map(function(n) {
+        return '<button class="chip" data-nom="' + n + '">' + n + "</button>";
+      }).join("") +
+      "</div>" +
+      '<input type="number" id="admKodeNom" value="25" min="1" max="10000">' +
+      '<button class="btn btn-primary btn-block" id="admKodeBtn">Generate Kode</button>' +
+      '<p class="pf-msg" id="admKodeMsg"></p>' +
+      '<div id="admKodeBaru"></div></div>' +
+      '<div class="card"><h3>' + tic("doc") + ' Daftar Kode</h3><div id="admKodeList"><p class="muted">Memuat...</p></div>' +
+      '<button class="btn btn-block" id="admKodeRefresh">Muat Ulang</button></div>' +
+      '<div class="card"><h3>' + tic("plus") + ' Tambah Jatah AI</h3>' +
+      '<p class="muted">Cari member lalu tambah saldo jatah AI langsung ke akunnya.</p>' +
+      '<input type="text" id="admCari" placeholder="ketik username, nama, atau email" autocomplete="off">' +
+      '<button class="btn btn-block" id="admCariBtn">Cari Member</button>' +
+      '<div id="admCariHasil"></div>' +
+      '<p class="pf-msg" id="admGrantMsg"></p></div>' +
+      '<div class="card"><h3>' + tic("trash") + ' Hapus Akun</h3>' +
+      '<p class="muted">Hapus permanen satu akun dari username-nya, misalnya akun uji. Data terkaitnya (token, kuota, koleksi, riwayat) ikut dibersihkan. Akun admin tidak bisa dihapus. Tindakan ini tidak bisa dibatalkan.</p>' +
+      '<input type="text" id="admHapusUser" placeholder="username akun yang mau dihapus" autocomplete="off">' +
+      '<button class="btn btn-danger btn-block" id="admHapusBtn">Hapus Akun Ini</button>' +
+      '<p class="pf-msg" id="admHapusMsg"></p></div>' +
+    "</div>" +
+
+    '<div class="adm-pane hidden" id="admPane-sistem">' +
+      '<div class="card"><h3>' + tic("shield") + ' Sistem</h3><div id="admSistem"><p class="muted">Memuat data...</p></div></div>' +
+      '<div class="card"><h3>' + tic("download") + ' Backup Data</h3>' +
+      '<p class="muted">Unduh seluruh data aplikasi (member, kuota, koleksi, riwayat, kode) sebagai satu file JSON. Simpan di tempat aman sebagai cadangan.</p>' +
+      '<button class="btn btn-block" id="admBackupBtn">' + tic("download") + ' Download Backup Sekarang</button>' +
+      '<p class="pf-msg" id="admBackupMsg"></p></div>' +
+    "</div>" +
+
+    '<div class="adm-pane hidden" id="admPane-pengumuman">' +
+      '<div class="card"><h3>' + tic("bell") + ' Pengumuman dan Sakelar</h3>' +
+      '<p class="muted">Bagian ini sedang disiapkan dan akan aktif di tahap berikutnya: pengumuman untuk member, mode pemeliharaan, dan sakelar fitur. Belum ada pengaturan yang bisa diubah dari sini saat ini.</p></div>' +
+    "</div>" +
+
+    '<div class="adm-pane hidden" id="admPane-log">' +
+      '<div class="card"><h3>' + tic("chat") + ' Feedback Member</h3>' +
+      '<p class="muted">Kotak masuk feedback member sedang disiapkan dan akan aktif di tahap berikutnya, bersamaan dengan menu Kritik dan Saran di situs.</p></div>' +
+      '<div class="card"><h3>' + tic("help") + ' Pertanyaan Masuk</h3>' +
+      '<p class="muted">Pertanyaan yang belum bisa dijawab Tanya AI, dicatat otomatis sebagai bahan perbaikan. Ketuk satu pertanyaan buat membaca teks lengkapnya.</p>' +
+      '<div id="admPertanyaan"><p class="muted">Memuat...</p></div></div>' +
+    "</div>";
+  let admSistemDimuat = false, admPertanyaanDimuat = false;
+  $$("#view .adm-tabs .tab").forEach(function(tb) {
+    tb.addEventListener("click", function() {
+      $$("#view .adm-tabs .tab").forEach(function(x) {
+        x.classList.toggle("active", x === tb);
+      });
+      ["ringkasan", "member", "sistem", "pengumuman", "log"].forEach(function(n) {
+        const p = $("#admPane-" + n);
+        if (p) p.classList.toggle("hidden", n !== tb.dataset.atab);
+      });
+      if (tb.dataset.atab === "sistem" && !admSistemDimuat) {
+        admSistemDimuat = true;
+        admMuatSistem();
+      }
+      if (tb.dataset.atab === "log" && !admPertanyaanDimuat) {
+        admPertanyaanDimuat = true;
+        admMuatPertanyaan();
+      }
+    });
+  });
   admMuatStatistik();
   admMuatKode();
+  admMuatPertanyaan(); // sekalian buat lencana hitung di tab Log
   $$("#admNomChips .chip").forEach(function(c) {
     c.addEventListener("click", function() {
       $("#admKodeNom").value = c.dataset.nom;

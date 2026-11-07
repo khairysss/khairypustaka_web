@@ -303,11 +303,6 @@ def _set_login_cookie(resp, uid):
 
 def _do_login(uid, guest_uid):
     """Migrasi data tamu -> user, catat login. Dipakai semua jalur login."""
-    # Sesi tunggal: login baru membunuh semua cookie login sebelumnya.
-    try:
-        authmod.rotate_session(uid)
-    except Exception as e:
-        log.warning("rotasi sesi gagal: %s", e)
     try:
         authmod.migrate_guest(guest_uid, uid)
     except Exception as e:
@@ -2273,6 +2268,41 @@ def admin_statistik():
                 pass
     nonai_store = dbstore.load_json(_USAGE_PATH, {})
     nonai_rows, nonai_h, nonai_t = _agregasi_pakai(nonai_store, today)
+    # Tren 30 hari (tab Ringkasan panel admin 2026-11-08): total pemakaian
+    # AI + non-AI + member baru per hari, dari data days yang sama.
+    tren = {"tanggal": [], "ai": [], "nonai": [], "member_baru": []}
+    try:
+        from datetime import timedelta as _td
+        from zoneinfo import ZoneInfo as _ZI
+        _wita = _ZI("Asia/Makassar")
+        _base = date.fromisoformat(today)
+        _per_hari_member = {}
+        for u in users.values():
+            if not isinstance(u, dict):
+                continue
+            try:
+                _d = datetime.fromtimestamp(int(u.get("created") or 0),
+                                            _wita).date().isoformat()
+            except (TypeError, ValueError, OverflowError, OSError):
+                continue
+            _per_hari_member[_d] = _per_hari_member.get(_d, 0) + 1
+
+        def _sum_hari(store, d):
+            tot = 0
+            if isinstance(store, dict):
+                for t in store.values():
+                    if isinstance(t, dict):
+                        tot += int((t.get("days") or {}).get(d, 0) or 0)
+            return tot
+
+        for _i in range(29, -1, -1):
+            _d = (_base - _td(days=_i)).isoformat()
+            tren["tanggal"].append(_d)
+            tren["ai"].append(_sum_hari(tools_ai, _d))
+            tren["nonai"].append(_sum_hari(nonai_store, _d))
+            tren["member_baru"].append(_per_hari_member.get(_d, 0))
+    except Exception as e:
+        log.warning("admin_statistik: tren gagal dihitung: %s", e)
     return jsonify({"ok": True, "hari_ini": today,
                     "member": {"total": len(users),
                                "per_provider": per_provider,
@@ -2281,7 +2311,8 @@ def admin_statistik():
                            "per_fitur": ai_rows},
                     "nonai": {"hari_ini": nonai_h, "total": nonai_t,
                               "per_fitur": nonai_rows},
-                    "saldo_ai_web_total": saldo_total})
+                    "saldo_ai_web_total": saldo_total,
+                    "tren": tren})
 
 
 @app.post("/api/admin/kode")
@@ -2350,6 +2381,8 @@ def admin_member_cari():
         out.append({"uid": uid, "username": u.get("pid") or "",
                     "nama": u.get("nama") or "", "email": u.get("email") or "",
                     "provider": u.get("provider") or "",
+                    "bergabung": u.get("created") or 0,
+                    "terakhir_login": u.get("last_login") or u.get("created") or 0,
                     "saldo": sai.ai_balance(uid),
                     "sisa_harian": sai.ai_quota_left(uid)})
         if len(out) >= 50:
@@ -2504,6 +2537,76 @@ def admin_hapus_user():
         return _err("gagal menghapus akun, coba lagi", 502)
     return jsonify({"ok": True, "username": uname, "uid": target_uid,
                     "dibersihkan": dibersihkan})
+
+
+@app.get("/api/admin/sistem")
+@with_rl
+def admin_sistem():
+    """Tab Sistem panel admin (2026-11-08): kesehatan internal, status
+    model AI dari catatan panggilan sejak server menyala, dan antrean
+    pekerjaan di memori. Pemakaian Render dan saldo Cerebras TIDAK
+    dikarang: belum ada sumber datanya di kode/env, jadi dinyatakan
+    belum terhubung apa adanya."""
+    err = _need_admin()
+    if err:
+        return err
+
+    def ringkas(jobs):
+        j = {"jalan": 0, "antre": 0, "gagal": 0, "selesai": 0}
+        for job in jobs:
+            st = (job or {}).get("status")
+            if st == "memproses":
+                j["jalan"] += 1
+            elif st == "antre":
+                j["antre"] += 1
+            elif st == "gagal":
+                j["gagal"] += 1
+            elif st == "selesai":
+                j["selesai"] += 1
+        j["total"] = j["jalan"] + j["antre"] + j["gagal"] + j["selesai"]
+        return j
+
+    try:
+        import ai_providers as _aip
+        model = _aip.status_model()
+    except Exception as e:
+        log.warning("admin_sistem: status model gagal: %s", e)
+        model = []
+    return jsonify({
+        "ok": True,
+        "server": {"status": "normal",
+                   "basis_data": "postgres" if dbstore.enabled()
+                   else "file lokal",
+                   "waktu": int(time.time())},
+        "model": model,
+        "antrean": {"ai": ringkas(list(_AI_JOBS.values())),
+                    "sitasi": ringkas(list(_SITASI_JOBS.values())),
+                    "convert": ringkas(list(_CONVERT_JOBS.values()))},
+        "render": {"terhubung": False,
+                   "catatan": "Pemakaian Render belum terhubung, tidak ada "
+                              "akses API Render dari server saat ini."},
+        "cerebras": {"terhubung": False,
+                     "catatan": "Saldo kredit Cerebras belum terhubung, "
+                                "API Cerebras tidak menyediakan saldo untuk "
+                                "dibaca dari kode saat ini."},
+        "kuota": {"tamu_per_hari": 5, "member_ai_per_hari": 15}})
+
+
+@app.get("/api/admin/pertanyaan")
+@with_rl
+def admin_pertanyaan():
+    """Tab Log panel admin: pertanyaan Tanya AI yang belum terjawab
+    (sumber: catatan tanya_unanswered yang memang sudah dikumpulkan
+    sistem). Entri tidak memuat nama penanya, jadi hanya teks + waktu."""
+    err = _need_admin()
+    if err:
+        return err
+    out = []
+    for e in dbstore.read_unanswered(30):
+        if isinstance(e, dict):
+            out.append({"ts": e.get("ts") or 0,
+                        "q": str(e.get("q") or "")[:500]})
+    return jsonify({"ok": True, "pertanyaan": out, "total": len(out)})
 
 
 @app.get("/api/kode-referral")

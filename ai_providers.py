@@ -23,6 +23,7 @@ Key yang kosong di .env = provider dilewati otomatis.
 import asyncio
 import logging
 import os
+import threading
 import time
 
 log = logging.getLogger("ai_providers")
@@ -110,6 +111,66 @@ class _KeyRateLimited(Exception):
     """
 
 
+# ------------------------------------------------------------ status model
+# Catatan keberhasilan/kegagalan panggilan per model, DI MEMORI saja,
+# untuk tab Sistem panel admin (2026-11-08). Hilang saat server mulai
+# ulang dan memang ditampilkan apa adanya ("belum ada data"). Fail-safe:
+# pencatatan tidak pernah mengganggu panggilan AI.
+_MODEL_STATS = {}
+_MODEL_STATS_LOCK = threading.Lock()
+
+
+def catat_status_model(model_id, ok, lambat=False):
+    try:
+        mid = str(model_id or "").strip()
+        if not mid:
+            return
+        now = time.time()
+        with _MODEL_STATS_LOCK:
+            s = _MODEL_STATS.setdefault(mid, {"ok": 0, "gagal": 0,
+                                              "terakhir_ok": 0,
+                                              "terakhir_gagal": 0,
+                                              "terakhir_lama": 0})
+            if ok:
+                s["ok"] += 1
+                s["terakhir_ok"] = now
+            else:
+                s["gagal"] += 1
+                s["terakhir_gagal"] = now
+            if lambat:
+                s["terakhir_lama"] = now
+    except Exception:
+        pass
+
+
+def status_model():
+    """Ringkasan status per model registry untuk panel admin."""
+    with _MODEL_STATS_LOCK:
+        snap = {k: dict(v) for k, v in _MODEL_STATS.items()}
+    out = []
+    for e in MODEL_REGISTRY:
+        s = snap.get(e["id"]) or {}
+        ok_n = int(s.get("ok") or 0)
+        g_n = int(s.get("gagal") or 0)
+        tok = float(s.get("terakhir_ok") or 0)
+        tg = float(s.get("terakhir_gagal") or 0)
+        tl = float(s.get("terakhir_lama") or 0)
+        if not ok_n and not g_n:
+            status = "belum ada data"
+        elif tg > tok:
+            status = "error"
+        elif tl and tl >= max(tok, tg):
+            status = "lambat"
+        else:
+            status = "sehat"
+        out.append({"id": e["id"], "label": e["label"],
+                    "provider": e["provider"], "status": status,
+                    "ok": ok_n, "gagal": g_n,
+                    "terakhir_ok": tok or None,
+                    "terakhir_gagal": tg or None})
+    return out
+
+
 def _endpoints():
     """Daftar (nama, base_url, cfg) berurutan. cfg None = Gemini (custom)."""
     eps = []
@@ -175,6 +236,7 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
     if "groq" in (base or ""):
         raise ValueError("Groq dinonaktifkan total sejak port 2026-10-28")
     import httpx
+    _t0 = time.monotonic()
     for attempt in (1, 2):
         try:
             payload = {"model": model, "max_tokens": int(max_tokens),
@@ -188,18 +250,21 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
                     headers={"Authorization": f"Bearer {key}"},
                     json=payload)
             if r.status_code == 404:
+                catat_status_model(model, False)
                 raise RuntimeError("skip")
             if r.status_code == 429:
                 log.info("AI %s 429, ulangi (%d/2)", model, attempt)
                 if attempt < 2:
                     await asyncio.sleep(2 * attempt)
                     continue
+                catat_status_model(model, False)
                 raise _KeyRateLimited(model)
             if r.status_code in (500, 502, 503):
                 log.info("AI %s %s, ulangi (%d/2)", model, r.status_code, attempt)
                 if attempt < 2:
                     await asyncio.sleep(2 * attempt)
                     continue
+                catat_status_model(model, False)
                 return None
             r.raise_for_status()
             data = r.json()
@@ -216,11 +281,14 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
                                 model, cost)
             text = (((data.get("choices") or [{}])[0].get("message") or {})
                     .get("content") or "").strip()
+            catat_status_model(model, bool(text),
+                               lambat=(time.monotonic() - _t0) > 20)
             return text or None
         except RuntimeError:
             raise
         except Exception as e:
             log.info("AI %s gagal: %s", model, e)
+            catat_status_model(model, False)
             return None
     return None
 
@@ -267,6 +335,7 @@ async def generate(prompt, premium=False, search=False, budget=40.0,
                     tanya_mod.gemini_generate(
                         prompt, max_output_tokens=max_tokens),
                     timeout=sisa())
+                catat_status_model("gemini-flash", bool(out))
                 if out:
                     log.info("AI pilihan pakai %s", chosen["id"])
                     return finish(out, chosen["id"])
@@ -320,7 +389,9 @@ async def generate(prompt, premium=False, search=False, budget=40.0,
                         timeout=sisa())
                 except Exception as e:
                     log.info("AI gemini gagal: %s", e)
+                    catat_status_model("gemini-flash", False)
                     continue
+                catat_status_model("gemini-flash", bool(out))
                 if out:
                     return out, "gemini-flash"
                 continue
@@ -458,7 +529,9 @@ async def _coba_eps(eps, prompt, max_tokens, sisa, batas=None):
                     timeout=jatah())
             except Exception as e:
                 log.info("AI pilihan gemini gagal: %s", e)
+                catat_status_model("gemini-flash", False)
                 continue
+            catat_status_model("gemini-flash", bool(out))
             if out:
                 return out, "Gemini Flash"
             continue
