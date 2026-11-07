@@ -42,6 +42,7 @@ import template_doc
 import topics as topik_mod
 import tanya as tanya_mod
 import history as histmod
+import feedback as fbmod
 from cite import STYLE_ORDER, cite_in, style_label
 from citefind import parse_citation, split_citations, title_match
 from metafetch import fetch_metadata_from_url, doi_in_text
@@ -2590,6 +2591,122 @@ def admin_sistem():
                                 "API Cerebras tidak menyediakan saldo untuk "
                                 "dibaca dari kode saat ini."},
         "kuota": {"tamu_per_hari": 5, "member_ai_per_hari": 15}})
+
+
+# ------------------------------------------------------------ feedback
+# Fase 3 (2026-11-08): menu Kritik dan Saran + popup penilaian setelah
+# pemakaian terakumulasi. Penghitung pemakaian member ditambah di sini
+# (after_request pada endpoint fitur yang berhasil, khusus member login
+# non-admin) memakai modul feedback; fail-safe, tidak pernah mengganggu
+# respons fitur.
+_FB_TOOL_PATHS = frozenset({
+    "/api/cari", "/api/carifile", "/api/sitasi", "/api/rekomendasi",
+    "/api/publisher", "/api/penulis", "/api/topik", "/api/matriks",
+    "/api/statistik", "/api/parafrase", "/api/kemiripan",
+    "/api/kemiripan-file", "/api/terjemah", "/api/ai", "/api/ai/job",
+    "/api/tanya", "/api/convert/buat", "/api/sitasi-pdf",
+    "/api/sitasi-pdf/job", "/api/koleksi-impor", "/api/export",
+})
+
+
+@app.after_request
+def _fb_hitung_pakai(resp):
+    try:
+        if (request.method == "POST" and request.path in _FB_TOOL_PATHS
+                and resp.status_code == 200
+                and getattr(g, "user", None)
+                and not is_admin_user(g.user)):
+            fbmod.catat_pakai(g.uid)
+    except Exception:
+        pass
+    return resp
+
+
+@app.post("/api/feedback")
+@with_rl
+def feedback_kirim():
+    """Kirim feedback member. Wajib login; admin tidak mengirim.
+    Validasi: kategori dikenal, bintang 1..5, ada isi (saran atau fitur),
+    panjang teks dibatasi, frekuensi kirim dibatasi per member."""
+    if not g.user:
+        return _err("Login dulu ya buat kirim feedback", 401)
+    if is_admin_user(g.user):
+        return _err("Akun admin tidak mengirim feedback", 403)
+    body = request.get_json(silent=True) or {}
+    kategori = str(body.get("kategori") or "").strip().lower()
+    if kategori not in fbmod.KATEGORI:
+        return _err("Pilih kategori dulu ya", 400)
+    try:
+        bintang = int(body.get("bintang") or 0)
+    except (TypeError, ValueError):
+        bintang = 0
+    if not 1 <= bintang <= 5:
+        return _err("Pilih bintang 1 sampai 5 ya", 400)
+    saran = str(body.get("saran") or "").strip()[:1000]
+    fitur = str(body.get("fitur") or "").strip()[:1000]
+    if not saran and not fitur:
+        return _err("Tulis dulu masukanmu ya", 400)
+    boleh, pesan = fbmod.cek_batas_kirim(g.uid)
+    if not boleh:
+        return _err(pesan, 429)
+    fid = fbmod.tambah(g.user.get("pid") or g.uid, kategori, bintang,
+                       saran, fitur)
+    if fid is None:
+        return _err("Gagal menyimpan, coba lagi sebentar ya", 502)
+    fbmod.tandai_isi(g.uid)
+    return jsonify({"ok": True, "id": fid})
+
+
+@app.get("/api/feedback/status")
+@with_rl
+def feedback_status():
+    """Apakah popup penilaian layak tampil untuk member ini sekarang."""
+    if not g.user or is_admin_user(g.user):
+        return jsonify({"ok": True, "perlu": False, "pakai": 0})
+    st = fbmod.status_popup(g.uid)
+    return jsonify({"ok": True, "perlu": st["perlu"], "pakai": st["pakai"]})
+
+
+@app.post("/api/feedback/tunda")
+@with_rl
+def feedback_tunda():
+    if not g.user:
+        return _err("Login dulu ya", 401)
+    fbmod.tandai_tunda(g.uid)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/feedback/ditanya")
+@with_rl
+def feedback_ditanya():
+    if not g.user:
+        return _err("Login dulu ya", 401)
+    fbmod.tandai_ditanya(g.uid)
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/feedback")
+@with_rl
+def admin_feedback():
+    """Kotak masuk feedback di tab Log admin."""
+    err = _need_admin()
+    if err:
+        return err
+    kategori = (request.args.get("kategori") or "").strip().lower()
+    rows = fbmod.daftar(kategori if kategori in fbmod.KATEGORI else None, 100)
+    return jsonify({"ok": True, "feedback": rows, "total": len(rows)})
+
+
+@app.post("/api/admin/feedback/status")
+@with_rl
+def admin_feedback_status():
+    err = _need_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    if not fbmod.ubah_status(body.get("id"), str(body.get("status") or "")):
+        return _err("Gagal mengubah status", 400)
+    return jsonify({"ok": True})
 
 
 @app.get("/api/admin/pertanyaan")

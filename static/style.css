@@ -807,3 +807,58 @@ body{
   .adm-pane{animation:none}
   .tbar{transition:none}
 }
+
+/* ---------- Kritik dan Saran + Feedback admin (Fase 3, 2026-11-08) ---------- */
+.bintang-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
+.bintang-btn{
+  width:44px;height:44px;border-radius:12px;cursor:pointer;font-size:24px;line-height:1;
+  color:#8a97a3;background:rgba(245,194,107,.07);border:1px solid rgba(245,194,107,.28);
+  transition:transform .18s cubic-bezier(.34,1.56,.64,1), background .18s, border-color .18s, box-shadow .18s;
+}
+.bintang-btn.aktif{
+  color:#f5c26b;background:rgba(245,194,107,.18);border-color:rgba(245,194,107,.65);
+  box-shadow:0 6px 18px rgba(245,194,107,.18);
+}
+.bintang-btn:active{transform:scale(.97)}
+.bintang-btn.pop{animation:kpStarPop .28s cubic-bezier(.34,1.56,.64,1)}
+@keyframes kpStarPop{
+  0%{transform:scale(1)}
+  40%{transform:scale(1.28) rotate(-6deg)}
+  70%{transform:scale(.94)}
+  100%{transform:scale(1)}
+}
+.bintang-note{font-size:12.5px;color:var(--muted)}
+.fb-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.fb-sum{
+  background:var(--card2, #102c44);border:1px solid var(--line);border-radius:12px;
+  padding:9px 12px 8px;
+}
+.fb-sum b{display:block;font-size:16px;font-weight:800}
+.fb-sum span{display:block;font-size:11px;color:var(--muted)}
+.fb-row{border-bottom:1px solid var(--line);padding:10px 0}
+.fb-row:last-child{border-bottom:none}
+.fb-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.fb-meta .q-waktu{margin-left:auto}
+.fb-stars{color:#f5c26b;font-size:12px;letter-spacing:1px}
+.fb-stars-off{color:rgba(169,195,207,.35)}
+.fb-prev{
+  font-size:12.5px;color:var(--muted);margin-top:4px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.dtoggle{
+  margin-top:6px;font-size:11.5px;font-weight:700;color:var(--teal);cursor:pointer;
+  background:rgba(45,212,216,.08);border:1px solid rgba(45,212,216,.35);
+  border-radius:999px;padding:4px 9px;
+}
+.dtoggle:active{transform:scale(.97)}
+.fb-status{
+  width:auto;flex:none;font-size:11.5px;font-weight:700;border-radius:999px;
+  padding:4px 8px;background:rgba(6,18,32,.55);color:var(--ink);
+}
+.fb-status.st-baru{border-color:rgba(245,194,107,.45)}
+.fb-status.st-dibaca{border-color:rgba(45,212,216,.4)}
+.fb-status.st-tindak{border-color:rgba(74,222,128,.45)}
+@media (prefers-reduced-motion: reduce){
+  .bintang-btn.pop{animation:none}
+  .bintang-btn,.dtoggle{transition:none}
+}

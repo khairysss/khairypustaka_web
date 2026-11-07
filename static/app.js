@@ -123,6 +123,14 @@ async function apiJSON(path, opts) {
     }
     data = saringErrData(data);
     if (!r.ok) return { ok: false, status: r.status, data: data, error: "HTTP " + r.status };
+    // Fase 3: pemakaian fitur member yang berhasil bisa memicu popup
+    // penilaian (pengecekan sendiri dibatasi jeda dan status server).
+    try {
+      const mth = (o.method || "GET").toUpperCase();
+      if (mth === "POST" && /^\/(cari|carifile|sitasi|rekomendasi|publisher|penulis|topik|matriks|statistik|parafrase|kemiripan|terjemah|ai|tanya|convert|sitasi-pdf|koleksi-impor|export)/.test(_p)) {
+        setTimeout(cekPopupFeedback, 1200);
+      }
+    } catch (e) {}
     return { ok: true, status: r.status, data: data };
   } catch (e) {
     const timeout = e && e.name === "AbortError";
@@ -3072,6 +3080,187 @@ function pageBantuan() {
     '<a class="btn btn-primary" href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">' + tic("ig") + ' Hubungi Admin</a></div>';
 }
 
+/* ---------- Kritik dan Saran + popup penilaian (Fase 3) ---------- */
+const _bintangPilih = {};
+function bintangHTML(idGrup) {
+  return '<div class="bintang-row" data-bintang="' + idGrup + '">' +
+    [1, 2, 3, 4, 5].map(function(n) {
+      return '<button type="button" class="bintang-btn" data-nilai="' + n +
+        '" aria-label="' + n + ' bintang">★</button>';
+    }).join("") +
+    '<span class="bintang-note" id="bintangNote-' + idGrup + '">Belum memilih</span></div>';
+}
+function ikatBintang(idGrup) {
+  _bintangPilih[idGrup] = 0;
+  $$('.bintang-row[data-bintang="' + idGrup + '"] .bintang-btn').forEach(function(b) {
+    b.addEventListener("click", function() {
+      const n = parseInt(b.dataset.nilai, 10) || 0;
+      _bintangPilih[idGrup] = n;
+      $$('.bintang-row[data-bintang="' + idGrup + '"] .bintang-btn').forEach(function(x) {
+        x.classList.toggle("aktif", (parseInt(x.dataset.nilai, 10) || 0) <= n);
+      });
+      const note = document.getElementById("bintangNote-" + idGrup);
+      if (note) note.textContent = n + " dari 5 bintang";
+      b.classList.remove("pop");
+      void b.offsetWidth;
+      b.classList.add("pop");
+    });
+  });
+}
+function nilaiBintang(idGrup) { return _bintangPilih[idGrup] || 0; }
+
+const _katPilih = {};
+function ikatKategori(idRow, awal) {
+  _katPilih[idRow] = awal;
+  $$("#" + idRow + " .chip").forEach(function(c) {
+    c.addEventListener("click", function() {
+      _katPilih[idRow] = c.dataset.kat;
+      $$("#" + idRow + " .chip").forEach(function(x) {
+        x.classList.toggle("active", x === c);
+      });
+    });
+  });
+}
+function kategoriHTML(idRow) {
+  const opsi = [["kritik", "Kritik"], ["saran", "Saran"],
+                ["fitur", "Permintaan Fitur"], ["penilaian", "Penilaian"]];
+  return '<div class="chip-row" id="' + idRow + '">' + opsi.map(function(o, i) {
+    return '<button type="button" class="chip' + (i === 0 ? " active" : "") +
+      '" data-kat="' + o[0] + '">' + o[1] + "</button>";
+  }).join("") + "</div>";
+}
+
+function pageKritikSaran() {
+  if (!AUTH.login) {
+    view().innerHTML =
+      "<h2>" + tic("chat") + " Kritik dan Saran</h2>" +
+      '<div class="card center"><p class="muted">Kirim kritik, saran, masukan, atau permintaan fitur buat KhairyPustaka. Biar tercatat rapi, kirimnya setelah login ya.</p>' +
+      '<a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk Dulu</a></div>';
+    return;
+  }
+  if (AUTH.admin) {
+    view().innerHTML =
+      "<h2>" + tic("chat") + " Kritik dan Saran</h2>" +
+      '<div class="card center"><p class="muted">Kamu masuk sebagai admin. Feedback dari member bisa dibaca di Panel Admin, tab Log.</p>' +
+      '<a class="btn btn-primary btn-block" href="#/admin">Buka Panel Admin</a></div>';
+    return;
+  }
+  view().innerHTML =
+    "<h2>" + tic("chat") + " Kritik dan Saran</h2>" +
+    '<div class="card">' +
+      '<p class="muted">Ceritakan pengalamanmu memakai KhairyPustaka. Masukanmu membantu kami memperbaiki layanan dan menentukan fitur berikutnya yang paling dibutuhkan mahasiswa.</p>' +
+      "<label>Pilih kategori masukan</label>" +
+      kategoriHTML("ksKat") +
+      "<label>Beri penilaian untuk KhairyPustaka</label>" +
+      bintangHTML("ks") +
+      '<label for="ksSaran">Tulis masukanmu</label>' +
+      '<textarea id="ksSaran" maxlength="1000" placeholder="Tulis kritik, saran, atau fitur yang kamu inginkan di sini"></textarea>' +
+      '<label for="ksFitur">Fitur tambahan yang kamu inginkan (boleh kosong)</label>' +
+      '<textarea id="ksFitur" maxlength="1000" style="min-height:76px" placeholder="Tulis fitur tambahan yang menurutmu perlu ada di KhairyPustaka"></textarea>' +
+      '<button class="btn btn-primary btn-block" id="ksKirim" type="button">Kirim</button>' +
+      '<p class="pf-msg" id="ksMsg"></p>' +
+      '<div id="ksThanks"></div>' +
+    "</div>";
+  ikatKategori("ksKat", "kritik");
+  ikatBintang("ks");
+  $("#ksKirim").addEventListener("click", async function() {
+    const msg = $("#ksMsg");
+    msg.textContent = "";
+    const bintang = nilaiBintang("ks");
+    const saran = ($("#ksSaran").value || "").trim();
+    const fitur = ($("#ksFitur").value || "").trim();
+    if (!bintang) { msg.textContent = "Pilih bintang dulu ya."; return; }
+    if (!saran && !fitur) { msg.textContent = "Tulis dulu masukanmu sebelum mengirim."; return; }
+    const r = await apiPOST("/feedback", {
+      kategori: _katPilih["ksKat"] || "kritik",
+      bintang: bintang, saran: saran, fitur: fitur
+    });
+    if (!r.ok) {
+      msg.textContent = (r.data && r.data.error) || "Gagal mengirim. Coba lagi ya.";
+      return;
+    }
+    $("#ksThanks").innerHTML =
+      '<div class="ok-box"><b>Terima kasih banyak.</b> Kritik dan saranmu sudah kami terima dan akan dibaca untuk perbaikan KhairyPustaka.</div>';
+    $("#ksSaran").value = "";
+    $("#ksFitur").value = "";
+    toast("Feedback terkirim. Terima kasih! 🙏");
+  });
+}
+
+let _popupFbTampil = false;
+let _popupFbCekTerakhir = 0;
+async function cekPopupFeedback() {
+  if (_popupFbTampil || !AUTH.login || AUTH.admin) return;
+  const now = Date.now();
+  if (now - _popupFbCekTerakhir < 15000) return;
+  _popupFbCekTerakhir = now;
+  try {
+    const r = await apiJSON("/feedback/status");
+    if (r.ok && r.data && r.data.perlu) tampilPopupFeedback();
+  } catch (e) {}
+}
+
+function tampilPopupFeedback() {
+  if (_popupFbTampil || document.getElementById("kpPopupFb")) return;
+  _popupFbTampil = true;
+  apiPOST("/feedback/ditanya", {}).catch(function() {});
+  const el = document.createElement("div");
+  el.className = "modal";
+  el.id = "kpPopupFb";
+  el.style.alignItems = "center";
+  el.style.padding = "16px";
+  el.innerHTML =
+    '<div class="modal-box" style="border-radius:20px;max-width:520px">' +
+      '<div class="modal-head"><h3>Bagaimana pengalamanmu?</h3>' +
+      '<button class="x" id="pfTutup" type="button" aria-label="Tutup">✕</button></div>' +
+      '<p class="muted">Kamu sudah memakai beberapa alat di KhairyPustaka. Luangkan sebentar untuk memberi penilaian dan masukan agar kami bisa melayani kebutuhan tugas dan skripsimu lebih baik lagi.</p>' +
+      '<div id="pfIsi">' +
+        "<label>Penilaianmu untuk KhairyPustaka</label>" +
+        bintangHTML("pf") +
+        '<label for="pfSaran">Saran atau masukan</label>' +
+        '<textarea id="pfSaran" maxlength="1000" placeholder="Tulis saran atau tanggapanmu tentang KhairyPustaka"></textarea>' +
+        '<label for="pfFitur">Fitur tambahan yang kamu inginkan</label>' +
+        '<textarea id="pfFitur" maxlength="1000" style="min-height:76px" placeholder="Tulis fitur tambahan yang menurutmu perlu ada di KhairyPustaka"></textarea>' +
+        '<p class="pf-msg" id="pfMsg"></p>' +
+        '<button class="btn btn-primary btn-block" id="pfKirim" type="button">Kirim</button>' +
+        '<button class="btn btn-ghost btn-block" id="pfNanti" type="button" style="margin-top:8px">Nanti saja</button>' +
+      "</div>" +
+    "</div>";
+  document.body.appendChild(el);
+  ikatBintang("pf");
+  function tutup(tunda) {
+    if (tunda) apiPOST("/feedback/tunda", {}).catch(function() {});
+    el.remove();
+    _popupFbTampil = false;
+  }
+  el.querySelector("#pfTutup").addEventListener("click", function() { tutup(true); });
+  el.querySelector("#pfNanti").addEventListener("click", function() {
+    tutup(true);
+    toast("Baik, penilaian bisa kamu berikan kapan saja lewat menu Kritik dan Saran.");
+  });
+  el.addEventListener("click", function(e) { if (e.target === el) tutup(true); });
+  el.querySelector("#pfKirim").addEventListener("click", async function() {
+    const msg = el.querySelector("#pfMsg");
+    const bintang = nilaiBintang("pf");
+    const saran = (el.querySelector("#pfSaran").value || "").trim();
+    const fitur = (el.querySelector("#pfFitur").value || "").trim();
+    if (!bintang) { msg.textContent = "Pilih bintang dulu ya."; return; }
+    if (!saran && !fitur) { msg.textContent = "Tulis dulu masukanmu ya."; return; }
+    const r = await apiPOST("/feedback", {
+      kategori: "penilaian", bintang: bintang, saran: saran, fitur: fitur
+    });
+    if (!r.ok) {
+      msg.textContent = (r.data && r.data.error) || "Gagal mengirim. Coba lagi ya.";
+      return;
+    }
+    el.querySelector("#pfIsi").innerHTML =
+      '<div class="center" style="padding:10px 0"><h3>Terima kasih atas penilaianmu</h3>' +
+      '<p class="muted">Kritik dan saranmu sudah kami terima dan akan dibaca untuk perbaikan KhairyPustaka.</p>' +
+      '<button class="btn btn-primary" id="pfSelesai" type="button">Tutup</button></div>';
+    el.querySelector("#pfSelesai").addEventListener("click", function() { tutup(false); });
+  });
+}
+
 /* ---------- Router ---------- */
 const ROUTES = {
   "/beranda": pageBeranda,
@@ -3090,6 +3279,7 @@ const ROUTES = {
   "/topik": pageTopik,
   "/koleksi": pageKoleksi,
   "/riwayat": pageRiwayat,
+  "/kritik-saran": pageKritikSaran,
   "/matriks": pageMatriks,
   "/statistik": pageStatistik,
   "/template": pageTemplate,
@@ -3359,6 +3549,115 @@ async function admMuatPertanyaan() {
   }
 }
 
+let ADM_FB_ALL = null;
+let ADM_FB_KAT = "";
+const ADM_FB_LABEL = { kritik: "Kritik", saran: "Saran", fitur: "Permintaan Fitur", penilaian: "Penilaian" };
+const ADM_FB_STATUS_LABEL = { baru: "Baru", dibaca: "Dibaca", ditindaklanjuti: "Ditindaklanjuti" };
+
+async function admMuatFeedback() {
+  const box = $("#admFeedback");
+  if (!box) return;
+  $$("#admFbFilter .chip").forEach(function(c) {
+    if (c.dataset.fbikat) return;
+    c.dataset.fbikat = "1";
+    c.addEventListener("click", function() {
+      ADM_FB_KAT = c.dataset.fbkat || "";
+      $$("#admFbFilter .chip").forEach(function(x) {
+        x.classList.toggle("active", x === c);
+      });
+      admRenderFeedback();
+    });
+  });
+  try {
+    const r = await apiJSON("/admin/feedback");
+    if (!r.ok) throw 0;
+    ADM_FB_ALL = r.data.feedback || [];
+    admRenderFeedback();
+  } catch (e) {
+    box.innerHTML = '<p class="muted">Gagal memuat feedback.</p>';
+  }
+}
+
+function admRenderFeedback() {
+  const box = $("#admFeedback");
+  if (!box || !ADM_FB_ALL) return;
+  const semua = ADM_FB_ALL;
+  let tot = 0, nB = 0, nFitur = 0;
+  semua.forEach(function(f) {
+    if (f.bintang) { tot += f.bintang; nB++; }
+    if (f.kategori === "fitur") nFitur++;
+  });
+  const ring = $("#admFbRingkasan");
+  if (ring) {
+    ring.innerHTML = '<div class="fb-summary">' +
+      '<div class="fb-sum"><b>' + semua.length + '</b><span>Feedback masuk</span></div>' +
+      '<div class="fb-sum"><b>' + (nB ? String(Math.round(tot / nB * 10) / 10).replace(".", ",") : "0") + '</b><span>Rata rata penilaian dari 5</span></div>' +
+      '<div class="fb-sum"><b>' + nFitur + '</b><span>Permintaan fitur</span></div>' +
+      "</div>";
+  }
+  const rows = semua.filter(function(f) {
+    return !ADM_FB_KAT || f.kategori === ADM_FB_KAT;
+  });
+  if (!rows.length) {
+    box.innerHTML = '<p class="muted">Belum ada feedback di kategori ini.</p>';
+    return;
+  }
+  box.innerHTML = rows.map(function(f, i) {
+    const stars = f.bintang
+      ? '<span class="fb-stars">' + "★".repeat(f.bintang) +
+        '<span class="fb-stars-off">' + "★".repeat(5 - f.bintang) + "</span></span>"
+      : "";
+    const stKelas = f.status === "baru" ? "st-baru"
+      : f.status === "dibaca" ? "st-dibaca" : "st-tindak";
+    const opsi = ["baru", "dibaca", "ditindaklanjuti"].map(function(s) {
+      return '<option value="' + s + '"' + (f.status === s ? " selected" : "") +
+        ">" + ADM_FB_STATUS_LABEL[s] + "</option>";
+    }).join("");
+    return '<div class="fb-row">' +
+      '<div class="fb-meta"><b>' + esc(f.username) + "</b> " +
+        admPill(ADM_FB_LABEL[f.kategori] || f.kategori, f.kategori === "kritik" ? "warn" : "") +
+        " " + stars +
+        '<span class="q-waktu">' + esc(fmtWita(f.ts)) + "</span>" +
+        '<select class="fb-status ' + stKelas + '" data-fbstatus="' + f.id + '">' + opsi + "</select>" +
+      "</div>" +
+      '<div class="fb-prev">' + esc(f.saran || f.fitur || "") + "</div>" +
+      '<button class="dtoggle" type="button" data-fbdetail="' + i + '">Lihat Detail <span class="dchev">▾</span></button>' +
+      '<div class="q-full hidden" id="admFbFull' + i + '">' +
+        (f.saran ? "<p><b>Saran atau masukan:</b><br>" + esc(f.saran) + "</p>" : "") +
+        (f.fitur ? "<p><b>Fitur yang diinginkan:</b><br>" + esc(f.fitur) + "</p>" : "") +
+        '<div class="muted tiny">Kategori ' + esc(ADM_FB_LABEL[f.kategori] || f.kategori) +
+          (f.bintang ? " · Penilaian " + f.bintang + " dari 5" : "") +
+          " · Masuk " + esc(fmtWita(f.ts)) +
+          ' · Status saat ini: <span id="admFbSt' + i + '">' +
+          esc(ADM_FB_STATUS_LABEL[f.status] || f.status) + "</span></div>" +
+      "</div></div>";
+  }).join("");
+  $$("#admFeedback [data-fbdetail]").forEach(function(b) {
+    b.addEventListener("click", function() {
+      const el = $("#admFbFull" + b.dataset.fbdetail);
+      if (el) el.classList.toggle("hidden");
+    });
+  });
+  $$("#admFeedback [data-fbstatus]").forEach(function(sel) {
+    sel.addEventListener("change", async function() {
+      const r = await apiPOST("/admin/feedback/status", {
+        id: parseInt(sel.dataset.fbstatus, 10), status: sel.value
+      });
+      if (!r.ok) {
+        toast("Gagal mengubah status feedback.");
+        return;
+      }
+      sel.className = "fb-status " + (sel.value === "baru" ? "st-baru"
+        : sel.value === "dibaca" ? "st-dibaca" : "st-tindak");
+      const f = (ADM_FB_ALL || []).find(function(x) {
+        return String(x.id) === String(sel.dataset.fbstatus);
+      });
+      if (f) f.status = sel.value;
+      toast("Status feedback diperbarui.");
+    });
+  });
+}
+
 function admSalinTeks(t) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(t).then(
@@ -3574,7 +3873,15 @@ function pageAdmin() {
 
     '<div class="adm-pane hidden" id="admPane-log">' +
       '<div class="card"><h3>' + tic("chat") + ' Feedback Member</h3>' +
-      '<p class="muted">Kotak masuk feedback member sedang disiapkan dan akan aktif di tahap berikutnya, bersamaan dengan menu Kritik dan Saran di situs.</p></div>' +
+      '<div class="chip-row" id="admFbFilter">' +
+        '<button type="button" class="chip active" data-fbkat="">Semua</button>' +
+        '<button type="button" class="chip" data-fbkat="kritik">Kritik</button>' +
+        '<button type="button" class="chip" data-fbkat="saran">Saran</button>' +
+        '<button type="button" class="chip" data-fbkat="fitur">Permintaan Fitur</button>' +
+        '<button type="button" class="chip" data-fbkat="penilaian">Penilaian</button>' +
+      '</div>' +
+      '<div id="admFbRingkasan"></div>' +
+      '<div id="admFeedback"><p class="muted">Memuat...</p></div></div>' +
       '<div class="card"><h3>' + tic("help") + ' Pertanyaan Masuk</h3>' +
       '<p class="muted">Pertanyaan yang belum bisa dijawab Tanya AI, dicatat otomatis sebagai bahan perbaikan. Ketuk satu pertanyaan buat membaca teks lengkapnya.</p>' +
       '<div id="admPertanyaan"><p class="muted">Memuat...</p></div></div>' +
@@ -3596,6 +3903,7 @@ function pageAdmin() {
       if (tb.dataset.atab === "log" && !admPertanyaanDimuat) {
         admPertanyaanDimuat = true;
         admMuatPertanyaan();
+        admMuatFeedback();
       }
     });
   });
@@ -3742,6 +4050,7 @@ function router() {
   }
   RUTE_TERAKHIR = h;
   refreshAuth();
+  setTimeout(cekPopupFeedback, 800);
 }
 
 /* K-1 (audit 2026-10-17): referral HANYA dihitung untuk akun yang login
