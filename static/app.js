@@ -1056,11 +1056,18 @@ function pageBeranda() {
     ).join("");
   }
   view().innerHTML =
+    '<div id="bannerPengumuman"></div>' +
     '<section class="hero">' +
       '<img src="maskot.jpg" class="hero-maskot" alt="Maskot KhairyPustaka">' +
       "<h1>KhairyPustaka</h1>" +
       "<p>Asisten skripsi & nugas anti begadang: cari jurnal, bikin sitasi, sampai nulis bab — semua dari HP.</p>" +
       '<a class="btn btn-accent" href="#/cari">' + tic("search") + ' Mulai Cari Jurnal</a> ' +
+    "</section>" +
+    '<section class="fakta-strip" aria-label="Fakta KhairyPustaka">' +
+      '<div class="fakta"><b>24</b><span>Alat</span></div>' +
+      '<div class="fakta"><b>5</b><span>Model AI</span></div>' +
+      '<div class="fakta"><b>6</b><span>Gaya Sitasi</span></div>' +
+      '<div class="fakta fakta-free"><b>100% Gratis</b><span>Untuk semua mahasiswa</span></div>' +
     "</section>" +
     '<div class="filter-row" role="tablist">' +
       KATS.map(k =>
@@ -1079,6 +1086,7 @@ function pageBeranda() {
     $$("#view .filter-chip").forEach(c => c.classList.toggle("active", c === ch));
     $("#featGrid").innerHTML = gridHTML();
   }));
+  muatBannerPengumuman();
   // Etalase: jeda animasi saat disentuh, lanjut lagi setelah dilepas.
   var strip = $("#kpShowStrip"), track = $("#kpShowTrack"), tmrJeda = null;
   if (strip && track) {
@@ -1092,6 +1100,74 @@ function pageBeranda() {
     }, { passive: true });
   }
 }
+
+/* ----- Banner pengumuman (Fase 1 tema glass; sumber data Fase 4) -----
+   Mengambil pengumuman aktif dari /api/pengumuman. Bila endpoint belum
+   ada atau tidak ada pengumuman aktif, area ini tetap kosong: tidak ada
+   contoh yang ditampilkan di situs live. */
+async function muatBannerPengumuman() {
+  const box = $("#bannerPengumuman");
+  if (!box) return;
+  try {
+    const r = await apiJSON("/pengumuman");
+    if (!r.ok || !r.data || !r.data.pengumuman) return;
+    const p = r.data.pengumuman;
+    const kunci = String(p.id || p.diperbarui || "");
+    try {
+      if (sessionStorage.getItem("kp_banner_tutup") === kunci) return;
+    } catch (e) {}
+    box.innerHTML =
+      '<div class="banner-pengumuman" role="note">' +
+        '<span class="banner-tag">Pengumuman</span>' +
+        "<p>" + (p.judul ? "<b>" + esc(p.judul) + "</b> " : "") + esc(p.isi || "") + "</p>" +
+        '<button class="banner-tutup" type="button" aria-label="Tutup pengumuman">✕</button>' +
+      "</div>";
+    const btn = box.querySelector(".banner-tutup");
+    if (btn) btn.addEventListener("click", () => {
+      try { sessionStorage.setItem("kp_banner_tutup", kunci); } catch (e) {}
+      const el = box.querySelector(".banner-pengumuman");
+      if (el) el.classList.add("tutup");
+      setTimeout(() => { box.innerHTML = ""; }, 190);
+    });
+  } catch (e) { /* diam saja: banner bukan fitur kritis */ }
+}
+
+/* ----- Motion: riak teal saat elemen diklik (tema glass) -----
+   Ringan: satu span per klik, transform + opacity saja, dan mati total
+   bila pengguna memilih gerakan dikurangi. */
+const KP_REDUCE_MOTION = !!(window.matchMedia &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+function kpRiak(host, x, y) {
+  if (KP_REDUCE_MOTION || !host) return;
+  try {
+    const r = host.getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const d = Math.max(r.width, r.height) * 1.6;
+    const s = document.createElement("span");
+    s.className = "kp-ripple";
+    s.style.width = s.style.height = d + "px";
+    s.style.left = ((x == null ? r.width / 2 : x)) + "px";
+    s.style.top = ((y == null ? r.height / 2 : y)) + "px";
+    host.appendChild(s);
+    setTimeout(() => { s.remove(); }, 300);
+  } catch (e) {}
+}
+document.addEventListener("pointerdown", (e) => {
+  if (KP_REDUCE_MOTION) return;
+  const host = e.target && e.target.closest
+    ? e.target.closest(".btn, .feat, .filter-chip, .chip, .tab, .banner-tutup")
+    : null;
+  if (!host) return;
+  const r = host.getBoundingClientRect();
+  kpRiak(host, e.clientX - r.left, e.clientY - r.top);
+}, { passive: true });
+document.addEventListener("keydown", (e) => {
+  if (KP_REDUCE_MOTION || (e.key !== "Enter" && e.key !== " ")) return;
+  const t = e.target;
+  if (t && t.closest && t.closest(".btn, .feat, .filter-chip, .chip, .tab")) {
+    kpRiak(t.closest(".btn, .feat, .filter-chip, .chip, .tab"), null, null);
+  }
+});
 
 /* ----- Cari Jurnal ----- */
 let cariState = { tahun: 0, hasil: [] };
