@@ -304,6 +304,11 @@ def _set_login_cookie(resp, uid):
 
 def _do_login(uid, guest_uid):
     """Migrasi data tamu -> user, catat login. Dipakai semua jalur login."""
+    # Sesi tunggal: login baru membunuh semua cookie login sebelumnya.
+    try:
+        authmod.rotate_session(uid)
+    except Exception as e:
+        log.warning("rotasi sesi gagal: %s", e)
     try:
         authmod.migrate_guest(guest_uid, uid)
     except Exception as e:
