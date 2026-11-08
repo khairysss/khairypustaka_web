@@ -147,6 +147,16 @@ def status_model():
     """Ringkasan status per model registry untuk panel admin."""
     with _MODEL_STATS_LOCK:
         snap = {k: dict(v) for k, v in _MODEL_STATS.items()}
+    # Kategori galat Gemini terakhir (diagnosis 2026-11-08): statistik
+    # di atas hanya menghitung ok/gagal, jadi penyebab kegagalan Gemini
+    # tidak pernah terlihat di panel. Ambil dari tanya secara lazy
+    # (pola impor silang kedua modul memang di dalam fungsi).
+    gem_galat = {}
+    try:
+        import tanya as _tanya_mod
+        gem_galat = _tanya_mod.gemini_galat_terakhir()
+    except Exception:
+        gem_galat = {}
     out = []
     for e in MODEL_REGISTRY:
         s = snap.get(e["id"]) or {}
@@ -163,11 +173,14 @@ def status_model():
             status = "lambat"
         else:
             status = "sehat"
-        out.append({"id": e["id"], "label": e["label"],
-                    "provider": e["provider"], "status": status,
-                    "ok": ok_n, "gagal": g_n,
-                    "terakhir_ok": tok or None,
-                    "terakhir_gagal": tg or None})
+        baris = {"id": e["id"], "label": e["label"],
+                 "provider": e["provider"], "status": status,
+                 "ok": ok_n, "gagal": g_n,
+                 "terakhir_ok": tok or None,
+                 "terakhir_gagal": tg or None}
+        if e["id"] == "gemini-flash" and gem_galat:
+            baris["galat_terakhir"] = gem_galat
+        out.append(baris)
     return out
 
 

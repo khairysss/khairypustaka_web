@@ -684,13 +684,57 @@ _GEMINI_OK = 0        # indeks model yang terakhir berhasil
 # model akun termasuk varian Pro yang berbayar, dan fallback bisa nyasar
 # ke Pro begitu Flash gagal 404. Daftar statis ini satu-satunya yang
 # boleh dipanggil; gemini_generate menolak nama di luar daftar.
+# Diperbarui 2026-11-08 (diagnosis picker Gemini): tiga id dibuang
+# karena sudah tidak berlaku menurut dokumentasi resmi Google:
+# gemini-2.0-flash sudah shut down 2026-06-01 (pasti 404),
+# gemini-3.5-flash deprecated 2026-10-08 (dirutekan Google ke 3.6,
+# jadi duplikat), gemini-2.5-flash deprecated 2026-11-02 dan dibatasi
+# untuk pemakai lama. Sisanya id Flash yang masih berlaku.
 GEMINI_FLASH_MODELS = (
     "models/gemini-flash-latest",
     "models/gemini-3.8-flash", "models/gemini-3.6-flash",
-    "models/gemini-3.5-flash", "models/gemini-3.5-flash-lite",
-    "models/gemini-3.1-flash-lite",
-    "models/gemini-2.5-flash", "models/gemini-2.0-flash",
+    "models/gemini-3.5-flash-lite", "models/gemini-3.1-flash-lite",
 )
+
+# Kategori galat Gemini terakhir, untuk panel admin (tab Sistem lewat
+# ai_providers.status_model). Dulu kegagalan Gemini hanya tercatat di
+# log server sehingga panel tidak pernah jujur soal penyebabnya.
+# Isinya hanya kategori + nama model + status HTTP + waktu: tanpa
+# kunci, tanpa prompt, tanpa isi respons provider.
+_GEMINI_GALAT = {"kategori": None, "model": None, "http": None, "waktu": 0}
+
+
+def gemini_galat_terakhir():
+    """Kategori galat Gemini terakhir; {} bila belum pernah gagal."""
+    g = dict(_GEMINI_GALAT)
+    return g if g.get("waktu") else {}
+
+
+def _catat_galat_gemini(kategori, model, http=None):
+    global _GEMINI_GALAT
+    _GEMINI_GALAT = {"kategori": kategori, "model": model,
+                     "http": http, "waktu": int(time.time())}
+
+
+def _teks_dari_candidates(cands):
+    """Teks jawaban dari candidates Gemini; None bila tidak ada.
+
+    Model penalar seri 3.x dapat mengembalikan part berpikir
+    (thought=true) SEBELUM part jawaban; kode lama mengambil parts[0]
+    mentah sehingga teks pikir bisa terkirim sebagai jawaban.
+    Gabungkan semua part teks non-pikir; bila tidak ada, baru terima
+    part teks mana pun.
+    """
+    if not cands:
+        return None
+    parts = (((cands[0] or {}).get("content") or {}).get("parts")) or []
+    jawab = [p.get("text") for p in parts
+             if isinstance(p, dict) and p.get("text") and not p.get("thought")]
+    if jawab:
+        return "".join(jawab).strip() or None
+    semua = [p.get("text") for p in parts
+             if isinstance(p, dict) and p.get("text")]
+    return ("".join(semua).strip() or None) if semua else None
 
 
 async def _gemini_ranked_models(key):
@@ -707,14 +751,30 @@ async def gemini_generate(prompt, max_output_tokens=1500):
 
     max_output_tokens membatasi output di sisi provider (ekonomi AI,
     T-2 audit 2026-10-17).
-    Tahan banting: tiap model dicoba; 404 -> lewati (model pensiun),
-    429/500/503 -> coba ulang 1x lalu pindah model berikut.
+    Perilaku fallback (dirombak 2026-11-08, diagnosis picker):
+    - Kuota Gemini API berlaku PER MODEL per proyek, jadi 429 di satu
+      model TIDAK menghentikan rantai: lanjut ke model berikut tanpa
+      mengulang model yang sama (kode lama berhenti total di 429
+      pertama, sehingga satu varian Flash yang kuotanya habis mengubur
+      semua varian lain termasuk yang kuotanya masih penuh).
+    - Galat transport (timeout/koneksi) di satu model juga lanjut ke
+      model berikut (kode lama mengembalikan None seketika).
+    - Yang menghentikan rantai hanya galat level kunci/permintaan
+      (HTTP 400/403 lewat raise_for_status): model lain akan gagal
+      dengan cara yang sama.
+    - 404 -> model pensiun, lanjut. 5xx -> ulangi 1x, lalu lanjut.
+    - Timeout baca per request 15 detik dan tenggat internal ±24
+      detik, supaya satu model yang menggantung tidak memakan
+      seluruh jatah fase pemilih (30 detik) maupun budget rotasi.
+    - Kategori galat terakhir dicatat (_catat_galat_gemini) untuk
+      panel admin; tanpa kunci/prompt/isi respons.
     Model yang berhasil diingat untuk panggilan berikutnya.
     Kembalikan str | None.
     """
     global _GEMINI_OK
     key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
+        _catat_galat_gemini("kunci_kosong", None)
         return None
     import asyncio
     import httpx
@@ -722,14 +782,16 @@ async def gemini_generate(prompt, max_output_tokens=1500):
     try:
         models = await _gemini_ranked_models(key)
     except Exception as e:
-        log.warning("gemini_generate gagal (models): %s", e)
+        log.warning("gemini_generate gagal (models): %s", type(e).__name__)
         return None
     if not models:
         log.warning("gemini: daftar model kosong")
         return None
     n = len(models)
     order = [models[(_GEMINI_OK + i) % n] for i in range(n)]
-    async with httpx.AsyncClient(timeout=30) as cli:
+    tenggat = time.monotonic() + 24
+    timeout = httpx.Timeout(connect=5, read=15, write=10, pool=5)
+    async with httpx.AsyncClient(timeout=timeout) as cli:
         for model in order:
             # Jaring kedua (port 2026-10-28): nama di luar daftar Flash
             # terkunci tidak pernah dikirim, walau cache somehow berubah.
@@ -738,6 +800,9 @@ async def gemini_generate(prompt, max_output_tokens=1500):
                             model)
                 continue
             for attempt in (1, 2):
+                if time.monotonic() > tenggat:
+                    log.warning("gemini: tenggat internal tercapai, berhenti")
+                    return None
                 try:
                     # FIX 2026-11-08 (audit putaran 2, temuan lama #14):
                     # kunci API Gemini dikirim lewat header resmi
@@ -752,44 +817,53 @@ async def gemini_generate(prompt, max_output_tokens=1500):
                                   "maxOutputTokens": int(max_output_tokens)}},
                     )
                     if r.status_code == 404:
+                        _catat_galat_gemini("http_404", model, 404)
                         log.info("gemini %s 404 (pensiun), lanjut model berikut", model)
                         break
-                    if r.status_code in (429, 500, 503):
+                    if r.status_code == 429:
+                        _catat_galat_gemini("http_429", model, 429)
+                        log.info("gemini %s 429 (kuota model ini), lanjut model berikut", model)
+                        break
+                    if r.status_code in (500, 502, 503):
+                        _catat_galat_gemini("http_5xx", model, r.status_code)
                         log.info("gemini %s -> %s, ulangi (%d/2)", model, r.status_code, attempt)
-                        if r.status_code == 429 and attempt == 2:
-                            # 429 di Gemini level API key, bukan model — semua
-                            # model lain pasti gagal juga, jangan buang budget
-                            # 75 dtk (caller lanjut ke provider berikutnya).
-                            log.warning("gemini 429 level key, hentikan percobaan model lain")
-                            return None
-                        await asyncio.sleep(2 * attempt)
-                        continue
+                        if attempt < 2:
+                            await asyncio.sleep(2)
+                            continue
+                        break
                     r.raise_for_status()
                     data = r.json()
-                    cands = data.get("candidates") or []
-                    if not cands:
-                        log.warning("gemini %s: tanpa candidates (mungkin diblokir filter)", model)
-                        return None
+                    teks = _teks_dari_candidates(data.get("candidates") or [])
+                    if not teks:
+                        _catat_galat_gemini("tanpa_teks", model, r.status_code)
+                        log.warning("gemini %s: tanpa teks jawaban (filter/habis token?), lanjut model berikut", model)
+                        break
                     _GEMINI_OK = models.index(model)
                     log.info("gemini pakai model %s", model)
-                    return cands[0]["content"]["parts"][0]["text"].strip()
+                    return teks
                 except httpx.HTTPStatusError as e:
-                    sc = e.response.status_code
-                    if sc == 404:
-                        break
-                    if sc in (429, 500, 503) and attempt < 2:
-                        await asyncio.sleep(2 * attempt)
-                        continue
+                    sc = e.response.status_code if e.response is not None else 0
+                    _catat_galat_gemini("http_%d" % sc, model, sc)
                     # FIX 2026-11-08: jangan catat objek galat httpx
                     # mentah (bisa memuat URL + kredensial); status dan
                     # nama model cukup untuk diagnosis.
                     log.warning("gemini_generate gagal (http=%s) model=%s",
                                 sc, model)
                     return None
+                except httpx.TimeoutException:
+                    _catat_galat_gemini("timeout", model)
+                    log.warning("gemini %s timeout, lanjut model berikut", model)
+                    break
+                except httpx.HTTPError as e:
+                    _catat_galat_gemini("jaringan", model)
+                    log.warning("gemini %s galat jaringan (%s), lanjut model berikut",
+                                model, type(e).__name__)
+                    break
                 except Exception as e:
+                    _catat_galat_gemini("galat_" + type(e).__name__, model)
                     log.warning("gemini_generate gagal (%s) model=%s",
                                 type(e).__name__, model)
-                    return None
+                    break
     log.warning("gemini: semua %d model gagal", n)
     return None
 
