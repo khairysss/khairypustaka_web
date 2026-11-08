@@ -2553,9 +2553,11 @@ def admin_sistem():
     pekerjaan di memori. Pemakaian Render dibaca dari metrik API Render
     bila kunci API terpasang di env (modul render_metrics), pemakaian
     Cerebras dari pencatatan persisten situs sendiri (modul
-    cerebras_usage) karena API Cerebras tidak menyediakan saldo. Kedua
-    sumber itu fail-safe: kegagalannya tidak menggagalkan endpoint ini
-    dan tidak pernah diganti angka karangan."""
+    cerebras_usage) karena API Cerebras tidak menyediakan saldo.
+    Pemakaian OpenRouter dibaca dari API resmi OpenRouter memakai
+    kunci yang sudah dipakai rotasi AI (modul openrouter_usage).
+    Ketiga sumber itu fail-safe: kegagalannya tidak menggagalkan
+    endpoint ini dan tidak pernah diganti angka karangan."""
     err = _need_admin()
     if err:
         return err
@@ -2593,6 +2595,7 @@ def admin_sistem():
                     "convert": ringkas(list(_CONVERT_JOBS.values()))},
         "render": _blok_render(),
         "cerebras": _blok_cerebras(),
+        "openrouter": _blok_openrouter(),
         "kuota": {"tamu_per_hari": 5, "member_ai_per_hari": 15}})
 
 
@@ -2833,6 +2836,20 @@ def _blok_cerebras():
         except Exception as e:
             log.warning("admin_sistem: hitung acuan cerebras gagal: %s", e)
     return blok
+
+
+def _blok_openrouter():
+    """Blok OpenRouter untuk tab Sistem: pemakaian dan kuota asli dari
+    API resmi OpenRouter lewat modul openrouter_usage. Fail-safe:
+    galat apa pun jatuh ke status jujur tanpa angka."""
+    try:
+        import openrouter_usage as _ou
+        return _ou.data_openrouter()
+    except Exception as e:
+        log.warning("admin_sistem: blok openrouter gagal: %s", e)
+        return {"terhubung": False, "status": "galat",
+                "catatan": "Data pemakaian OpenRouter belum terbaca "
+                           "saat ini."}
 
 
 def _peta_tool(path, kind=None):

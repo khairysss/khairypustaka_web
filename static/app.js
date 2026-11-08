@@ -3643,6 +3643,46 @@ async function admMuatSistem() {
       t += '<div class="muted tiny">' + esc(cb.catatan || "") + "</div>";
       cerebrasDetail = t;
     }
+    function fmtUsd(x) {
+      if (x === null || x === undefined) return "";
+      try { return "$" + Number(x).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 4 }); }
+      catch (e) { return "$" + String(x); }
+    }
+    const orr = d.openrouter || {};
+    let orPill = admPill("Belum terhubung", "warn");
+    let orDetail = esc(orr.catatan || "");
+    if (orr.terhubung) {
+      orPill = admPill("Terhubung", "ok");
+      let t = "";
+      const kh = orr.kuota_harian || null;
+      if (kh) {
+        t += "Kuota model gratis hari ini: terpakai <b>" + fmtAngka(kh.terpakai) +
+          " dari " + fmtAngka(kh.batas) + " request</b> · sisa <b>" + fmtAngka(kh.sisa) + " request</b>" +
+          '<div class="muted tiny">Kuota dihitung per hari UTC dan reset tengah malam UTC, pukul 08.00 WITA</div>';
+      }
+      t += '<div class="muted tiny">Pemakaian kunci: hari ini ' + fmtUsd(orr.usage_harian_usd) +
+        " · minggu ini " + fmtUsd(orr.usage_mingguan_usd) +
+        " · bulan ini " + fmtUsd(orr.usage_bulanan_usd) +
+        " · total " + fmtUsd(orr.usage_total_usd) + "</div>";
+      if (orr.tanpa_batas) {
+        t += '<div class="muted tiny">Batas belanja kunci: tanpa batas</div>';
+      } else {
+        t += '<div class="muted tiny">Batas belanja kunci ' + fmtUsd(orr.limit_usd) +
+          " · sisa " + fmtUsd(orr.limit_sisa_usd) + "</div>";
+      }
+      t += '<div class="muted tiny">Status tier: ' +
+        (orr.tier_gratis ? "gratis, belum pernah membeli kredit" : "berbayar, pernah membeli kredit") + "</div>";
+      const sa = orr.saldo_akun || {};
+      if (sa.tersedia) {
+        t += "<div>Saldo akun: total kredit <b>" + fmtUsd(sa.total_kredit_usd) + "</b> · terpakai " +
+          fmtUsd(sa.total_terpakai_usd) + " · <b>sisa " + fmtUsd(sa.sisa_usd) + "</b></div>";
+      } else if (sa.catatan) {
+        t += '<div class="muted tiny">' + esc(sa.catatan) + "</div>";
+      }
+      t += '<div class="muted tiny">Diperbarui ' + esc(fmtWita(orr.diperbarui)) + "</div>" +
+        '<div class="muted tiny">' + esc(orr.catatan || "") + "</div>";
+      orDetail = t;
+    }
     const modelRows = (d.model || []).map(function(mo) {
       const kelas = mo.status === "sehat" ? "ok" : mo.status === "error" ? "err" :
         mo.status === "lambat" ? "warn" : "grey";
@@ -3675,6 +3715,9 @@ async function admMuatSistem() {
       '<input type="number" id="admCbSaldo" min="0" step="0.01" inputmode="decimal" placeholder="contoh: 245.00" style="flex:1;min-width:140px">' +
       '<button class="btn btn-primary" id="admCbSimpan" type="button">Simpan Saldo Acuan</button></div>' +
       '<p class="muted tiny" style="margin-top:6px">Lihat saldo terbaru di konsol Cerebras, lalu isi di sini. Total pemakaian tercatat saat disimpan menjadi titik nol perkiraan sisa.</p></div>' +
+      '<div class="list-row"><div class="lr-main"><b>OpenRouter</b>' +
+      "<div>" + orDetail + "</div></div>" +
+      orPill + "</div>" +
       "<h4>Antrean Pekerjaan</h4>" +
       '<p class="muted tiny">Isi antrean di memori server, hilang bila server mulai ulang.</p>' +
       barisAntre("AI Studio dan Tanya AI", an.ai) +
