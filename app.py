@@ -2550,9 +2550,12 @@ def admin_hapus_user():
 def admin_sistem():
     """Tab Sistem panel admin (2026-11-08): kesehatan internal, status
     model AI dari catatan panggilan sejak server menyala, dan antrean
-    pekerjaan di memori. Pemakaian Render dan saldo Cerebras TIDAK
-    dikarang: belum ada sumber datanya di kode/env, jadi dinyatakan
-    belum terhubung apa adanya."""
+    pekerjaan di memori. Pemakaian Render dibaca dari metrik API Render
+    bila kunci API terpasang di env (modul render_metrics), pemakaian
+    Cerebras dari pencatatan persisten situs sendiri (modul
+    cerebras_usage) karena API Cerebras tidak menyediakan saldo. Kedua
+    sumber itu fail-safe: kegagalannya tidak menggagalkan endpoint ini
+    dan tidak pernah diganti angka karangan."""
     err = _need_admin()
     if err:
         return err
@@ -2588,13 +2591,8 @@ def admin_sistem():
         "antrean": {"ai": ringkas(list(_AI_JOBS.values())),
                     "sitasi": ringkas(list(_SITASI_JOBS.values())),
                     "convert": ringkas(list(_CONVERT_JOBS.values()))},
-        "render": {"terhubung": False,
-                   "catatan": "Pemakaian Render belum terhubung, tidak ada "
-                              "akses API Render dari server saat ini."},
-        "cerebras": {"terhubung": False,
-                     "catatan": "Saldo kredit Cerebras belum terhubung, "
-                                "API Cerebras tidak menyediakan saldo untuk "
-                                "dibaca dari kode saat ini."},
+        "render": _blok_render(),
+        "cerebras": _blok_cerebras(),
         "kuota": {"tamu_per_hari": 5, "member_ai_per_hari": 15}})
 
 
@@ -2730,7 +2728,8 @@ _peng_lock = threading.Lock()
 def _pengaturan_default():
     return {"pengumuman": {"aktif": False, "judul": "", "isi": "",
                            "diperbarui": 0},
-            "pemeliharaan": False, "tool_off": {}}
+            "pemeliharaan": False, "tool_off": {},
+            "cerebras_acuan": {"saldo_usd": None, "ts": 0, "total": {}}}
 
 
 def _muat_pengaturan(segar=False):
@@ -2756,6 +2755,20 @@ def _muat_pengaturan(segar=False):
                 base["tool_off"] = {
                     k: bool(v) for k, v in d["tool_off"].items()
                     if k in TOOL_SAKELAR and v}
+            ca = d.get("cerebras_acuan")
+            if isinstance(ca, dict):
+                if ca.get("saldo_usd") is not None:
+                    try:
+                        base["cerebras_acuan"]["saldo_usd"] = float(
+                            ca["saldo_usd"])
+                    except (TypeError, ValueError):
+                        pass
+                try:
+                    base["cerebras_acuan"]["ts"] = int(ca.get("ts") or 0)
+                except (TypeError, ValueError):
+                    pass
+                if isinstance(ca.get("total"), dict):
+                    base["cerebras_acuan"]["total"] = ca["total"]
         _peng_cache["data"] = base
         _peng_cache["ts"] = now
         return base
@@ -2766,6 +2779,60 @@ def _simpan_pengaturan(d):
     with _peng_lock:
         _peng_cache["data"] = d
         _peng_cache["ts"] = time.time()
+
+
+def _blok_render():
+    """Blok Render untuk tab Sistem: metrik asli dari API Render lewat
+    modul render_metrics. Fail-safe: galat apa pun jatuh ke status
+    jujur tanpa angka."""
+    try:
+        import render_metrics as _rm
+        return _rm.data_render()
+    except Exception as e:
+        log.warning("admin_sistem: blok render gagal: %s", e)
+        return {"terhubung": False, "status": "galat",
+                "catatan": "Data metrik Render belum terbaca saat ini."}
+
+
+def _blok_cerebras():
+    """Blok Cerebras untuk tab Sistem: pemakaian tercatat situs sendiri
+    (modul cerebras_usage), saldo acuan manual dari pengaturan admin,
+    dan perkiraan biaya serta sisa sejak acuan diisi."""
+    try:
+        import cerebras_usage as _cu
+        ring = _cu.ringkasan()
+    except Exception as e:
+        log.warning("admin_sistem: blok cerebras gagal: %s", e)
+        return {"tercatat": False,
+                "catatan": "Pencatatan pemakaian Cerebras belum terbaca "
+                           "saat ini."}
+    blok = {"tercatat": True,
+            "hari_ini": ring["hari_ini"],
+            "bulan_ini": ring["bulan_ini"],
+            "acuan": None,
+            "perkiraan_biaya_sejak_acuan_usd": None,
+            "perkiraan_sisa_usd": None,
+            "catatan": "Saldo acuan belum diisi. Isi saldo Cerebras "
+                       "terbaru dari konsol Cerebras supaya perkiraan "
+                       "sisa saldo bisa dihitung."}
+    try:
+        ac = _muat_pengaturan().get("cerebras_acuan") or {}
+    except Exception:
+        ac = {}
+    saldo = ac.get("saldo_usd")
+    if saldo is not None:
+        try:
+            terpakai = _cu.biaya_sejak(ac.get("total") or {})
+            blok["acuan"] = {"saldo_usd": float(saldo),
+                             "waktu": int(ac.get("ts") or 0)}
+            blok["perkiraan_biaya_sejak_acuan_usd"] = round(terpakai, 4)
+            blok["perkiraan_sisa_usd"] = round(float(saldo) - terpakai, 4)
+            blok["catatan"] = ("Perkiraan sisa dihitung dari saldo acuan "
+                               "dikurangi perkiraan biaya pemakaian "
+                               "tercatat sejak acuan diisi.")
+        except Exception as e:
+            log.warning("admin_sistem: hitung acuan cerebras gagal: %s", e)
+    return blok
 
 
 def _peta_tool(path, kind=None):
@@ -2897,6 +2964,45 @@ def admin_pengaturan_post():
         return _err("Basis data lagi tidak bisa dihubungi, coba lagi ya",
                     503)
     return jsonify({"ok": True, "pengaturan": peng})
+
+
+@app.post("/api/admin/cerebras-acuan")
+@with_rl
+def admin_cerebras_acuan():
+    """Simpan saldo acuan Cerebras (USD) untuk tab Sistem. Saat
+    disimpan, total pemakaian tercatat saat itu dibekukan sebagai
+    titik nol, jadi perkiraan sisa = acuan dikurangi perkiraan biaya
+    pemakaian sejak titik itu. saldo_usd null = hapus acuan."""
+    err = _need_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    peng = _muat_pengaturan(segar=True)
+    saldo = body.get("saldo_usd")
+    if saldo is None:
+        peng["cerebras_acuan"] = {"saldo_usd": None, "ts": 0, "total": {}}
+    else:
+        try:
+            saldo = float(saldo)
+        except (TypeError, ValueError):
+            return _err("Saldo acuan harus berupa angka USD", 400)
+        if saldo < 0 or saldo > 1000000:
+            return _err("Saldo acuan di luar rentang wajar", 400)
+        try:
+            import cerebras_usage as _cu
+            titik_nol = _cu.snapshot_total()
+        except Exception as e:
+            log.warning("cerebras-acuan: snapshot gagal: %s", e)
+            titik_nol = {}
+        peng["cerebras_acuan"] = {"saldo_usd": saldo,
+                                  "ts": int(time.time()),
+                                  "total": titik_nol}
+    try:
+        _simpan_pengaturan(peng)
+    except dbstore.DBUnavailable:
+        return _err("Basis data lagi tidak bisa dihubungi, coba lagi ya",
+                    503)
+    return jsonify({"ok": True, "cerebras": _blok_cerebras()})
 
 
 @app.get("/api/admin/pertanyaan")

@@ -3609,6 +3609,40 @@ async function admMuatSistem() {
         " · Gagal " + (j.gagal || 0) + " · Selesai " + (j.selesai || 0) + "</div></div>" +
         admPill(String(j.total || 0) + " pekerjaan", (j.gagal || 0) > 0 ? "warn" : "grey") + "</div>";
     }
+    function fmtAngka(x) {
+      try { return Number(x || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 }); }
+      catch (e) { return String(x || 0); }
+    }
+    const rd = d.render || {};
+    let renderPill = admPill("Belum terhubung", "warn");
+    let renderDetail = esc(rd.catatan || "");
+    if (rd.terhubung) {
+      renderPill = admPill("Terhubung", "ok");
+      renderDetail =
+        "Bandwidth bulan ini <b>" + fmtAngka(rd.bandwidth_gb) + " GB</b> · perkiraan jam instance <b>" +
+        fmtAngka(rd.jam_instance_perkiraan) + " jam</b>" +
+        '<div class="muted tiny">Periode data ' + esc(fmtWita(rd.periode_mulai)) + " s.d. " +
+        esc(fmtWita(rd.periode_selesai)) + " · diperbarui " + esc(fmtWita(rd.diperbarui)) + "</div>" +
+        '<div class="muted tiny">' + esc(rd.catatan || "") + "</div>";
+    }
+    const cb = d.cerebras || {};
+    let cerebrasPill = admPill("Belum terbaca", "warn");
+    let cerebrasDetail = esc(cb.catatan || "");
+    if (cb.tercatat) {
+      cerebrasPill = admPill("Tercatat", "ok");
+      const hi = cb.hari_ini || {}, bi = cb.bulan_ini || {};
+      let t = "Hari ini <b>" + (hi.panggilan || 0) + " panggilan</b> · " + fmtAngka(hi.token) + " token" +
+        '<div class="muted tiny">Bulan ini ' + (bi.panggilan || 0) + " panggilan · " +
+        fmtAngka(bi.token) + " token tercatat oleh situs</div>";
+      if (cb.acuan) {
+        t += '<div class="muted tiny">Saldo acuan <b>$' + fmtAngka(cb.acuan.saldo_usd) + "</b> per " +
+          esc(fmtWita(cb.acuan.waktu)) + " · perkiraan terpakai sejak acuan $" +
+          fmtAngka(cb.perkiraan_biaya_sejak_acuan_usd) + "</div>" +
+          "<div><b>Perkiraan sisa $" + fmtAngka(cb.perkiraan_sisa_usd) + "</b></div>";
+      }
+      t += '<div class="muted tiny">' + esc(cb.catatan || "") + "</div>";
+      cerebrasDetail = t;
+    }
     const modelRows = (d.model || []).map(function(mo) {
       const kelas = mo.status === "sehat" ? "ok" : mo.status === "error" ? "err" :
         mo.status === "lambat" ? "warn" : "grey";
@@ -3631,11 +3665,16 @@ async function admMuatSistem() {
       (modelRows || '<p class="muted">Belum ada data model.</p>') +
       "<h4>Sumber Daya</h4>" +
       '<div class="list-row"><div class="lr-main"><b>Jam dan bandwidth Render</b>' +
-      '<div class="muted tiny">' + esc((d.render || {}).catatan || "") + "</div></div>" +
-      admPill("Belum terhubung", "warn") + "</div>" +
+      "<div>" + renderDetail + "</div></div>" +
+      renderPill + "</div>" +
       '<div class="list-row"><div class="lr-main"><b>Kredit Cerebras</b>' +
-      '<div class="muted tiny">' + esc((d.cerebras || {}).catatan || "") + "</div></div>" +
-      admPill("Belum terhubung", "warn") + "</div>" +
+      "<div>" + cerebrasDetail + "</div></div>" +
+      cerebrasPill + "</div>" +
+      '<div style="margin:10px 0 4px"><label for="admCbSaldo">Saldo acuan Cerebras (USD)</label>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">' +
+      '<input type="number" id="admCbSaldo" min="0" step="0.01" inputmode="decimal" placeholder="contoh: 245.00" style="flex:1;min-width:140px">' +
+      '<button class="btn btn-primary" id="admCbSimpan" type="button">Simpan Saldo Acuan</button></div>' +
+      '<p class="muted tiny" style="margin-top:6px">Lihat saldo terbaru di konsol Cerebras, lalu isi di sini. Total pemakaian tercatat saat disimpan menjadi titik nol perkiraan sisa.</p></div>' +
       "<h4>Antrean Pekerjaan</h4>" +
       '<p class="muted tiny">Isi antrean di memori server, hilang bila server mulai ulang.</p>' +
       barisAntre("AI Studio dan Tanya AI", an.ai) +
@@ -3646,6 +3685,22 @@ async function admMuatSistem() {
       'x per hari</b> untuk semua fitur. Jatah AI member: <b>' +
       esc(String((d.kuota || {}).member_ai_per_hari || 15)) +
       "x per hari</b>, reset pukul 00.00 WITA. Angka ini ketetapan sistem saat ini.</p>";
+    const btnCb = $("#admCbSimpan");
+    if (btnCb) btnCb.addEventListener("click", async function() {
+      const inp = $("#admCbSaldo");
+      const v = inp ? parseFloat(String(inp.value || "").replace(",", ".")) : NaN;
+      if (isNaN(v) || v < 0) { toast("Isi saldo acuan yang valid dulu ya."); return; }
+      btnCb.disabled = true;
+      try {
+        const rr = await apiPOST("/admin/cerebras-acuan", { saldo_usd: v });
+        if (!rr.ok) throw 0;
+        toast("Saldo acuan Cerebras tersimpan.");
+        admMuatSistem();
+      } catch (e2) {
+        toast("Gagal menyimpan saldo acuan. Coba lagi ya.");
+        btnCb.disabled = false;
+      }
+    });
   } catch (e) {
     box.innerHTML = '<p class="pf-msg">Gagal memuat data sistem. Coba lagi ya.</p>';
   }

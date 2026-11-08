@@ -268,6 +268,22 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
                 return None
             r.raise_for_status()
             data = r.json()
+            if "cerebras" in (base or ""):
+                # Pencatatan pemakaian Cerebras persisten (2026-11-08):
+                # API Cerebras tidak punya endpoint saldo, jadi token
+                # dari field usage respons dicatat sendiri untuk panel
+                # admin. Dijalankan di utas latar, fail-safe total,
+                # tidak menahan dan tidak menggagalkan respons AI.
+                try:
+                    _u = data.get("usage") or {}
+                    import cerebras_usage as _cu
+                    threading.Thread(
+                        target=_cu.catat,
+                        args=(model, _u.get("prompt_tokens"),
+                              _u.get("completion_tokens")),
+                        daemon=True).start()
+                except Exception:
+                    pass
             if is_openrouter:
                 # Jaring ketiga (deteksi): biaya > 0 yang dilaporkan
                 # OpenRouter untuk request yang seharusnya gratis dicatat
