@@ -913,3 +913,208 @@ body{
 @media (prefers-reduced-motion: reduce){
   .kp-switch,.kp-switch::after{transition:none}
 }
+
+/* ================= FASE 6: SELARAS VISUAL DEMO GLASS =================
+   Bahasa desain demo diterapkan utuh: font Plus Jakarta Sans, latar
+   ambient berlapis (blob + grid), topbar melayang, hero komposisi demo,
+   kartu rata kiri dengan ubin ikon, footer panel kaca dengan pil sosial,
+   dan panel admin bergaya demo. Hanya kulit; fungsi tidak berubah. */
+:root{ --gold:#f5c26b; --stroke-soft:rgba(169,195,207,.14); --stroke:rgba(45,212,216,.22) }
+body{ font-family:"Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif }
+button, input, select, textarea{ font-family:inherit }
+body::before, body::after{ display:none }
+
+/* Latar ambient demo */
+.bg-scene{ position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none;
+  background:
+    radial-gradient(900px 500px at 15% 0%, rgba(31,182,186,.20), transparent 60%),
+    radial-gradient(800px 500px at 95% 10%, rgba(45,212,216,.14), transparent 60%),
+    linear-gradient(180deg,#081826,#061220 55%,#081826); }
+.bg-scene .blob{ position:absolute; border-radius:50%; filter:blur(70px); opacity:.55 }
+.bg-scene .b1{ width:480px; height:480px; left:-140px; top:8%; background:#125a63; animation:drift1 16s ease-in-out infinite alternate }
+.bg-scene .b2{ width:560px; height:560px; right:-220px; top:26%; background:#123f57; animation:drift2 20s ease-in-out infinite alternate }
+.bg-scene .b3{ width:420px; height:420px; left:30%; bottom:-220px; background:#0d3a4a; animation:drift1 22s ease-in-out infinite alternate-reverse }
+.bg-scene .grid-lines{ position:absolute; inset:0; opacity:.05;
+  background-image:linear-gradient(rgba(255,255,255,.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px);
+  background-size:56px 56px;
+  -webkit-mask-image:linear-gradient(180deg,#000 0%,transparent 62%); mask-image:linear-gradient(180deg,#000 0%,transparent 62%) }
+.container, .footer{ position:relative; z-index:1 }
+
+/* Topbar melayang seperti demo */
+.topbar{ top:10px; width:calc(100% - 20px); max-width:912px; margin:10px auto 0;
+  border:1px solid var(--gborder); border-radius:18px;
+  background:linear-gradient(180deg, rgba(16,44,68,.80), rgba(13,36,56,.68));
+  box-shadow:0 16px 40px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.10) }
+.brand .maskot-badge{ width:44px; height:44px; border-radius:13px; border:1px solid rgba(45,212,216,.45);
+  box-shadow:0 6px 16px rgba(45,212,216,.22) }
+.brand span{ font-size:19px; font-weight:800; letter-spacing:-.2px }
+.auth-area{ display:flex; align-items:center; gap:8px }
+.btn-login{ background:rgba(255,255,255,.05); color:var(--ink); border:1px solid rgba(45,212,216,.35);
+  border-radius:12px; padding:10px 17px; font-size:14px; font-weight:700 }
+.btn-login:hover{ background:rgba(45,212,216,.14) }
+.btn-daftar{ background:linear-gradient(90deg, var(--teal), #1fb6ba); color:#03222b; border:1px solid transparent;
+  border-radius:12px; padding:10px 18px; font-size:14px; font-weight:800; text-decoration:none;
+  box-shadow:0 10px 24px rgba(45,212,216,.30); display:inline-flex; align-items:center }
+.user-chip{ background:rgba(255,255,255,.05); border:1px solid rgba(45,212,216,.35); padding:5px 13px 5px 6px }
+.badge-admin{ background:linear-gradient(135deg,#5eead4,#2dd4d8); color:#06222b; border:1px solid transparent;
+  letter-spacing:1px; padding:4px 10px; font-size:11px; border-radius:999px; font-weight:800 }
+@media (max-width:860px){
+  .nav{ top:calc(100% + 8px); left:6px; right:6px; width:auto; border:1px solid var(--gborder); border-radius:18px;
+    box-shadow:0 24px 50px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08) }
+}
+@media (max-width:480px){
+  .topbar{ top:8px; width:calc(100% - 16px); margin-top:8px }
+  .brand span{ font-size:17px }
+  .btn-login, .btn-daftar{ padding:9px 13px; font-size:13.5px }
+}
+@media (max-width:560px){
+  .topbar{ gap:8px; padding:10px 12px }
+  .brand{ gap:8px }
+  .brand .maskot-badge{ width:38px; height:38px; border-radius:11px }
+  .brand span{ font-size:15.5px }
+  .menu-btn{ padding:7px 10px; font-size:1.15rem }
+  .btn-login, .btn-daftar{ padding:8px 11px; font-size:13px }
+  .btn-login .tic{ display:none }
+  .user-chip{ padding:4px 10px 4px 5px; gap:6px }
+  .user-chip img{ width:26px; height:26px }
+  .user-chip span{ max-width:64px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .user-chip .badge-admin{ display:none }
+}
+
+/* Tombol dan input bahasa demo (berlaku umum, termasuk admin) */
+.btn{ background:rgba(238,247,249,.06); border:1px solid rgba(169,195,207,.18); color:var(--ink);
+  border-radius:10px; padding:10px 15px }
+.btn:hover{ border-color:rgba(45,212,216,.45) }
+.btn-primary{ background:linear-gradient(135deg,#5eead4,#2dd4d8); color:#06222b; border-color:transparent;
+  box-shadow:0 10px 24px rgba(45,212,216,.25) }
+.btn-primary:hover{ filter:brightness(1.05) }
+.btn-accent{ background:rgba(45,212,216,.13); border:1px solid rgba(45,212,216,.40); color:#a5f3f5 }
+.btn-ghost{ background:rgba(255,255,255,.05); border:1px solid rgba(45,212,216,.35); color:var(--ink) }
+.btn-ig{ background:rgba(238,247,249,.06); border:1px solid rgba(169,195,207,.18); color:var(--ink) }
+input, select, textarea{ border:1px solid rgba(169,195,207,.16); background:rgba(6,18,32,.55) }
+/* Input tanpa atribut type (judul pengumuman) lolos dari aturan gaya lama
+   yang mensyaratkan [type=...]; samakan tampilannya dengan input teks. */
+input:not([type]){ width:100%; padding:11px 12px; border-radius:12px; font-size:.95rem; color:var(--ink) }
+
+/* Hero komposisi demo */
+.hero{ display:flex; align-items:center; gap:30px; text-align:left; padding:34px }
+.hero::before{ display:none }
+.hero-text{ flex:1 1 auto; min-width:0 }
+.hero .pill{ display:inline-flex; align-items:center; gap:8px; background:rgba(45,212,216,.13);
+  border:1px solid rgba(45,212,216,.24); color:#a5f3f5; border-radius:999px; padding:7px 13px;
+  font-size:13px; font-weight:700 }
+.hero .pill .dot{ width:8px; height:8px; border-radius:50%; background:var(--teal);
+  box-shadow:0 0 0 5px rgba(45,212,216,.15) }
+.hero h1{ font-size:clamp(28px,4.3vw,42px); line-height:1.15; margin:16px 0 12px; letter-spacing:-.3px }
+.hero h1 em{ font-style:normal; color:var(--teal); text-shadow:0 0 22px rgba(45,212,216,.45) }
+.hero-sub{ color:var(--muted); font-size:15.5px; line-height:1.7; margin:0; max-width:560px }
+.hero-cta{ display:flex; gap:10px; flex-wrap:wrap; margin-top:20px }
+.btn-hero{ padding:13px 20px; font-size:15px; border-radius:12px }
+.searchbar{ margin-top:16px; max-width:560px; display:flex; align-items:center; gap:9px;
+  background:rgba(6,18,32,.62); border:1px solid rgba(45,212,216,.20); border-radius:16px; padding:7px 7px 7px 14px }
+.searchbar > .tic{ width:20px; height:20px; color:var(--muted); flex:0 0 auto }
+.searchbar input{ flex:1; min-width:120px; background:none; border:none; box-shadow:none; color:var(--ink);
+  font-size:14.5px; padding:8px 0; border-radius:0 }
+.searchbar input:focus{ outline:none; border:none; box-shadow:none }
+.searchbar:focus-within{ border-color:var(--gborder-bright); box-shadow:0 0 0 4px rgba(45,212,216,.10) }
+.searchbar .btn{ border-radius:11px; padding:10px 16px; flex:0 0 auto }
+.hero-mascot{ flex:0 0 198px }
+.hero-mascot img{ width:100%; height:auto; aspect-ratio:1/1; object-fit:cover; object-position:center 12%; display:block; border-radius:30px;
+  box-shadow:0 24px 50px rgba(0,0,0,.35), 0 0 0 1px rgba(45,212,216,.25);
+  animation:floaty 5s ease-in-out infinite }
+@keyframes floaty{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-9px) } }
+@media (max-width:860px){
+  .hero{ flex-direction:column; align-items:flex-start; padding:26px 22px; gap:20px }
+  .hero-mascot{ order:-1; flex:none; width:148px }
+}
+@media (max-width:480px){
+  .hero{ padding:22px 18px }
+  .hero-mascot{ width:126px }
+  .hero .btn{ display:inline-flex; width:auto }
+  .hero h1{ font-size:28px }
+}
+
+/* Strip fakta: angka teal merata seperti demo */
+.fakta-strip .fakta-free b{ color:var(--teal) }
+
+/* Filter + catatan hasil */
+.filters-wrap{ display:flex; align-items:flex-start; gap:12px }
+.filters-wrap .filter-row{ flex:1 1 auto; min-width:0 }
+.result-note{ color:var(--muted2); font-size:13px; font-weight:600; white-space:nowrap; padding-top:12px }
+@media (max-width:560px){
+  .filters-wrap{ flex-wrap:wrap; gap:0 }
+  .result-note{ width:100%; padding-top:0; margin:-4px 0 10px }
+  .hero-cta{ flex-wrap:nowrap }
+  .hero-cta .btn-hero{ flex:1 1 0; justify-content:center; text-align:center; padding:12px 10px; font-size:14px }
+}
+
+/* Kartu alat rata kiri seperti demo */
+.feat{ text-align:left; padding:19px }
+.feat .ico{ width:47px; height:47px; border-radius:14px; margin:0 0 12px }
+.feat .ico .tic{ width:24px; height:24px; animation:none }
+.feat b{ font-size:15.5px }
+.feat small{ line-height:1.6 }
+
+/* Footer panel kaca + pil sosial demo */
+.footer{ max-width:912px; width:calc(100% - 20px); margin:26px auto 18px; padding:28px 22px 24px;
+  background:linear-gradient(180deg, rgba(16,44,68,.66), rgba(13,36,56,.54));
+  border:1px solid var(--gborder); border-radius:22px;
+  backdrop-filter:blur(20px) saturate(145%); -webkit-backdrop-filter:blur(20px) saturate(145%);
+  box-shadow:var(--gshadow), inset 0 1px 0 rgba(255,255,255,.08) }
+.footer-maskot{ width:60px; height:60px; border-radius:18px; border:1px solid rgba(45,212,216,.35); object-fit:cover }
+.footer .sosmed{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin:14px 0 4px }
+.footer .sosmed a{ background:rgba(45,212,216,.10); border:1px solid rgba(45,212,216,.26); color:#a5f3f5;
+  border-radius:999px; padding:8px 15px; font-weight:700; font-size:13.5px; text-decoration:none }
+.footer .sosmed a:hover{ background:rgba(45,212,216,.20) }
+.footer .foot-links{ display:flex; justify-content:center; gap:8px; flex-wrap:wrap; margin-top:10px }
+.footer .foot-links a{ border-radius:999px; padding:9px 16px; font-weight:700; font-size:13.5px; text-decoration:none }
+.footer .foot-links a.fl-ghost{ background:rgba(255,255,255,.05); border:1px solid rgba(45,212,216,.30); color:#a5f3f5 }
+.footer .foot-links a.fl-solid{ background:linear-gradient(90deg, var(--teal), #1fb6ba); color:#03222b; border:1px solid transparent }
+
+/* Panel admin gaya demo */
+.adm-topbar{ display:flex; align-items:center; gap:12px; padding:8px 14px 8px 10px; margin-bottom:12px;
+  background:linear-gradient(180deg, rgba(16,44,68,.78), rgba(13,36,56,.62));
+  border:1px solid var(--stroke); border-radius:16px;
+  backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  box-shadow:0 12px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.08) }
+.adm-mascot{ width:46px; height:46px; border-radius:13px; object-fit:cover; border:1px solid rgba(45,212,216,.35); flex:0 0 auto }
+.adm-brand{ flex:1 1 auto; min-width:0 }
+.adm-brand h2{ font-size:17px; margin:0; display:block }
+.adm-brand p{ margin:1px 0 0; font-size:12px }
+.adm-topbar .badge-admin{ flex:0 0 auto }
+.adm-keluar{ flex:0 0 auto; padding:8px 14px }
+@media (max-width:560px){ .adm-brand p{ display:none } .adm-topbar{ gap:9px; padding-right:10px } }
+.adm-tabs{ display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; overflow:visible }
+.adm-tabs .tab{ flex:none; display:inline-flex; align-items:center; gap:7px; border-radius:999px;
+  padding:8px 15px; font-size:13px; font-weight:700;
+  background:rgba(238,247,249,.05); border:1px solid var(--stroke-soft); color:var(--muted) }
+.adm-tabs .tab.active{ background:linear-gradient(135deg,#5eead4,#2dd4d8); color:#06222b; border-color:transparent }
+.adm-log-badge{ background:rgba(245,194,107,.22); color:var(--gold); border-radius:999px;
+  padding:1px 8px; font-size:11px; font-weight:800 }
+.adm-tabs .tab.active .adm-log-badge{ background:rgba(6,34,43,.25); color:#06222b }
+.stat-card{ text-align:left; padding:12px 14px; border-radius:14px;
+  background:linear-gradient(180deg, rgba(16,44,68,.66), rgba(13,36,56,.55));
+  border:1px solid var(--stroke-soft) }
+.stat-label{ display:flex; align-items:flex-start; gap:7px; font-size:11.5px; color:var(--muted); font-weight:600; margin-bottom:5px }
+.stat-label .tic{ width:15px; height:15px; color:var(--teal); flex:0 0 auto; margin-top:1px }
+.stat-card b{ font-size:24px; color:var(--ink) }
+@media (min-width:641px){ .admin-grid{ grid-template-columns:repeat(auto-fit, minmax(158px, 1fr)) } }
+.bar-row{ display:grid; grid-template-columns:128px 1fr 44px; gap:10px; align-items:center; font-size:12.5px; padding:5px 0 }
+.bar-row .bname{ font-weight:600; color:var(--ink) }
+.bar-row .bname small{ display:block; color:var(--muted); font-weight:500; font-size:11.5px; margin-top:1px }
+.track{ display:block; height:9px; border-radius:999px; background:rgba(238,247,249,.08); overflow:hidden }
+.track .fill{ display:block; height:100%; background:linear-gradient(90deg,#1fb6ba,#2dd4d8); border-radius:999px }
+.bnum{ text-align:right; font-weight:700; color:var(--muted) }
+@media (max-width:560px){ .bar-row{ grid-template-columns:100px 1fr 38px } }
+.kode-row{ border-bottom:1px solid rgba(169,195,207,.14) }
+.kode-row code{ color:#7ef0e6 }
+.fb-sum{ display:flex; flex-direction:column; gap:2px; text-align:left; padding:10px 12px; border-radius:12px }
+.fb-sum b{ order:2; font-size:20px; color:var(--ink) }
+.fb-sum span{ order:1; font-size:11.5px; color:var(--muted); font-weight:600 }
+.chip{ border:1px solid var(--stroke-soft) }
+.chip.active{ background:linear-gradient(135deg,#5eead4,#2dd4d8); color:#06222b; border-color:transparent }
+
+@media (prefers-reduced-motion: reduce){
+  .bg-scene .blob, .hero-mascot img{ animation:none }
+}
+

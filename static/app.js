@@ -193,7 +193,8 @@ async function refreshAuth() {
       "<span>" + nama + "</span>" +
       (AUTH.admin ? '<span class="badge-admin">ADMIN</span>' : "") + "</a>";
   } else {
-    area.innerHTML = '<a href="#/masuk" class="btn-login">' + tic("key") + ' Masuk</a>';
+    area.innerHTML = '<a href="#/masuk" class="btn-login">' + tic("key") + ' Masuk</a>' +
+      '<a href="#/daftar" class="btn-daftar">Daftar</a>';
   }
 }
 
@@ -1053,23 +1054,53 @@ function pageBeranda() {
     const t = sessionStorage.getItem("kp_home_tab");
     if (t && KATS.some(k => k[0] === t)) aktif = t; // tab terakhir diingat (tombol Kembali)
   } catch (e) {}
-  function gridHTML() {
+  function semuaFeat() {
+    const seen = {}, out = [];
+    KATS.forEach(k => k[2].forEach(f => {
+      const kunci = f[0] + "|" + f[2];
+      if (seen[kunci]) return;
+      seen[kunci] = 1;
+      out.push(f);
+    }));
+    return saringFeat(out);
+  }
+  function saringFeat(feats) {
     // Admin & tamu: sembunyikan SEMUA pintu masuk halaman Jatah AI
     // (admin: instruksi Sul; tamu: perintah Sul 2026-10-18).
-    let feats = KATS.find(k => k[0] === aktif)[2];
-    if (AUTH.admin || !AUTH.login) feats = feats.filter(f => f[0] !== "#/topup");
+    if (AUTH.admin || !AUTH.login) return feats.filter(f => f[0] !== "#/topup");
+    return feats;
+  }
+  function kartuHTML(feats) {
     return feats.map((f, i) =>
       '<a class="feat" style="animation-delay:' + (i * 55) + 'ms" href="' + f[0] + '">' +
       '<span class="ico">' + tic(f[1]) + "</span><b>" + f[2] + "</b><small>" + f[3] + "</small></a>"
     ).join("");
   }
+  function gridHTML() {
+    return kartuHTML(saringFeat(KATS.find(k => k[0] === aktif)[2]));
+  }
+  function setNote(n) {
+    const el = $("#featNote");
+    if (el) el.textContent = "Menampilkan " + n + " alat";
+  }
   view().innerHTML =
     '<div id="bannerPengumuman"></div>' +
     '<section class="hero">' +
-      '<img src="maskot.jpg" class="hero-maskot" alt="Maskot KhairyPustaka">' +
-      "<h1>KhairyPustaka</h1>" +
-      "<p>Asisten skripsi & nugas anti begadang: cari jurnal, bikin sitasi, sampai nulis bab — semua dari HP.</p>" +
-      '<a class="btn btn-accent" href="#/cari">' + tic("search") + ' Mulai Cari Jurnal</a> ' +
+      '<div class="hero-text">' +
+        '<span class="pill"><span class="dot"></span> Gratis untuk semua mahasiswa</span>' +
+        "<h1>Teman seperjuangan nugas dan <em>skripsimu</em></h1>" +
+        '<p class="hero-sub">Asisten skripsi dan nugas anti begadang: cari jurnal, bikin sitasi, sampai nulis bab, semua bisa dari HP.</p>' +
+        '<div class="hero-cta">' +
+          '<a class="btn btn-primary btn-hero" href="#/cari">' + tic("search") + ' Mulai Cari Jurnal</a>' +
+          '<a class="btn btn-ghost btn-hero" href="/panduan">Lihat Panduan</a>' +
+        "</div>" +
+        '<form class="searchbar" id="heroSearch" role="search">' +
+          '<svg class="tic" aria-hidden="true"><use href="#i-search"></use></svg>' +
+          '<input type="search" id="heroSearchInput" placeholder="Cari alat, misalnya jurnal, sitasi, atau statistik" aria-label="Cari alat">' +
+          '<button class="btn btn-primary" type="submit">Cari Alat</button>' +
+        "</form>" +
+      "</div>" +
+      '<div class="hero-mascot"><img src="maskot.jpg" alt="Maskot KhairyPustaka"></div>' +
     "</section>" +
     '<section class="fakta-strip" aria-label="Fakta KhairyPustaka">' +
       '<div class="fakta"><b>24</b><span>Alat</span></div>' +
@@ -1077,10 +1108,13 @@ function pageBeranda() {
       '<div class="fakta"><b>6</b><span>Gaya Sitasi</span></div>' +
       '<div class="fakta fakta-free"><b>100% Gratis</b><span>Untuk semua mahasiswa</span></div>' +
     "</section>" +
+    '<div class="filters-wrap">' +
     '<div class="filter-row" role="tablist">' +
       KATS.map(k =>
         '<button class="filter-chip' + (k[0] === aktif ? " active" : "") + '" data-kat="' + k[0] + '">' + k[1] + "</button>"
       ).join("") +
+    "</div>" +
+    '<span class="result-note" id="featNote"></span>' +
     "</div>" +
     '<div class="grid" id="featGrid">' + gridHTML() + "</div>" +
     '<div class="card kp-show-card" style="margin-top:16px">' +
@@ -1088,12 +1122,34 @@ function pageBeranda() {
       '<p class="muted">Video dan postingan edukasi dari akun resmi kami. Ketuk gambarnya buat buka langsung. 🎓</p>' +
       '<div class="kp-show-strip" id="kpShowStrip"><div class="kp-show-track" id="kpShowTrack">' + showcaseHTML() + "</div></div>" +
     "</div>";
+  function tampilKategori() {
+    const html = gridHTML();
+    $("#featGrid").innerHTML = html;
+    setNote(saringFeat(KATS.find(k => k[0] === aktif)[2]).length);
+  }
   $$("#view .filter-chip").forEach(ch => ch.addEventListener("click", () => {
     aktif = ch.dataset.kat;
     try { sessionStorage.setItem("kp_home_tab", aktif); } catch (e) {}
     $$("#view .filter-chip").forEach(c => c.classList.toggle("active", c === ch));
-    $("#featGrid").innerHTML = gridHTML();
+    const inp = $("#heroSearchInput");
+    if (inp) inp.value = "";
+    tampilKategori();
   }));
+  setNote(saringFeat(KATS.find(k => k[0] === aktif)[2]).length);
+  // Pencarian alat di hero: saring semua kategori berdasarkan nama/deskripsi.
+  const heroForm = $("#heroSearch"), heroInput = $("#heroSearchInput");
+  function jalankanCari() {
+    const q = (heroInput.value || "").trim().toLowerCase();
+    if (!q) { tampilKategori(); return; }
+    const hasil = semuaFeat().filter(f =>
+      (f[2] + " " + f[3]).toLowerCase().indexOf(q) >= 0);
+    $("#featGrid").innerHTML = hasil.length ? kartuHTML(hasil) :
+      '<p class="muted" style="grid-column:1/-1;text-align:center;padding:18px 0">Tidak ada alat yang cocok dengan "' +
+      esc(heroInput.value.trim()) + '". Coba kata kunci lain ya.</p>';
+    setNote(hasil.length);
+  }
+  if (heroForm) heroForm.addEventListener("submit", e => { e.preventDefault(); jalankanCari(); });
+  if (heroInput) heroInput.addEventListener("input", jalankanCari);
   muatBannerPengumuman();
   // Etalase: jeda animasi saat disentuh, lanjut lagi setelah dilepas.
   var strip = $("#kpShowStrip"), track = $("#kpShowTrack"), tmrJeda = null;
@@ -3393,18 +3449,22 @@ function aturMenuAdmin() {
   if (nt) nt.style.display = (AUTH.login && !AUTH.admin) ? "" : "none";
 }
 
-function admKartu(angka, label) {
-  return '<div class="stat-card"><b>' + esc(String(angka == null ? 0 : angka)) +
-    "</b><span>" + esc(label) + "</span></div>";
+function admKartu(angka, label, ikon) {
+  return '<div class="stat-card"><span class="stat-label">' +
+    (ikon ? tic(ikon) : "") + esc(label) + "</span><b>" +
+    esc(String(angka == null ? 0 : angka)) + "</b></div>";
 }
 
 function admTabel(rows) {
   if (!rows.length) return '<p class="muted">Belum ada data.</p>';
-  return '<table class="adm-tabel"><tr><th>Fitur</th><th>Hari Ini</th><th>Total</th></tr>' +
-    rows.map(function(r) {
-      return "<tr><td>" + esc(r.nama) + "</td><td>" + esc(String(r.hari_ini)) +
-        "</td><td>" + esc(String(r.total)) + "</td></tr>";
-    }).join("") + "</table>";
+  const maks = Math.max.apply(null, rows.map(r => r.total || 0).concat([1]));
+  return '<div class="adm-bars">' + rows.map(function(r) {
+    const persen = Math.max(2, Math.round((r.total || 0) / maks * 100));
+    return '<div class="bar-row"><span class="bname">' + esc(r.nama) +
+      '<small>Hari ini ' + esc(String(r.hari_ini)) + '</small></span>' +
+      '<span class="track"><span class="fill" style="width:' + persen + '%"></span></span>' +
+      '<span class="bnum">' + esc(String(r.total)) + "</span></div>";
+  }).join("") + "</div>";
 }
 
 let ADM_STAT = null;   // cache statistik terakhir (tren + ekspor CSV)
@@ -3435,13 +3495,13 @@ async function admMuatStatistik() {
     ADM_STAT = d;
     box.innerHTML =
       '<div class="admin-grid">' +
-      admKartu(m.total, "Total Member") +
-      admKartu(m.baru_hari_ini, "Member Baru Hari Ini") +
-      admKartu(a.hari_ini, "Pemakaian AI Hari Ini") +
-      admKartu(n.hari_ini, "Pemakaian Tool Hari Ini") +
-      admKartu(d.saldo_ai_web_total, "Saldo AI Web (kredit)") +
-      admKartu(a.total, "Pemakaian AI Total") +
-      admKartu(n.total, "Pemakaian Tool Total") +
+      admKartu(m.total, "Total Member", "person") +
+      admKartu(m.baru_hari_ini, "Member Baru Hari Ini", "plus") +
+      admKartu(a.hari_ini, "Pemakaian AI Hari Ini", "spark") +
+      admKartu(n.hari_ini, "Pemakaian Tool Hari Ini", "grid") +
+      admKartu(d.saldo_ai_web_total, "Saldo AI Web (kredit)", "ticket") +
+      admKartu(a.total, "Pemakaian AI Total", "spark") +
+      admKartu(n.total, "Pemakaian Tool Total", "chart") +
       "</div>" +
       "<h4>Pemakaian Tool Terlaris</h4>" + admTabel(
         ((a.per_fitur || []).concat(n.per_fitur || []))
@@ -3985,7 +4045,13 @@ function pageAdmin() {
     return;
   }
   view().innerHTML =
-    "<h2>" + tic('shield') + ' Panel Admin <span class="badge-admin">ADMIN</span></h2>' +
+    '<div class="adm-topbar">' +
+      '<img src="maskot.jpg" class="adm-mascot" alt="Maskot KhairyPustaka">' +
+      '<div class="adm-brand"><h2>Panel Admin KhairyPustaka</h2>' +
+      '<p class="muted">Kelola member, sistem, pengumuman, dan log</p></div>' +
+      '<span class="badge-admin">ADMIN</span>' +
+      '<a class="btn btn-ghost adm-keluar" href="#/beranda">Keluar</a>' +
+    "</div>" +
     '<div class="tabs adm-tabs" role="tablist">' +
       '<button class="tab active" data-atab="ringkasan" type="button">Ringkasan</button>' +
       '<button class="tab" data-atab="member" type="button">Member</button>' +
