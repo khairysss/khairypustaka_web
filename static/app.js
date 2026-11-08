@@ -1090,16 +1090,6 @@ function pageBeranda() {
     const t = sessionStorage.getItem("kp_home_tab");
     if (t && KATS.some(k => k[0] === t)) aktif = t; // tab terakhir diingat (tombol Kembali)
   } catch (e) {}
-  function semuaFeat() {
-    const seen = {}, out = [];
-    KATS.forEach(k => k[2].forEach(f => {
-      const kunci = f[0] + "|" + f[2];
-      if (seen[kunci]) return;
-      seen[kunci] = 1;
-      out.push(f);
-    }));
-    return saringFeat(out);
-  }
   function saringFeat(feats) {
     // Admin & tamu: sembunyikan SEMUA pintu masuk halaman Jatah AI
     // (admin: instruksi Sul; tamu: perintah Sul 2026-10-18).
@@ -1147,11 +1137,6 @@ function pageBeranda() {
           '<a class="btn btn-primary btn-hero" href="#/cari">' + tic("search") + ' Mulai Cari Jurnal</a>' +
           '<a class="btn btn-ghost btn-hero" href="/panduan">Lihat Panduan</a>' +
         "</div>" +
-        '<form class="searchbar" id="heroSearch" role="search">' +
-          '<svg class="tic" aria-hidden="true"><use href="#i-search"></use></svg>' +
-          '<input type="search" id="heroSearchInput" placeholder="Cari alat, misalnya jurnal, sitasi, atau statistik" aria-label="Cari alat">' +
-          '<button class="btn btn-primary" type="submit">Cari Alat</button>' +
-        "</form>" +
       "</div>" +
       '<div class="hero-mascot"><img src="maskot.jpg" alt="Maskot KhairyPustaka"></div>' +
     "</section>" +
@@ -1184,25 +1169,9 @@ function pageBeranda() {
     aktif = ch.dataset.kat;
     try { sessionStorage.setItem("kp_home_tab", aktif); } catch (e) {}
     $$("#view .filter-chip").forEach(c => c.classList.toggle("active", c === ch));
-    const inp = $("#heroSearchInput");
-    if (inp) inp.value = "";
     tampilKategori();
   }));
   setNote(saringFeat(KATS.find(k => k[0] === aktif)[2]).length);
-  // Pencarian alat di hero: saring semua kategori berdasarkan nama/deskripsi.
-  const heroForm = $("#heroSearch"), heroInput = $("#heroSearchInput");
-  function jalankanCari() {
-    const q = (heroInput.value || "").trim().toLowerCase();
-    if (!q) { tampilKategori(); return; }
-    const hasil = semuaFeat().filter(f =>
-      (f[2] + " " + f[3]).toLowerCase().indexOf(q) >= 0);
-    $("#featGrid").innerHTML = hasil.length ? kartuHTML(hasil) :
-      '<p class="muted" style="grid-column:1/-1;text-align:center;padding:18px 0">Tidak ada alat yang cocok dengan "' +
-      esc(heroInput.value.trim()) + '". Coba kata kunci lain ya.</p>';
-    setNote(hasil.length);
-  }
-  if (heroForm) heroForm.addEventListener("submit", e => { e.preventDefault(); jalankanCari(); });
-  if (heroInput) heroInput.addEventListener("input", jalankanCari);
   muatBannerPengumuman();
   // Etalase: jeda animasi saat disentuh, lanjut lagi setelah dilepas.
   var strip = $("#kpShowStrip"), track = $("#kpShowTrack"), tmrJeda = null;

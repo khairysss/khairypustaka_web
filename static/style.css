@@ -1010,14 +1010,6 @@ input:not([type]){ width:100%; padding:11px 12px; border-radius:12px; font-size:
 .hero-sub{ color:var(--muted); font-size:15.5px; line-height:1.7; margin:0; max-width:560px }
 .hero-cta{ display:flex; gap:10px; flex-wrap:wrap; margin-top:20px }
 .btn-hero{ padding:13px 20px; font-size:15px; border-radius:12px }
-.searchbar{ margin-top:16px; max-width:560px; display:flex; align-items:center; gap:9px;
-  background:rgba(6,18,32,.62); border:1px solid rgba(45,212,216,.20); border-radius:16px; padding:7px 7px 7px 14px }
-.searchbar > .tic{ width:20px; height:20px; color:var(--muted); flex:0 0 auto }
-.searchbar input{ flex:1; min-width:120px; background:none; border:none; box-shadow:none; color:var(--ink);
-  font-size:14.5px; padding:8px 0; border-radius:0 }
-.searchbar input:focus{ outline:none; border:none; box-shadow:none }
-.searchbar:focus-within{ border-color:var(--gborder-bright); box-shadow:0 0 0 4px rgba(45,212,216,.10) }
-.searchbar .btn{ border-radius:11px; padding:10px 16px; flex:0 0 auto }
 .hero-mascot{ flex:0 0 198px }
 .hero-mascot img{ width:100%; height:auto; aspect-ratio:1/1; object-fit:cover; object-position:center 12%; display:block; border-radius:30px;
   box-shadow:0 24px 50px rgba(0,0,0,.35), 0 0 0 1px rgba(45,212,216,.25);
