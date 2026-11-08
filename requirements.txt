@@ -2,6 +2,15 @@
 # Instal: pip install -r requirements.txt
 # R-4 (audit 2026-10-17): versi di-pin eksak (==) dari hasil pip freeze
 # yang sudah teruji, supaya build reproduksibel.
+# FIX 2026-11-08 (audit putaran 2, temuan lama #13): SEMUA dependensi
+# transitif kini ikut di-pin eksak (freeze penuh 25 paket), bukan hanya
+# 13 paket langsung. Daftar dibekukan dari install bersih lokal dan
+# setiap pin transitif sudah diverifikasi punya wheel + requires_python
+# yang cocok dengan Python produksi 3.11.6 (Render). Hash per berkas
+# (--require-hashes) belum dipasang: pembuktiannya butuh unduhan
+# metadata ribuan wheel dan belum selesai diverifikasi di mesin lokal
+# (Python lokal 3.12 != produksi 3.11) — pin eksak penuh adalah
+# langkah pengunci yang terbukti aman saat ini.
 flask==3.1.3
 beautifulsoup4==4.15.0
 lxml==6.1.3
@@ -15,3 +24,16 @@ waitress==3.0.2
 qrcode==8.2
 itsdangerous==2.2.0
 psycopg2-binary==2.9.13   # lapisan dbstore: Postgres via env DATABASE_URL (opsional; tanpa env, app tetap jalan mode file)
+# --- dependensi transitif (dibekukan 2026-11-08) ---
+anyio==4.16.0
+blinker==1.9.0
+certifi==2026.10.23
+click==8.5.1
+h11==0.16.0
+httpcore==1.0.9
+idna==3.20
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+soupsieve==4.0.1
+typing_extensions==4.16.0
+Werkzeug==3.1.9

@@ -287,6 +287,42 @@ def tandai_isi(uid):
         _simpan_meta(d)
 
 
+def klaim_kirim(uid):
+    """FIX 2026-11-08 (audit putaran 2): cek batas + catat kiriman dalam
+    SATU lock, menggantikan pola cek_batas_kirim() lalu tandai_isi() yang
+    terpisah (dua request paralel bisa sama-sama lolos sebelum tercatat).
+    Return (boleh, pesan). Bila boleh, slot kiriman sudah terpakai; bila
+    penyimpanan feedback sesudahnya gagal, panggil lepas_klaim_kirim()."""
+    with _meta_lock:
+        d = _muat_meta()
+        m = _meta_user(d, uid)
+        now = time.time()
+        if now - float(m.get("kirim_terakhir") or 0) < BATAS_KIRIM_JEDA:
+            return False, "Barusan saja kamu mengirim. Tunggu sebentar ya."
+        today = _today_wita()
+        jumlah = int(m.get("kirim_jumlah") or 0) \
+            if m.get("kirim_tanggal") == today else 0
+        if jumlah >= BATAS_KIRIM_HARIAN:
+            return False, ("Kamu sudah mengirim beberapa kali hari ini. "
+                           "Besok bisa lagi ya.")
+        m["kirim_terakhir"] = int(now)
+        m["kirim_tanggal"] = today
+        m["kirim_jumlah"] = jumlah + 1
+        _simpan_meta(d)
+        return True, ""
+
+
+def lepas_klaim_kirim(uid):
+    """Batalkan klaim_kirim (mis. penyimpanan feedback gagal total)."""
+    with _meta_lock:
+        d = _muat_meta()
+        m = _meta_user(d, uid)
+        m["kirim_terakhir"] = 0
+        if int(m.get("kirim_jumlah") or 0) > 0:
+            m["kirim_jumlah"] = int(m.get("kirim_jumlah") or 0) - 1
+        _simpan_meta(d)
+
+
 def tandai_tunda(uid):
     with _meta_lock:
         d = _muat_meta()

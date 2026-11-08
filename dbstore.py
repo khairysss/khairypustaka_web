@@ -154,8 +154,8 @@ def _pool_reset():
     if p is not None:
         try:
             p.closeall()
-        except Exception:
-            pass
+        except Exception as e:
+            log.error("dbstore: menutup pool lama gagal: %s", e)
 
 
 def _pg_conn_strict():
@@ -182,6 +182,10 @@ def _pg_conn_strict():
 
 
 def _pg_release(conn, ok=True):
+    # FIX 2026-11-08 (audit putaran 2, temuan lama #7): pola lama menelan
+    # SEMUA galat release tanpa jejak; putconn yang gagal membuat koneksi
+    # bocor diam-diam sampai pool habis. Sekarang galat dicatat sebagai
+    # ERROR dan koneksi ditutup paksa sebagai jalan terakhir.
     try:
         p = _pg_pool_obj
         if p is None:
@@ -198,8 +202,12 @@ def _pg_release(conn, ok=True):
             except Exception:
                 pass
             p.putconn(conn, close=True)
-    except Exception:
-        pass
+    except Exception as e:
+        log.error("dbstore: release koneksi gagal, koneksi ditutup: %s", e)
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 # ------------------------------------------------------- pemetaan store
@@ -235,6 +243,11 @@ def file_load(path, default=_NO_DEFAULT):
 
 
 def file_save(path, data):
+    """Tulis JSON ke file. Return True bila benar-benar tersimpan.
+    FIX 2026-11-08 (audit putaran 2, temuan lama #8): pola lama menelan
+    kegagalan tulis sebagai warning dan pemanggil mengira data aman
+    (sukses palsu). Sekarang kegagalan dicatat sebagai ERROR dan status
+    False dikembalikan supaya pemanggil yang memeriksa bisa tahu."""
     try:
         d = os.path.dirname(os.path.abspath(path))
         if d:
@@ -243,8 +256,10 @@ def file_save(path, data):
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=1)
         os.replace(tmp, path)
+        return True
     except Exception as e:
-        log.warning("dbstore.file_save gagal (%s): %s", path, e)
+        log.error("dbstore.file_save GAGAL (%s): %s", path, e)
+        return False
 
 
 def file_append_jsonl(path, entry):
@@ -348,8 +363,9 @@ def save_json(path, data):
     ke file ephemeral (S-2 audit 2026-10-17).
     """
     if not enabled():
-        file_save(path, data)
-        return
+        # Mode file: kembalikan status tulis (True/False) dari file_save
+        # (FIX 2026-11-08: jangan laporkan sukses palsu ke pemanggil).
+        return file_save(path, data)
     name = store_name(path)
     conn = _pg_conn_strict()
     try:

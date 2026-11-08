@@ -87,12 +87,17 @@ def parse_bibtex(teks):
     s = teks or ""
     pos = 0
     n = len(s)
+    # FIX 2026-11-08 (audit putaran 2, temuan lama #10): pola lama
+    # re.search(..., s[pos:]) menyalin sisa string di SETIAP entri ->
+    # kuadratik (2 MB ~ 2,9 dtk). Pola terkompilasi dengan argumen pos
+    # mencari tanpa menyalin: waktu parse jadi linear.
+    _RE_ENTRI = re.compile(r"@\s*(\w+)\s*\{")
     while True:
-        m = re.search(r"@\s*(\w+)\s*\{", s[pos:])
+        m = _RE_ENTRI.search(s, pos)
         if not m:
             break
         tipe = m.group(1).lower()
-        i = pos + m.end()  # posisi tepat setelah '{'
+        i = m.end()  # posisi tepat setelah '{' (m.end() kini absolut)
         # lewati citekey sampai koma pertama (atau '}' bila entri kosong)
         j = i
         while j < n and s[j] not in ",}":
@@ -131,7 +136,7 @@ def parse_bibtex(teks):
             if i < n and s[i] == "}":
                 i += 1
             break
-        pos = max(i, pos + m.end())
+        pos = max(i, m.end())
         if tipe in _TIPE_SKIP:
             continue
         judul = _bersih(fields.get("title"))

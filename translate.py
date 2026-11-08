@@ -1,7 +1,12 @@
 """Terjemahan abstrak Inggris -> Indonesia.
 
-Prioritas: Argos Translate offline (tanpa kuota, privasi terjaga, model
-diunduh otomatis saat pertama dipakai). Fallback: MyMemory API gratis.
+Rantai: MyMemory -> Google gtx -> fallback AI (rotasi situs, ikut
+akuntansi kuota AI lewat gerbang yang diberikan pemanggil).
+
+FIX 2026-11-08 (audit putaran 2, temuan lama #15): tahap Argos offline
+DIBUANG. Paket argostranslate tidak pernah ada di requirements.txt
+(tahap itu mati diam-diam di tiap panggilan) dan modelnya ~100 MB+
+tidak layak di instance 512 MB.
 """
 import logging
 import re
@@ -26,33 +31,6 @@ def looks_indonesian(text):
     id_score = len(words & _ID_WORDS)
     en_score = len(words & _EN_WORDS)
     return id_score > en_score
-
-
-def _argos_translate(text, from_code="en", to_code="id"):
-    """Terjemahkan via Argos offline. Unduh model bila belum ada."""
-    import argostranslate.translate as at
-
-    def _pair():
-        langs = at.get_installed_languages()
-        src = next((l for l in langs if l.code == from_code), None)
-        dst = next((l for l in langs if l.code == to_code), None)
-        return src, dst
-
-    src, dst = _pair()
-    if not src or not dst:
-        log.info("model Argos %s->%s belum ada, mengunduh…", from_code, to_code)
-        import argostranslate.package as pkg
-        pkg.update_package_index()
-        avail = pkg.get_available_packages()
-        p = next((x for x in avail
-                  if x.from_code == from_code and x.to_code == to_code), None)
-        if not p:
-            return None
-        p.install()  # ~100MB, sekali saja per pasangan bahasa
-        src, dst = _pair()
-    if not src or not dst:
-        return None
-    return src.get_translation(dst).translate(text)
 
 
 def _split_chunks(text, limit=450):
@@ -161,7 +139,7 @@ def _google_translate(text, from_code="en", to_code="id"):
 _NAMA_BAHASA = {"en": "Inggris", "id": "Indonesia"}
 
 
-def _ai_translate(text, from_code="en", to_code="id"):
+def _ai_translate(text, from_code="en", to_code="id", gerbang_ai=None):
     """Fallback terakhir: terjemahkan via rotasi AI (Cerebras/Gemini).
 
     Ditambahkan 2026-10-19: MyMemory kehabisan kuota harian dari IP
@@ -169,10 +147,22 @@ def _ai_translate(text, from_code="en", to_code="id"):
     gratis mati total (terjemah + parafrase 502). Rotasi AI memakai key
     produksi sendiri, jadi tidak tergantung kuota pihak ketiga.
     Balikan dibersihkan dari pembuka basa-basi dan tanda kutip pembungkus.
+
+    FIX 2026-11-08 (audit putaran 2, temuan lama #16): pemakaian AI di
+    sini WAJIB lewat gerbang kuota (gerbang_ai) bila diberikan:
+    konsumsi() -> pool, atau None bila jatah AI habis (fallback AI
+    tidak jalan sama sekali); refund(pool) dipanggil bila generate
+    gagal/kosong. Tanpa gerbang (pemanggil lama non-web), perilaku
+    seperti sebelumnya.
     """
     text = (text or "").strip()
     if not text:
         return None
+    pool = None
+    if gerbang_ai is not None:
+        pool = gerbang_ai.konsumsi()
+        if pool is None:
+            return None
     asal = _NAMA_BAHASA.get(from_code, from_code)
     tujuan = _NAMA_BAHASA.get(to_code, to_code)
     prompt = (
@@ -191,42 +181,40 @@ def _ai_translate(text, from_code="en", to_code="id"):
                                                 max_tokens=1500))
     except Exception as e:
         log.warning("AI translate gagal: %s", e)
-        return None
+        out = None
     if not out:
+        if gerbang_ai is not None and pool is not None:
+            gerbang_ai.refund(pool)
         return None
     out = out.strip()
     if len(out) >= 2 and out[0] == '"' and out[-1] == '"':
         out = out[1:-1].strip()
     if not out or out.lower() == text.lower():
+        if gerbang_ai is not None and pool is not None:
+            gerbang_ai.refund(pool)
         return None
     return out
 
 
-def _terjemahkan(text, from_code, to_code):
-    """Rantai penerjemah: Argos offline -> MyMemory -> Google gtx -> AI."""
-    try:
-        out = _argos_translate(text, from_code, to_code)
-        if out:
-            return out, "argos"
-    except Exception as e:
-        log.warning("Argos gagal: %s", e)
+def _terjemahkan(text, from_code, to_code, gerbang_ai=None):
+    """Rantai penerjemah: MyMemory -> Google gtx -> AI (berkuota)."""
     out = _mymemory_translate(text, f"{from_code}|{to_code}")
     if out:
         return out, "mymemory"
     out = _google_translate(text, from_code, to_code)
     if out:
         return out, "google"
-    out = _ai_translate(text, from_code, to_code)
+    out = _ai_translate(text, from_code, to_code, gerbang_ai)
     if out:
         return out, "ai"
     return None, None
 
 
-def translate_en_id(text):
+def translate_en_id(text, gerbang_ai=None):
     """Terjemahkan abstrak EN->ID.
 
-    Return (hasil, sumber) dengan sumber: 'argos' | 'mymemory' |
-    'google' | 'ai' | 'sudah_indonesia' | None (gagal).
+    Return (hasil, sumber) dengan sumber: 'mymemory' | 'google' |
+    'ai' | 'sudah_indonesia' | None (gagal).
     """
     text = (text or "").strip()
     if not text:
@@ -234,10 +222,10 @@ def translate_en_id(text):
     if looks_indonesian(text):
         return None, "sudah_indonesia"
     text = text[:2500]
-    return _terjemahkan(text, "en", "id")
+    return _terjemahkan(text, "en", "id", gerbang_ai)
 
 
-def paraphrase_id(text):
+def paraphrase_id(text, gerbang_ai=None):
     """Parafrase teks Indonesia via round-trip ID -> EN -> ID.
 
     Return (hasil, catatan). Bukan pengganti pemahaman — selalu baca ulang
@@ -251,11 +239,11 @@ def paraphrase_id(text):
     if not looks_indonesian(text):
         return None, "Kirim teks berbahasa Indonesia ya."
     # ID -> EN
-    en, _s1 = _terjemahkan(text, "id", "en")
+    en, _s1 = _terjemahkan(text, "id", "en", gerbang_ai)
     if not en:
         return None, "Gagal menerjemahkan (ID→EN). Coba lagi ya."
     # EN -> ID
-    back, _s2 = _terjemahkan(en, "en", "id")
+    back, _s2 = _terjemahkan(en, "en", "id", gerbang_ai)
     if not back:
         return None, "Gagal menerjemahkan (EN→ID). Coba lagi ya."
     if back.strip().lower() == text.lower():

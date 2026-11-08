@@ -4,7 +4,11 @@
    - Aset statis same-origin (js/css/gambar/font): stale-while-revalidate.
    - API & request non-GET: TIDAK disentuh (selalu jaringan).
    Naikkan versi CACHE tiap rilis yang mengubah strategi ini. */
-const CACHE = "kp-pwa-v1";
+// FIX 2026-11-08 (audit putaran 2): versi cache naik -> cache lama
+// dibuang saat activate, dan app.js/style.css kini network-first
+// (lihat handler fetch) supaya setelah deploy pengguna tidak menerima
+// aset basi satu muatan dari stale-while-revalidate.
+const CACHE = "kp-pwa-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest",
                "/icon-192.png", "/icon-512.png", "/maskot.jpg"];
 
@@ -35,6 +39,23 @@ self.addEventListener("fetch", e => {
           return res;
         })
         .catch(() => caches.match("/index.html"))
+    );
+    return;
+  }
+  // FIX 2026-11-08: app.js & style.css = NETWORK-FIRST. Keduanya
+  // membawa logika + tampilan rilis; menyajikannya basi satu muatan
+  // (perilaku stale-while-revalidate lama) membuat perbaikan deploy
+  // tidak terlihat / bug lama muncul lagi sekali. Cache hanya jadi
+  // fallback saat offline. Aset statis lain tetap SWR.
+  if (url.pathname === "/app.js" || url.pathname === "/style.css") {
+    e.respondWith(
+      fetch(req).then(res => {
+        if (res && res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copy));
+        }
+        return res;
+      }).catch(() => caches.match(req))
     );
     return;
   }

@@ -27,6 +27,18 @@ import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 
 log = logging.getLogger("jurnalbot")
 
+
+def _aman_log(teks):
+    """FIX 2026-11-08 (audit putaran 2, temuan lama #11): objek galat
+    httpx bisa memuat URL lengkap termasuk parameter api_key Wijayapay.
+    Samarkan nilai api_key (dan nilai kunci itu sendiri bila dikenal)
+    sebelum apa pun ditulis ke log."""
+    s = str(teks)
+    s = re.sub(r"(api_key=)[^&\s'\"]+", r"\1***", s)
+    if WP_API_KEY:
+        s = s.replace(WP_API_KEY, "***")
+    return s
+
 TOPUP_PRICE = 5000   # Rp per paket dasar (= minimal)
 TOPUP_USES = 25      # x pakai AI per paket dasar (tidak hangus)
 TOPUP_MIN_USES = 25       # minimal top-up bebas: 25x pakai AI
@@ -71,9 +83,14 @@ def pending_add(ref_id, chat_id, username=None, uses=None, amount=None):
         d[ref_id]["uses"] = int(uses)
     if amount is not None:
         d[ref_id]["amount"] = int(amount)
-    # buang yang kedaluwarsa sekalian
+    # buang yang kedaluwarsa sekalian. FIX 2026-11-08 (audit putaran 2,
+    # temuan lama #12): hanya entri invoice pending (dict bertanda "ts")
+    # yang boleh disapu di sini. Pola lama menghapus SEMUA kunci tanpa
+    # "ts", termasuk dokumen internal "_creates" (penghitung plafon
+    # invoice harian) sehingga plafon itu tidak pernah bisa terpicu.
     for k in [k for k, v in d.items()
-              if time.time() - v.get("ts", 0) > PENDING_TTL]:
+              if isinstance(v, dict) and "ts" in v
+              and time.time() - v.get("ts", 0) > PENDING_TTL]:
         d.pop(k, None)
     _save_pending(d)
 
@@ -235,7 +252,7 @@ async def create_invoice(amount, description, chat_id, username=None):
                                       "Accept": "application/json",
                                       "X-Signature": _signature(ref_id)})
     except Exception as e:  # noqa: BLE001
-        log.error("wijayapay create gagal: %s", e)
+        log.error("wijayapay create gagal: %s", _aman_log(e))
         return None
     if r.status_code != 200:
         log.error("wijayapay create -> HTTP %s: %s",
@@ -276,7 +293,7 @@ async def check_invoice(ref_id):
             return None
         payload = r.json()
     except Exception as e:  # noqa: BLE001
-        log.error("wijayapay check gagal: %s", e)
+        log.error("wijayapay check gagal: %s", _aman_log(e))
         return None
     data = payload.get("data") or {}
     status = str(
@@ -306,7 +323,7 @@ async def list_payment_methods():
             return None
         return r.json()
     except Exception as e:  # noqa: BLE001
-        log.error("wijayapay methods gagal: %s", e)
+        log.error("wijayapay methods gagal: %s", _aman_log(e))
         return None
 
 

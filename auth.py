@@ -128,6 +128,40 @@ def _signer():
     return URLSafeTimedSerializer(_secret(), salt="kp-login-v1")
 
 
+# --- FIX 2026-11-08 (audit putaran 2, temuan lama #9): sid tamu
+# ditandatangani HMAC. Pola lama menerima sid turunan "ip" +
+# sha256(IP) apa adanya; nilai itu bisa dihitung siapa pun dari IP
+# korban lalu diklaim saat login (migrate_guest). Sekarang nilai
+# cookie = "<sid>.<tanda tangan>"; cookie lama/tanpa tanda tangan
+# tidak dipercaya lagi.
+
+def _sid_signer():
+    from itsdangerous import URLSafeTimedSerializer
+    return URLSafeTimedSerializer(_secret(), salt="kp-sid-v1")
+
+
+def tandai_sid(sid):
+    """Kembalikan nilai cookie untuk sid: sid + tanda tangan HMAC."""
+    return _sid_signer().dumps(sid)
+
+
+def sid_dari_cookie(nilai):
+    """Verifikasi nilai cookie kp_sid. Return sid bila tanda tangannya
+    sah, selain itu None (cookie lama, palsu, atau rusak)."""
+    if not nilai or "." not in nilai:
+        return None
+    try:
+        sid = _sid_signer().loads(nilai)
+    except Exception:
+        return None
+    return sid if isinstance(sid, str) and sid else None
+
+
+def sid_tamu_baru():
+    """Sid tamu acak baru (bukan lagi turunan IP yang bisa ditebak)."""
+    return "t" + secrets.token_hex(16)
+
+
 def make_login_cookie(uid):
     u = get_user(uid) or {}
     return _signer().dumps({"uid": uid, "t": int(time.time()),
@@ -383,6 +417,18 @@ def username_terlarang(uname):
     return any(k in n for k in _KATA_TERLARANG_USERNAME)
 
 
+def username_admin_reserved(uname):
+    """FIX 2026-11-08 (audit putaran 2, temuan baru): nama yang tercantum
+    di env ADMIN_USERNAMES tidak boleh didaftarkan / dipakai siapa pun.
+    Tanpa ini, nama admin masa depan yang belum terdaftar (dan tidak
+    mengandung kata "admin") bisa diklaim pendaftar pertama, lalu
+    otomatis berstatus admin karena app memeriksa pid terhadap daftar
+    itu. Parsing disamakan dengan _admin_usernames() di app.py."""
+    mentah = os.environ.get("ADMIN_USERNAMES") or ""
+    daftar = {x.strip().lower() for x in mentah.split(",") if x.strip()}
+    return bool(daftar) and (uname or "").strip().lower() in daftar
+
+
 _EMAIL_RE = _re.compile(r"^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$")
 
 
@@ -432,6 +478,8 @@ def register_password(username, password, email, ref_code=None):
         return None, "username 3–20 karakter: huruf, angka, titik, underscore"
     if username_terlarang(uname):
         return None, PESAN_USERNAME_TERLARANG
+    if username_admin_reserved(uname):
+        return None, "username itu tidak boleh dipakai, ganti yang lain ya"
     mail = valid_email(email)
     if not mail:
         return None, "email nggak valid, cek lagi ya 📧"
@@ -682,6 +730,8 @@ def change_username(uid, new_uname):
         return "username 3–20 karakter: huruf kecil, angka, titik, underscore"
     if username_terlarang(uname):
         return PESAN_USERNAME_TERLARANG
+    if username_admin_reserved(uname):
+        return "username itu tidak boleh dipakai, ganti yang lain ya"
     with _LOCK:
         d = _load_users()
         u = d.get(uid)

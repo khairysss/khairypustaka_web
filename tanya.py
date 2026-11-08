@@ -739,9 +739,14 @@ async def gemini_generate(prompt, max_output_tokens=1500):
                 continue
             for attempt in (1, 2):
                 try:
+                    # FIX 2026-11-08 (audit putaran 2, temuan lama #14):
+                    # kunci API Gemini dikirim lewat header resmi
+                    # x-goog-api-key, BUKAN query ?key= di URL (URL
+                    # tercatat utuh di objek galat httpx -> kunci bocor
+                    # ke log). Header tidak pernah masuk URL/log.
                     r = await cli.post(
                         f"https://generativelanguage.googleapis.com/v1beta/{model}:generateContent",
-                        params={"key": key},
+                        headers={"x-goog-api-key": key},
                         json={"contents": [{"parts": [{"text": prompt}]}],
                               "generationConfig": {
                                   "maxOutputTokens": int(max_output_tokens)}},
@@ -775,10 +780,15 @@ async def gemini_generate(prompt, max_output_tokens=1500):
                     if sc in (429, 500, 503) and attempt < 2:
                         await asyncio.sleep(2 * attempt)
                         continue
-                    log.warning("gemini_generate gagal (http=%s): %s", sc, e)
+                    # FIX 2026-11-08: jangan catat objek galat httpx
+                    # mentah (bisa memuat URL + kredensial); status dan
+                    # nama model cukup untuk diagnosis.
+                    log.warning("gemini_generate gagal (http=%s) model=%s",
+                                sc, model)
                     return None
                 except Exception as e:
-                    log.warning("gemini_generate gagal: %s", e)
+                    log.warning("gemini_generate gagal (%s) model=%s",
+                                type(e).__name__, model)
                     return None
     log.warning("gemini: semua %d model gagal", n)
     return None

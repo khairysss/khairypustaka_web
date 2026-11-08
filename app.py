@@ -232,8 +232,16 @@ _SID_RE = re.compile(r"^(?:[0-9a-f]{32}|ip[0-9a-f]{32})$")
 def _session():
     raw = request.cookies.get(SID_COOKIE)
     g.new_sid = False
-    if raw and _SID_RE.match(raw):
-        sid = raw
+    # FIX 2026-11-08 (audit putaran 2, temuan lama #9): cookie kp_sid
+    # hanya dipercaya bila BERTANDA TANGAN HMAC sah (authmod.tandai_sid).
+    # Pola lama menerima nilai berformat benar apa adanya, padahal sid
+    # per-IP adalah "ip" + sha256(IP) yang bisa dihitung siapa pun dari
+    # IP korban, lalu riwayat/kuota tamu korban diklaim saat login
+    # (migrate_guest). Cookie lama/palsu jatuh ke jalur per-IP di bawah
+    # dan diganti cookie bertanda tangan (satu kali reset tamu).
+    sid = authmod.sid_dari_cookie(raw) if raw else None
+    if sid and _SID_RE.match(sid):
+        pass
     else:
         # Tanpa cookie valid: identitas per-IP (bukan uuid acak).
         # Sebelumnya tiap request tanpa cookie dapat uuid baru -> kuota tamu
@@ -261,7 +269,9 @@ def _set_sid(resp):
     # respons yang membawa Set-Cookie membuat Cloudflare BYPASS cache
     # walau Cache-Control sudah public. Homepage tetap set cookie.
     if getattr(g, "new_sid", False) and not request.path.startswith("/static/"):
-        resp.set_cookie(SID_COOKIE, g.sid, max_age=SID_TTL,
+        # FIX 2026-11-08: nilai cookie disimpan BERTANDA TANGAN.
+        resp.set_cookie(SID_COOKIE, authmod.tandai_sid(g.sid),
+                        max_age=SID_TTL,
                         httponly=True, samesite="Lax", secure=True)
     # Security headers — meniru set Caddy di VPS lama (audit 2026-10-12),
     # karena di Render tidak ada reverse proxy yang memasangnya.
@@ -1019,12 +1029,16 @@ def parafrase():
     if _qt is not None:
         return _qt
     track_penggunaan("parafrase")
+    gerbang = _GerbangAITranslate(g.uid)
     try:
-        hasil, err = paraphrase_id(teks)
+        hasil, err = paraphrase_id(teks, gerbang)
     except Exception as e:
         log.warning("parafrase gagal: %s", e)
         return _err("parafrase gagal, coba lagi nanti", 502)
     if err:
+        if gerbang.habis:
+            return _err("Jatah AI harianmu habis. Parafrase lagi "
+                        "membutuhkan AI, coba lagi besok ya", 429)
         return _err(err, 422)
     # I4 (audit 2026-10-13): parafrase dicatat sebagai riwayat chat
     if g.user:
@@ -1113,6 +1127,20 @@ def _teks_dari_bytes(raw, nama):
         return teks, None
     if nama.endswith(".docx") or raw[:2] == b"PK":
         try:
+            # FIX 2026-11-08 (audit putaran 2, temuan HIGH #2): plafon
+            # dekompresi ditegakkan SEBELUM Document() memuat. DOCX 0,43 MB
+            # bisa mengembang jadi XML 125,8 MB (RSS 771 MB, instance
+            # 512 MB mati). Jumlahkan ukuran ASLI semua entri zip dari
+            # direktori pusat (tanpa mengekstrak); total > 100 MB ditolak.
+            import zipfile as _zf
+            with _zf.ZipFile(BytesIO(raw)) as _z:
+                _total_asli = sum(i.file_size for i in _z.infolist())
+            if _total_asli > 100 * 1024 * 1024:
+                return None, ("Isi file ini mengembang terlalu besar "
+                              "setelah dibuka (kemungkinan arsip rusak "
+                              "atau tidak wajar). Coba file .docx lain, "
+                              "atau simpan ulang dari Word lalu unggah "
+                              "lagi ya")
             from docx import Document
             doc = Document(BytesIO(raw))
             bagian = [p.text for p in doc.paragraphs]
@@ -1412,12 +1440,16 @@ def terjemah():
     if _qt is not None:
         return _qt
     track_penggunaan("terjemah")
+    gerbang = _GerbangAITranslate(g.uid)
     try:
-        hasil, sumber = translate_en_id(teks)
+        hasil, sumber = translate_en_id(teks, gerbang)
     except Exception as e:
         log.warning("terjemah gagal: %s", e)
         return _err("terjemahan gagal, coba lagi nanti", 502)
     if not hasil:
+        if gerbang.habis:
+            return _err("Jatah AI harianmu habis. Terjemahan lagi "
+                        "membutuhkan AI, coba lagi besok ya", 429)
         return _err("terjemahan gagal, coba lagi nanti", 502)
     return jsonify({"hasil": hasil, "sumber": sumber})
 
@@ -2146,6 +2178,40 @@ def _ai_consume_uid(uid):
     return sai.ai_try_consume(uid)
 
 
+class _GerbangAITranslate:
+    """FIX 2026-11-08 (audit putaran 2, temuan lama #16): gerbang kuota
+    untuk fallback AI di translate.py (terjemah + parafrase).
+
+    Dulu jalur itu memanggil rotasi AI TANPA akuntansi kuota: member
+    bisa memakai AI tanpa batas lewat parafrase/terjemah. Sekarang:
+    - Tamu: kuota_tamu() di route sudah memotong ember gabungan yang
+      sama, jadi konsumsi() di sini lolos tanpa memotong lagi (menghindari
+      potong ganda); refund() tidak melakukan apa-apa.
+    - Member: konsumsi() memotong jatah AI harian (15/hari, ember yang
+      sama dengan fitur AI lain) lewat _ai_consume_uid; refund()
+      mengembalikannya bila generate gagal.
+    - Admin: _ai_consume_uid mengembalikan "harian" tanpa memotong.
+    Atribut `habis` True bila pemotongan ditolak karena jatah habis,
+    supaya route bisa menjawab 429 yang jujur."""
+
+    def __init__(self, uid):
+        self.uid = uid
+        self.habis = False
+
+    def konsumsi(self):
+        if _tamu_web_uid(self.uid):
+            return "tamu"
+        pool = _ai_consume_uid(self.uid)
+        if pool is None:
+            self.habis = True
+        return pool
+
+    def refund(self, pool):
+        if pool is None or pool == "tamu":
+            return
+        _ai_refund_uid(self.uid, pool)
+
+
 def _ai_refund_uid(uid, pool):
     """Kembalikan 1 jatah AI yang gagal dipakai.
 
@@ -2470,7 +2536,10 @@ def backup_snapshot():
         return _err("tidak ditemukan", 404)
     import hmac as _hmac
     diberi = request.headers.get("X-Backup-Key") or ""
-    if not _hmac.compare_digest(diberi, kunci):
+    # FIX 2026-11-08 (audit putaran 2, temuan lama #3): compare_digest atas
+    # str non-ASCII melempar TypeError -> 500. Bandingkan sebagai bytes.
+    if not _hmac.compare_digest(diberi.encode("utf-8", "ignore"),
+                                 kunci.encode("utf-8")):
         return _err("tidak ditemukan", 404)
     data = dbstore.dump_all()
     return jsonify({"aplikasi": "KhairyPustaka", "versi_backup": 2,
@@ -2652,12 +2721,14 @@ def feedback_kirim():
     fitur = str(body.get("fitur") or "").strip()[:1000]
     if not saran and not fitur:
         return _err("Tulis dulu masukanmu ya", 400)
-    boleh, pesan = fbmod.cek_batas_kirim(g.uid)
+    # FIX 2026-11-08: klaim atomik (cek + catat satu lock di feedback.py).
+    boleh, pesan = fbmod.klaim_kirim(g.uid)
     if not boleh:
         return _err(pesan, 429)
     fid = fbmod.tambah(g.user.get("pid") or g.uid, kategori, bintang,
                        saran, fitur)
     if fid is None:
+        fbmod.lepas_klaim_kirim(g.uid)
         return _err("Gagal menyimpan, coba lagi sebentar ya", 502)
     fbmod.tandai_isi(g.uid)
     return jsonify({"ok": True, "id": fid})
@@ -2853,8 +2924,17 @@ def _blok_openrouter():
 
 
 def _peta_tool(path, kind=None):
-    if path in ("/api/cari", "/api/carifile"):
+    # FIX 2026-11-08 (audit putaran 2): endpoint sinonim ikut sakelarnya:
+    # /api/tanya = Tanya AI (sakelar ai), /api/topik = ide judul + research
+    # gap (sakelar idejudul), rekomendasi/publisher/penulis = keluarga
+    # pencarian jurnal (sakelar cari).
+    if path in ("/api/cari", "/api/carifile", "/api/rekomendasi",
+                "/api/publisher", "/api/penulis"):
         return "cari"
+    if path == "/api/tanya":
+        return "ai"
+    if path == "/api/topik":
+        return "idejudul"
     if path.startswith("/api/sitasi"):
         return "sitasi"
     if path == "/api/terjemah":
@@ -2999,9 +3079,16 @@ def admin_cerebras_acuan():
     if saldo is None:
         peng["cerebras_acuan"] = {"saldo_usd": None, "ts": 0, "total": {}}
     else:
+        # FIX 2026-11-08 (audit putaran 2): NaN lolos cek rentang karena
+        # semua perbandingan terhadap NaN False; bool juga lolos float().
+        # Tolak keduanya: NaN/Infinity merusak JSON panel (token NaN).
+        if isinstance(saldo, bool):
+            return _err("Saldo acuan harus berupa angka USD", 400)
         try:
             saldo = float(saldo)
         except (TypeError, ValueError):
+            return _err("Saldo acuan harus berupa angka USD", 400)
+        if saldo != saldo or saldo in (float("inf"), float("-inf")):
             return _err("Saldo acuan harus berupa angka USD", 400)
         if saldo < 0 or saldo > 1000000:
             return _err("Saldo acuan di luar rentang wajar", 400)
@@ -3566,13 +3653,18 @@ _CONVERT_POOL = ThreadPoolExecutor(
 @contextmanager
 def _batas_request(byte):
     """Naikkan sementara batas body request (default 2 MB) untuk satu
-    endpoint, mis. convert yang menerima file sampai 10 MB."""
-    lama = app.config["MAX_CONTENT_LENGTH"]
-    app.config["MAX_CONTENT_LENGTH"] = byte
+    endpoint, mis. convert yang menerima file sampai 10 MB.
+    FIX 2026-11-08 (audit putaran 2, temuan lama #1): pola lama mengubah
+    app.config MAX_CONTENT_LENGTH secara GLOBAL; di server berutas
+    banyak, jendela longgar itu ikut berlaku untuk endpoint lain dan
+    rawan balapan. Sekarang batas disetel per-request lewat
+    request.max_content_length (hanya request ini), config aplikasi
+    tidak disentuh sama sekali."""
+    request.max_content_length = byte
     try:
         yield
     finally:
-        app.config["MAX_CONTENT_LENGTH"] = lama
+        request.max_content_length = None
 
 
 @app.errorhandler(413)

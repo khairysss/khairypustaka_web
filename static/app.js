@@ -164,7 +164,7 @@ let _riwAntre = [];    // R2: entri tamu yang dicatat sebelum status auth pasti
 
 /* Jatah harian: tamu = ember gabungan 5x/hari buat semua fitur
    (AI + non-AI, keputusan Sul 2026-10-19); login = jatah AI 15x/hari. */
-function aiHarian() { return 10; }
+function aiHarian() { return 15; }
 function tamuHarian() { return 5; }
 
 /* ---------- Avatar maskot ---------- */
@@ -460,20 +460,42 @@ function pageSitasi() {
     cek.innerHTML = '<p class="muted tiny" style="margin-top:8px">Lagi membaca file... ⏳</p>';
     const fd = new FormData();
     fd.append("file", f);
+    btn.disabled = true;
     let res = await unggahForm("/api/sitasi-pdf/job", fd);
+    btn.disabled = false;
     if (!res.ok) { cek.innerHTML = ""; toast("😅 " + errFile(res)); return; }
     const sjid = res.data && res.data.id;
     if (!sjid) { cek.innerHTML = ""; toast("😅 " + errFile(res)); return; }
     // LAPIS 4 (2026-10-29): pemrosesan jalan di antrean worker; poll
     // status tiap 3 detik sampai selesai/gagal.
     let sdata = null;
-    while (true) {
+    // FIX 2026-11-08 (audit putaran 2): polling diberi batas 100 putaran
+    // (5 menit) + toleransi 3 gagal jaringan beruntun. Pola lama
+    // while(true): pekerjaan yang hilang di server membuat pengguna
+    // menunggu selamanya tanpa pesan.
+    let gagalBeruntun = 0;
+    for (let putaran = 0; putaran < 100 && !sdata; putaran++) {
       await new Promise(r => setTimeout(r, 3000));
       if (!cek.isConnected) return;
-      const st = await apiJSON("/api/sitasi-pdf/job-status?id=" + encodeURIComponent(sjid));
+      const st = await apiJSON("/sitasi-pdf/job-status?id=" + encodeURIComponent(sjid));
       const sd = st.data || {};
-      if (!st.ok || sd.status === "gagal") { cek.innerHTML = ""; toast("😅 " + (sd.error || errFile(st))); return; }
-      if (sd.status === "selesai") { sdata = sd; break; }
+      if (st.ok && sd.status === "selesai") { sdata = sd; break; }
+      if (st.ok && sd.status === "gagal") { cek.innerHTML = ""; toast("😅 " + (sd.error || errFile(st))); return; }
+      if (!st.ok) {
+        gagalBeruntun++;
+        if (gagalBeruntun >= 3) {
+          cek.innerHTML = "";
+          toast("😅 Pekerjaan membaca PDF ini sepertinya hilang di server. Coba unggah lagi ya.");
+          return;
+        }
+      } else {
+        gagalBeruntun = 0;
+      }
+    }
+    if (!sdata) {
+      cek.innerHTML = "";
+      toast("😅 Membaca PDF ini kelamaan. Pekerjaannya mungkin hilang, coba unggah lagi ya.");
+      return;
     }
     res = { ok: true, data: sdata };
     const w = (res.data && res.data.work) || {};
@@ -493,7 +515,13 @@ function pageSitasi() {
     $$("#sitGaya .chip").forEach(x => x.classList.remove("active"));
     c.classList.add("active"); gaya = c.dataset.gaya;
   }));
-  $("#btnBuatSit").addEventListener("click", async () => {
+  $("#btnBuatSit").addEventListener("click", async (ev) => {
+    // FIX 2026-11-08 (audit putaran 2): kunci tombol selama request
+    // berjalan; klik ganda sebelumnya membakar kuota tamu dua kali.
+    const btnSit = ev.currentTarget;
+    if (btnSit.disabled) return;
+    btnSit.disabled = true;
+    try {
     const work = {
       judul: $("#sitJudul").value.trim(),
       penulis: $("#sitPenulis").value.trim(),
@@ -517,6 +545,7 @@ function pageSitasi() {
       try { await navigator.clipboard.writeText(teks); toast("Disalin! 📋"); }
       catch (e) { toast("Gagal nyalin 😅"); }
     });
+    } finally { btnSit.disabled = false; }
   });
 }
 
@@ -644,7 +673,10 @@ function pageMasuk() {
     b.textContent = show ? "🙈" : "👁️";
     b.setAttribute("aria-label", show ? "Sembunyikan password" : "Tampilkan password");
   }));
+  let pwSibuk = false;
   async function pwAuth(mode) {
+    // FIX 2026-11-08 (audit putaran 2): cegah dobel kirim login/daftar.
+    if (pwSibuk) return;
     const u = $(mode === "in" ? "#pwUserIn" : "#pwUserUp").value.trim();
     const p = $(mode === "in" ? "#pwPassIn" : "#pwPassUp").value;
     const m = mode === "up" ? $("#pwMailUp").value.trim() : "";
@@ -658,7 +690,11 @@ function pageMasuk() {
         if (rk) payload.ref = rk;
       } catch (e) {}
     }
-    const res = await apiPOST(mode === "in" ? "/auth/login" : "/auth/register", payload);
+    pwSibuk = true;
+    const btnAuth = $(mode === "in" ? "#btnPwMasuk" : "#btnPwDaftar");
+    if (btnAuth) btnAuth.disabled = true;
+    const res = await apiPOST(mode === "in" ? "/auth/login" : "/auth/register", payload)
+      .finally(() => { pwSibuk = false; if (btnAuth) btnAuth.disabled = false; });
     if (res.ok) {
       if (mode === "up" && res.data && res.data.need_verify) {
         view().innerHTML =
@@ -1070,11 +1106,28 @@ function pageBeranda() {
     if (AUTH.admin || !AUTH.login) return feats.filter(f => f[0] !== "#/topup");
     return feats;
   }
+  // FIX 2026-11-08 (audit putaran 2): peta href kartu -> nama sakelar
+  // tool di server, supaya kartuHTML bisa menerbitkan data-tool dan
+  // tandaiToolNonaktif() bekerja (sebelumnya tidak ada kartu yang punya
+  // atribut itu, jadi penanda nonaktif tidak pernah menempel).
+  function toolDariHref(href) {
+    const h = String(href || "").split("?")[0];
+    if (h === "#/convert") return "convert";
+    return {
+      "#/cari": "cari", "#/carifile": "cari", "#/rekomendasi": "cari",
+      "#/publisher": "cari", "#/penulis": "cari",
+      "#/sitasi": "sitasi", "#/ai": "ai", "#/tanya": "ai",
+      "#/topik": "idejudul", "#/statistik": "statistik",
+      "#/terjemah": "terjemah"
+    }[h] || "";
+  }
   function kartuHTML(feats) {
-    return feats.map((f, i) =>
-      '<a class="feat" style="animation-delay:' + (i * 55) + 'ms" href="' + f[0] + '">' +
-      '<span class="ico">' + tic(f[1]) + "</span><b>" + f[2] + "</b><small>" + f[3] + "</small></a>"
-    ).join("");
+    return feats.map((f, i) => {
+      const tool = toolDariHref(f[0]);
+      return '<a class="feat" style="animation-delay:' + (i * 55) + 'ms" href="' + f[0] + '"' +
+        (tool ? ' data-tool="' + tool + '"' : "") + '>' +
+        '<span class="ico">' + tic(f[1]) + "</span><b>" + f[2] + "</b><small>" + f[3] + "</small></a>";
+    }).join("");
   }
   function gridHTML() {
     return kartuHTML(saringFeat(KATS.find(k => k[0] === aktif)[2]));
@@ -1789,16 +1842,9 @@ function riwTamuJudul(t) {
   if (!t) return "(tanpa judul)";
   return t.length > 80 ? t.slice(0, 79).trimEnd() + "…" : t;
 }
-function riwTamuCatat(tipe, judul, data) {
-  if (AUTH.login) return; // tamu saja — user login dicatat server
-  const arr = riwTamuGet();
-  arr.unshift({
-    id: "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-    tipe: tipe, judul: riwTamuJudul(judul), waktu: new Date().toISOString(), data: data || {}
-  });
-  while (arr.length > RIW_TAMU_MAKS) arr.pop();
-  riwTamuSet(arr);
-}
+/* FIX 2026-11-08 (audit putaran 2): definisi kedua riwTamuCatat yang
+   polos (tanpa antrean pra-auth + tanpa pemangkasan data S2) DIHAPUS.
+   Definisi pertama di atas yang berlaku. */
 function riwTamuCari(id) {
   const arr = riwTamuGet();
   for (let i = 0; i < arr.length; i++) if (arr[i].id === id) return arr[i];
@@ -2473,18 +2519,37 @@ function cvStatusHTML(d) {
 }
 
 function cvMulaiPoll(id) {
+  // FIX 2026-11-08 (audit putaran 2): hitung gagal beruntun + batas
+  // total; pola lama menulis pesan galat lalu interval jalan TERUS
+  // selamanya. Sekarang polling berhenti dengan pesan jujur bahwa
+  // pekerjaan mungkin hilang dan pengguna bisa mulai lagi.
+  let gagalBeruntun = 0, putaran = 0;
+  const berhenti = (pesan) => {
+    if (_cvTimer) { clearInterval(_cvTimer); _cvTimer = null; }
+    const box = $("#cvStatus");
+    if (box) box.innerHTML = '<div class="err-box">' + pesan + "</div>";
+  };
   const cek = async () => {
     const box = $("#cvStatus");
     if (!box) return;
+    putaran++;
+    if (putaran > 300) {
+      berhenti("Convertnya kelamaan. Pekerjaannya mungkin hilang, mulai lagi ya.");
+      return;
+    }
     let r = null, d = null;
     try {
       r = await fetch("/api/convert/status?id=" + encodeURIComponent(id));
       d = await r.json();
     } catch (e) { d = null; }
     if (!r || !r.ok || !d || !d.id) {
-      box.innerHTML = '<div class="err-box">Tidak bisa mengecek status. Muat ulang halaman ini ya.</div>';
+      gagalBeruntun++;
+      if (gagalBeruntun >= 3) {
+        berhenti("Tidak bisa mengecek status convert dan pekerjaannya sepertinya hilang. Mulai lagi ya.");
+      }
       return;
     }
+    gagalBeruntun = 0;
     box.innerHTML = cvStatusHTML(d);
     const b = box.querySelector('[data-cv="batal"]');
     if (b) b.addEventListener("click", () => cvBatalkan(d.id));
@@ -2498,7 +2563,7 @@ function cvMulaiPoll(id) {
 
 async function cvBatalkan(id) {
   const box = $("#cvStatus");
-  const res = await apiPOST("/api/convert/batal", { id: id });
+  const res = await apiPOST("/convert/batal", { id: id });
   if (!res.ok) { toast("😅 " + ((res.data && (res.data.pesan || res.data.error)) || "Tidak bisa dibatalkan")); return; }
   toast("Convertnya dibatalkan 👍");
   if (box) box.innerHTML = '<p class="muted">Convertnya dibatalkan. Mulai lagi kapan pun kamu siap.</p>';
@@ -2575,7 +2640,7 @@ function cvBukaAlat(kode) {
     cvKirim(a.kode, $("#cvF"), a.rentang ? $("#cvR") : null, btn));
   // Tandai alat API bila kuncinya belum dipasang.
   if (a.api) {
-    apiJSON("/api/convert/siap").then(res => {
+    apiJSON("/convert/siap").then(res => {
       const d = (res && res.data) || {};
       const note = $("#cvCatatan");
       if (res.ok && !d.ilovepdf_aktif) {
@@ -2823,12 +2888,31 @@ function pageAI() {
     out.innerHTML = '<p class="loading">Masuk antrean... sabar ya ⏳</p>';
     let d = null;
     let gagalPesan = null;
+    // FIX 2026-11-08 (audit putaran 2): polling dibatasi 200 putaran
+    // (10 menit) + 3 gagal jaringan beruntun. Pola lama while(true)
+    // tanpa batas: pekerjaan yang hilang di server (mis. server
+    // restart) membuat tombol terkunci "AI lagi nulis..." selamanya.
+    let gagalBeruntun = 0;
+    let putaranAI = 0;
     while (true) {
       await new Promise(r => setTimeout(r, 3000));
       if (!out.isConnected) { if (btn) setLoading(btn, false); return; }
+      putaranAI++;
+      if (putaranAI > 200) {
+        gagalPesan = "Pekerjaan AI ini kelamaan dan sepertinya hilang di server. Coba lagi ya.";
+        break;
+      }
       const st = await apiJSON("/ai/job-status?id=" + encodeURIComponent(jid));
       const sd = st.data || {};
-      if (!st.ok) { gagalPesan = "AI-nya lagi gangguan, coba lagi bentar ya"; break; }
+      if (!st.ok) {
+        gagalBeruntun++;
+        if (gagalBeruntun >= 3) {
+          gagalPesan = "Pekerjaan AI ini sepertinya hilang di server. Coba lagi ya.";
+          break;
+        }
+        continue;
+      }
+      gagalBeruntun = 0;
       if (sd.status === "antre") {
         out.innerHTML = '<p class="loading">Antrean ke-' + (sd.posisi_antrean || 1) + '... sabar ya ⏳</p>';
         continue;
@@ -2885,14 +2969,21 @@ function pageTanya() {
   };
 
   let tanyaTerkini = "";
+  let tanyaSibuk = false;
   const prosesTanya = async (q, mk) => {
     tanyaTerkini = q;
-    tanyaRiwayat.push({ dari: "bot", teks: "Lagi mikir... ⏳" });
+    // FIX 2026-11-08 (audit putaran 2): placeholder disimpan sebagai
+    // REFERENSI OBJEK dan dibuang via indexOf, bukan pop() buta. Pop
+    // bisa membuang pesan yang salah bila ada yang menyisip di tengah
+    // (kiriman kedua), menukar urutan riwayat.
+    const placeholder = { dari: "bot", teks: "Lagi mikir... ⏳" };
+    tanyaRiwayat.push(placeholder);
     render();
     const btn = $("#tanyaBtn"); setLoading(btn, true, "...");
     const res = await apiPOST("/tanya", { q: q, model: mk });
     setLoading(btn, false);
-    tanyaRiwayat.pop();
+    const ixPh = tanyaRiwayat.indexOf(placeholder);
+    if (ixPh >= 0) tanyaRiwayat.splice(ixPh, 1);
     const d = res.data || {};
     // 429 kuota_habis harus dicek SEBELUM !res.ok (lihat pageAI)
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
@@ -2923,13 +3014,25 @@ function pageTanya() {
   };
 
   const kirimTanya = async () => {
+    // FIX 2026-11-08: satu pertanyaan dalam satu waktu; tombol/Enter
+    // selama proses berjalan diabaikan (dulu Enter ganda mengirim dua
+    // request dan riwayatnya tertukar).
+    if (tanyaSibuk) return;
     const inp = $("#tanyaIn");
     const q = (inp.value || "").trim();
     if (!q) return;
     const mk = modelPilihan();
     tanyaRiwayat.push({ dari: "user", teks: q });
     inp.value = "";
-    await prosesTanya(q, mk);
+    tanyaSibuk = true;
+    const btnKirim = $("#tanyaBtn");
+    if (btnKirim) btnKirim.disabled = true;
+    try {
+      await prosesTanya(q, mk);
+    } finally {
+      tanyaSibuk = false;
+      if (btnKirim) btnKirim.disabled = false;
+    }
   };
 
   render();
@@ -2989,6 +3092,7 @@ function pageTopup() {
       const saldo = d.saldo != null ? d.saldo : 0;
       const harga = d.harga_rp || 5000, uses = d.uses || 25;
       const minU = d.min_uses || 25, perU = d.harga_per_use || 200;
+      _topMinU = minU; // FIX A12: dipakai topupCreate menyamakan angka
       let html = '<div class="card"><h3>Sisa jatahmu</h3>' +
         (isAdm
           ? '<p>🎁 Akun admin: jatah AI tanpa batas, pakai sepuasnya ♾️</p>'
@@ -3017,11 +3121,22 @@ function pageTopup() {
   }
   refreshInfo();
 
+  let _topMinU = 25;
   async function topupCreate() {
     const payBox = $("#topPay");
     const btn = $("#btnTopup"); setLoading(btn, true, "Bikin kode bayar...");
     const inpU = $("#topUses");
-    const wantUses = inpU ? parseInt(inpU.value || "0", 10) : 0;
+    // FIX 2026-11-08 (audit putaran 2): angka TERKIRIM harus sama dengan
+    // angka TAMPIL. Pola lama: tampilan dijepit ke minimum oleh
+    // updTotal() tapi yang dikirim nilai mentah input, jadi tagihan
+    // bisa berbeda dari yang dilihat pengguna. Sekarang nilai dijepit
+    // dulu dan input ditulis ulang supaya keduanya sama.
+    let wantUses = inpU ? parseInt(inpU.value || "0", 10) || 0 : 0;
+    if (wantUses < _topMinU) {
+      wantUses = _topMinU;
+      if (inpU) inpU.value = String(wantUses);
+      toast("Jumlah minimumnya " + _topMinU + "x, disamakan ya.");
+    }
     const res = await apiPOST("/topup/create", {uses: wantUses});
     setLoading(btn, false);
     if (!res.ok) {
@@ -3058,8 +3173,15 @@ function pageTopup() {
         toast("Jatah AI masuk! 🎉");
       }
     }, 8000));
-    // berhenti polling setelah 65 menit (invoice kedaluwarsa 1 jam)
-    setTimeout(() => clearInterval(timer), 65 * 60 * 1000);
+    // berhenti polling setelah 65 menit (invoice kedaluwarsa 1 jam).
+    // FIX 2026-11-08 (audit putaran 2): sebelumnya polling berhenti
+    // DIAM-DIAM; sekarang tampilkan pesan kedaluwarsa yang jujur bila
+    // QR masih tampil dan belum terbayar.
+    setTimeout(() => {
+      clearInterval(timer);
+      const st = document.getElementById("payStat");
+      if (st) st.textContent = "Kode bayar ini sudah kedaluwarsa (lebih dari 1 jam). Klik Top-up via QRIS lagi buat bikin kode baru ya.";
+    }, 65 * 60 * 1000);
   }
 
   // resume: kalau ada invoice pending (mis. tab tertutup sebelum lunas),
@@ -3138,6 +3260,16 @@ function pageBantuan() {
     faq.map(f => '<div class="card"><h3>' + f[0] + "</h3><p>" + f[1] + "</p></div>").join("") +
     '<div class="card center"><h3>Masih bingung? ' + tic("chat") + '</h3><p class="muted">Chat admin langsung, fast respon di jam kerja. ' + tic("spark") + '</p>' +
     '<a class="btn btn-primary" href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">' + tic("ig") + ' Hubungi Admin</a></div>';
+}
+
+/* FIX 2026-11-08 (audit putaran 2): maskotSVG sebelumnya TIDAK pernah
+   didefinisikan, jadi terapkanInfoSitus() melempar ReferenceError dan
+   overlay pemeliharaan tidak pernah tampil. Definisi ini memakai aset
+   maskot resmi yang sama dengan logo/hero (maskot.jpg). */
+function maskotSVG(ukuran) {
+  const u = ukuran || 64;
+  return '<img src="maskot.jpg" alt="Maskot KhairyPustaka" width="' + u +
+    '" height="' + u + '" style="border-radius:18px">';
 }
 
 /* ---------- Info situs: pemeliharaan + sakelar tool (Fase 4) ---------- */
@@ -3294,6 +3426,11 @@ function pageKritikSaran() {
   ikatKategori("ksKat", "kritik");
   ikatBintang("ks");
   $("#ksKirim").addEventListener("click", async function() {
+    // FIX 2026-11-08: kunci tombol selama pengiriman feedback berjalan.
+    const btnKs = this;
+    if (btnKs.disabled) return;
+    btnKs.disabled = true;
+    try {
     const msg = $("#ksMsg");
     msg.textContent = "";
     const bintang = nilaiBintang("ks");
@@ -3314,6 +3451,7 @@ function pageKritikSaran() {
     $("#ksSaran").value = "";
     $("#ksFitur").value = "";
     toast("Feedback terkirim. Terima kasih! 🙏");
+    } finally { btnKs.disabled = false; }
   });
 }
 
@@ -3370,6 +3508,11 @@ function tampilPopupFeedback() {
   });
   el.addEventListener("click", function(e) { if (e.target === el) tutup(true); });
   el.querySelector("#pfKirim").addEventListener("click", async function() {
+    // FIX 2026-11-08: kunci tombol kirim popup selama request berjalan.
+    const btnPf = this;
+    if (btnPf.disabled) return;
+    btnPf.disabled = true;
+    try {
     const msg = el.querySelector("#pfMsg");
     const bintang = nilaiBintang("pf");
     const saran = (el.querySelector("#pfSaran").value || "").trim();
@@ -3388,6 +3531,7 @@ function tampilPopupFeedback() {
       '<p class="muted">Kritik dan saranmu sudah kami terima dan akan dibaca untuk perbaikan KhairyPustaka.</p>' +
       '<button class="btn btn-primary" id="pfSelesai" type="button">Tutup</button></div>';
     el.querySelector("#pfSelesai").addEventListener("click", function() { tutup(false); });
+    } finally { btnPf.disabled = false; }
   });
 }
 
@@ -3597,7 +3741,7 @@ function admEksporCSV() {
 
 async function admMuatSistem() {
   const box = $("#admSistem");
-  if (!box) return;
+  if (!box) return false;
   try {
     const r = await apiJSON("/admin/sistem");
     if (!r.ok) throw 0;
@@ -3697,10 +3841,14 @@ async function admMuatSistem() {
       "<h4>Kesehatan Sistem</h4>" +
       '<div class="list-row"><div class="lr-main"><b>Server</b>' +
       '<div class="muted tiny">Terakhir dicek ' + esc(fmtWita(s.waktu)) + "</div></div>" +
-      admPill("Berjalan normal", "ok") + "</div>" +
+      // FIX 2026-11-08 (audit putaran 2): pill membaca field status
+      // SEBENARNYA dari respons server, bukan hardcoded sehat.
+      (s.status === "normal" ? admPill("Berjalan normal", "ok")
+        : admPill("Perlu dicek: " + (s.status || "tidak diketahui"), "warn")) + "</div>" +
       '<div class="list-row"><div class="lr-main"><b>Basis Data</b>' +
       '<div class="muted tiny">' + (s.basis_data === "postgres" ? "Terhubung ke Postgres (Neon)" : "Mode file lokal") + "</div></div>" +
-      admPill("Terhubung", "ok") + "</div>" +
+      (s.basis_data === "postgres" ? admPill("Terhubung", "ok")
+        : admPill("Mode file", "warn")) + "</div>" +
       "<h4>Model AI yang Dirotasi</h4>" +
       (modelRows || '<p class="muted">Belum ada data model.</p>') +
       "<h4>Sumber Daya</h4>" +
@@ -3744,14 +3892,16 @@ async function admMuatSistem() {
         btnCb.disabled = false;
       }
     });
+    return true;
   } catch (e) {
     box.innerHTML = '<p class="pf-msg">Gagal memuat data sistem. Coba lagi ya.</p>';
+    return false;
   }
 }
 
 async function admMuatPertanyaan() {
   const box = $("#admPertanyaan");
-  if (!box) return;
+  if (!box) return false;
   try {
     const r = await apiJSON("/admin/pertanyaan");
     if (!r.ok) throw 0;
@@ -3760,7 +3910,7 @@ async function admMuatPertanyaan() {
     if (badge) badge.textContent = rows.length ? String(rows.length) : "";
     if (!rows.length) {
       box.innerHTML = '<p class="muted">Belum ada pertanyaan yang tercatat belum terjawab.</p>';
-      return;
+      return true;
     }
     box.innerHTML = rows.map(function(p, i) {
       return '<div class="q-item"><button class="q-head" type="button" data-q="' + i + '">' +
@@ -3776,8 +3926,10 @@ async function admMuatPertanyaan() {
         if (f) f.classList.toggle("hidden");
       });
     });
+    return true;
   } catch (e) {
     box.innerHTML = '<p class="pf-msg">Gagal memuat pertanyaan masuk.</p>';
+    return false;
   }
 }
 
@@ -3903,9 +4055,11 @@ async function admMuatPengaturan() {
     $("#admPgAktif").checked = !!ADM_PENG.pengumuman.aktif;
     admPratinjauPengumuman();
     admRenderSakelar();
+    return true;
   } catch (e) {
     const m = $("#admPgMsg");
     if (m) m.textContent = "Gagal memuat pengaturan.";
+    return false;
   }
 }
 
@@ -4065,7 +4219,12 @@ async function admCariMember() {
   }
 }
 
-async function admGrant(uid, nama) {
+const _admGrantSibuk = {};
+async function admGrant(uid, nama, btnEl) {
+  // FIX 2026-11-08: satu grant per member dalam satu waktu; tombol
+  // dinonaktifkan selama request (grant bernilai uang tidak boleh
+  // terkirim dua kali karena klik ganda).
+  if (_admGrantSibuk[uid]) return;
   const msg = $("#admGrantMsg");
   const inp = document.querySelector('.adm-jml[data-uid="' + uid + '"]');
   const jumlah = parseInt(inp && inp.value, 10) || 0;
@@ -4074,6 +4233,8 @@ async function admGrant(uid, nama) {
     return;
   }
   if (!confirm("Tambah " + jumlah + " jatah AI ke " + nama + "?")) return;
+  _admGrantSibuk[uid] = true;
+  if (btnEl) btnEl.disabled = true;
   try {
     const r = await apiPOST("/admin/grant", { uid: uid, jumlah: jumlah });
     if (!r.ok) {
@@ -4084,6 +4245,9 @@ async function admGrant(uid, nama) {
     admCariMember();
   } catch (e) {
     msg.textContent = "Koneksi bermasalah. Coba lagi ya.";
+  } finally {
+    delete _admGrantSibuk[uid];
+    if (btnEl) btnEl.disabled = false;
   }
 }
 
@@ -4095,7 +4259,7 @@ function admKlikGlobal(e) {
   }
   const grant = e.target.closest ? e.target.closest("[data-grant]") : null;
   if (grant) {
-    admGrant(grant.getAttribute("data-grant"), grant.getAttribute("data-nama"));
+    admGrant(grant.getAttribute("data-grant"), grant.getAttribute("data-nama"), grant);
   }
 }
 
@@ -4243,18 +4407,25 @@ function pageAdmin() {
         const p = $("#admPane-" + n);
         if (p) p.classList.toggle("hidden", n !== tb.dataset.atab);
       });
+      // FIX 2026-11-08 (audit putaran 2): flag sekali-muat diset
+      // HANYA setelah muatan BERHASIL. Pola lama menyetel flag sebelum
+      // muatan async selesai, jadi satu kegagalan jaringan mengunci
+      // tab sampai halaman dimuat ulang.
       if (tb.dataset.atab === "sistem" && !admSistemDimuat) {
-        admSistemDimuat = true;
-        admMuatSistem();
+        admMuatSistem().then(function(ok) {
+          if (ok !== false) admSistemDimuat = true;
+        });
       }
       if (tb.dataset.atab === "log" && !admPertanyaanDimuat) {
-        admPertanyaanDimuat = true;
-        admMuatPertanyaan();
+        admMuatPertanyaan().then(function(ok) {
+          if (ok !== false) admPertanyaanDimuat = true;
+        });
         admMuatFeedback();
       }
       if (tb.dataset.atab === "pengumuman" && !admPengaturanDimuat) {
-        admPengaturanDimuat = true;
-        admMuatPengaturan();
+        admMuatPengaturan().then(function(ok) {
+          if (ok !== false) admPengaturanDimuat = true;
+        });
       }
     });
   });
@@ -4281,6 +4452,11 @@ function pageAdmin() {
     });
   });
   $("#admKodeBtn").addEventListener("click", async function() {
+    // FIX 2026-11-08: kunci tombol selama generate kode berjalan
+    // (klik ganda sebelumnya bisa membuat dua batch kode).
+    const btnKode = this;
+    if (btnKode.disabled) return;
+    btnKode.disabled = true;
     const msg = $("#admKodeMsg"), out = $("#admKodeBaru");
     msg.textContent = "";
     const jumlah = parseInt($("#admKodeJml").value, 10) || 0;
@@ -4299,6 +4475,8 @@ function pageAdmin() {
       admMuatKode();
     } catch (e) {
       msg.textContent = "Koneksi bermasalah. Coba lagi ya.";
+    } finally {
+      btnKode.disabled = false;
     }
   });
   $("#admKodeRefresh").addEventListener("click", admMuatKode);

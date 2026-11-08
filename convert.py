@@ -36,6 +36,14 @@ MAKS_HALAMAN_KE_GAMBAR = 30
 DPI_KE_GAMBAR = 150
 GAMBAR_FORMAT_BOLEH = {"JPEG", "PNG", "WEBP", "BMP", "GIF", "TIFF"}
 GAMBAR_DIMENSI_MAKS = 2000  # sisi terpanjang, biar PDF tidak raksasa
+# FIX 2026-11-08 (audit putaran 2, temuan HIGH #5 + #6, plafon disetujui
+# Sul): anggaran piksel keras SEBELUM dekompresi/render penuh.
+GAMBAR_PIKSEL_MAKS = 50_000_000   # 50 juta piksel per gambar
+PDF_GAMBAR_PIKSEL_MAKS = 40_000_000  # 40 juta piksel per halaman render
+if Image is not None:
+    # Ambang galat Pillow sendiri: load() di atas ini langsung
+    # DecompressionBombError, jauh sebelum memori membengkak.
+    Image.MAX_IMAGE_PIXELS = GAMBAR_PIKSEL_MAKS
 
 
 def _buka_pdf(raw, maks_halaman=MAKS_HALAMAN_PDF):
@@ -158,8 +166,26 @@ def gambar_ke_pdf(daftar_raw):
     for raw in daftar_raw:
         try:
             gbr = Image.open(io.BytesIO(raw))
+            # FIX 2026-11-08: cek dimensi dari HEADER (gbr.size tersedia
+            # tanpa mendekompresi piksel) dan tolak di atas plafon
+            # SEBELUM load() mengembang di memori. PNG 0,34 MB berisi
+            # 12000x9000 = 108 jt piksel sebelumnya lolos dan memuncak
+            # RSS 580 MB di instance 512 MB.
+            if gbr.size[0] * gbr.size[1] > GAMBAR_PIKSEL_MAKS:
+                raise ConvertError(
+                    "resolusi gambarnya terlalu besar (maksimal 50 juta "
+                    "piksel). Kecilkan dulu gambarnya, lalu coba lagi ya")
             gbr.load()
-        except Exception:
+        except ConvertError:
+            raise
+        except Exception as e:
+            # Pillow sendiri melempar DecompressionBombError dari open()
+            # bila piksel jauh di atas MAX_IMAGE_PIXELS: petakan ke pesan
+            # plafon yang sama, bukan pesan generik "tidak bisa dibaca".
+            if e.__class__.__name__ == "DecompressionBombError":
+                raise ConvertError(
+                    "resolusi gambarnya terlalu besar (maksimal 50 juta "
+                    "piksel). Kecilkan dulu gambarnya, lalu coba lagi ya")
             raise ConvertError(
                 "ada gambar yang tidak bisa dibaca, pastikan formatnya "
                 "JPG atau PNG ya")
@@ -202,10 +228,23 @@ def pdf_ke_gambar(raw, dpi=DPI_KE_GAMBAR, maks_halaman=MAKS_HALAMAN_KE_GAMBAR):
             raise ConvertError(
                 f"PDF-nya {n} halaman, maksimal {maks_halaman} halaman ya "
                 "untuk PDF ke Gambar")
-        zum = dpi / 72.0
         hasil = []
         for i in range(n):
-            piksel = dok[i].get_pixmap(matrix=pymupdf.Matrix(zum, zum))
+            # FIX 2026-11-08 (audit putaran 2, temuan HIGH #6): hitung
+            # piksel hasil dari page.rect pada DPI target SEBELUM render.
+            # Halaman 4000x4000 pt pada 150 DPI sebelumnya menghasilkan
+            # pixmap raksasa (RSS 689 MB). Di atas plafon 40 jt piksel,
+            # DPI diturunkan proporsional sampai muat; halaman A4 normal
+            # tidak terpengaruh (tetap 150 DPI).
+            zum = dpi / 72.0
+            r = dok[i].rect
+            piksel_target = (r.width * zum) * (r.height * zum)
+            if piksel_target > PDF_GAMBAR_PIKSEL_MAKS and piksel_target > 0:
+                zum *= (PDF_GAMBAR_PIKSEL_MAKS / piksel_target) ** 0.5
+            # alpha=False: hasil akhir selalu JPG (tanpa transparansi);
+            # kanal alpha hanya membuang 25% memori pixmap.
+            piksel = dok[i].get_pixmap(matrix=pymupdf.Matrix(zum, zum),
+                                       alpha=False)
             hasil.append(piksel.tobytes("jpg", jpg_quality=85))
     finally:
         dok.close()
