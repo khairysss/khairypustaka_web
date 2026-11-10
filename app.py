@@ -2383,6 +2383,11 @@ def _mdl_kerja_laporan(jid):
         if not teks:
             raise RuntimeError("laporan selesai tapi teksnya kosong")
         biaya = exacli.biaya(final)
+        if not biaya:
+            # Respons agent run tidak memuat costDollars; tarifnya flat
+            # $0,50 per laporan selesai (effort high, terverifikasi
+            # Fase 0), jadi angka itu yang dicatat ke monitor.
+            biaya = 0.50
     except Exception as e:  # noqa: BLE001
         log.warning("mendalam laporan %s gagal: %s", jid, e)
         if not job.get("is_admin"):
@@ -2399,6 +2404,7 @@ def _mdl_kerja_laporan(jid):
         exa.kredit_potong_cadangan(uid)
     lid = exa.laporan_simpan(uid, job["query"], teks, biaya)
     exa.job_catat("laporan", True)
+    exa.belanja_catat(biaya, "laporan", hitung_cap=False)
     exa.riwayat_tambah(uid, "laporan", job["query"], 0, "lap:" + lid)
     with _MDL_LOCK:
         job["status"] = "selesai"

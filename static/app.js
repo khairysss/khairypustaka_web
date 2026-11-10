@@ -4103,7 +4103,7 @@ async function mdlMuatRiwayat() {
     <button type="button" class="mdl-hist-item" data-mhist="${esc(it.kunci)}">
       <span class="mdl-hist-top"><span>${esc(it.mode_nama || (MDL_MODES[it.mode] || {}).nama || "")}</span><span>${esc(it.waktu_label || "")}</span></span>
       <span class="mdl-hist-q" style="display:block">${esc(it.query)}</span>
-      <span class="mdl-hist-meta">${it.jumlah_sumber != null ? it.jumlah_sumber : (it.jumlah != null ? it.jumlah : 0)} sumber ditemukan. Klik untuk memuat lagi.</span>
+      <span class="mdl-hist-meta">${it.mode === "laporan" ? "Laporan tersimpan. Klik untuk memuat lagi." : ((it.jumlah_sumber != null ? it.jumlah_sumber : (it.jumlah != null ? it.jumlah : 0)) + " sumber ditemukan. Klik untuk memuat lagi.")}</span>
     </button>`).join("");
   $$("[data-mhist]").forEach(b => b.onclick = () => mdlBukaHasil(b.dataset.mhist));
 }
@@ -4366,7 +4366,7 @@ function mdlTanyaHTML() {
 function mdlRenderHasil() {
   const host = $("#mdlHasilHost"); if (!host || !MDL.hasil) return;
   const h = MDL.hasil, mode = MDL.hasilMode;
-  const meta = [`Mode: <b>${MDL_MODES[mode].nama}</b>`, `${h.jumlah || 0} sumber`];
+  const meta = [`Mode: <b>${MDL_MODES[mode].nama}</b>`, mode === "laporan" ? "Laporan lengkap" : `${h.jumlah || 0} sumber`];
   if (h.dari_cache) meta.push("dari cache 7 hari");
   if (h.penyaring) {
     if (h.penyaring.fokus) meta.push("Fokus: " + mdlFokusLabel(h.penyaring.fokus));
@@ -4378,7 +4378,7 @@ function mdlRenderHasil() {
   const tampil = mdlPapersTampil();
   const kosong = (h.papers || []).length === 0;
   host.innerHTML = `
-    <div class="mdl-chips">${meta.map(m => `<span class="mdl-chip">${m}</span>`).join("")}<span class="mdl-chip" id="mdlSimpanCount">Paper tersimpan: 0</span></div>
+    <div class="mdl-chips">${meta.map(m => `<span class="mdl-chip">${m}</span>`).join("")}${mode === "laporan" ? "" : `<span class="mdl-chip" id="mdlSimpanCount">Paper tersimpan: 0</span>`}</div>
     ${mdlJawabanHTML()}
     ${kosong ? "" : `
     <div class="mdl-actionbar">
@@ -4414,7 +4414,7 @@ function mdlRenderHasil() {
     </div>
     ${!kosong && tampil.length === 0 ? `<div class="mdl-empty"><b>Tidak ada sumber yang cocok dengan saringan tampilan ini.</b><p style="margin:6px 0 0;font-size:13.5px">Longgarkan saringannya lewat tombol Perluas Hasil di atas. Saringan tampilan tidak mengubah hasil pencarian aslinya.</p></div>` : ""}
     <div id="mdlBandingHost"></div>
-    ${kosong ? `
+    ${kosong && mode !== "laporan" ? `
     <div class="mdl-empty">
       <b>Pencarianmu selesai, tetapi tidak ada jurnal yang cocok ditemukan.</b>
       <p style="margin:6px 0 4px;font-size:13.5px">Beberapa penyebab yang paling sering terjadi:</p>

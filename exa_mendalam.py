@@ -379,8 +379,11 @@ def belanja_boleh(estimasi_usd):
             and r["bulan_ini"] + estimasi_usd <= r["cap_bulanan"])
 
 
-def belanja_catat(usd, mode):
-    """Catat biaya ASLI dari respons Exa (fail-safe)."""
+def belanja_catat(usd, mode, hitung_cap=True):
+    """Catat biaya ASLI dari respons Exa (fail-safe). hitung_cap=False
+    untuk mode yang digerbang kredit (Laporan Riset): biayanya tetap
+    masuk total + per_mode supaya monitor jujur, tapi tidak memakan
+    ember plafon harian/bulanan yang khusus menjaga mode ringan."""
     try:
         u = float(usd or 0)
         if u <= 0:
@@ -389,8 +392,9 @@ def belanja_catat(usd, mode):
             d = _muat(_PATH_BELANJA)
             hari = d.setdefault("hari", {})
             bulan = d.setdefault("bulan", {})
-            hari[_hari_ini()] = float(hari.get(_hari_ini()) or 0) + u
-            bulan[_bulan_ini()] = float(bulan.get(_bulan_ini()) or 0) + u
+            if hitung_cap:
+                hari[_hari_ini()] = float(hari.get(_hari_ini()) or 0) + u
+                bulan[_bulan_ini()] = float(bulan.get(_bulan_ini()) or 0) + u
             d["total"] = float(d.get("total") or 0) + u
             for k in sorted(hari.keys())[:-92]:
                 hari.pop(k, None)
