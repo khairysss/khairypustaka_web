@@ -1185,7 +1185,7 @@ input:not([type]){ width:100%; padding:11px 12px; border-radius:12px; font-size:
 .mdl-mode-cell{display:flex;flex-direction:column;gap:8px}
 .mdl-mode{position:relative;text-align:left;background:var(--mcard);border:1.5px solid var(--mline);border-radius:16px;padding:15px;cursor:pointer;color:var(--mtext)}
 .mdl-mode.on{border-color:var(--mteal)}
-.mdl-mode .mname{font-weight:800;font-size:15.5px;display:flex;justify-content:space-between;gap:8px}
+.mdl-mode .mname{font-weight:800;font-size:15.5px;display:flex;align-items:center;gap:8px;padding-right:26px}
 .mdl-mode .mdesc{font-size:13px;color:var(--mmuted);margin-top:5px}
 .mdl-mode .mtime{font-size:12.5px;color:var(--mteal);margin-top:8px;font-weight:700}
 .mdl-mode .check{position:absolute;top:12px;right:12px;width:20px;height:20px;border-radius:50%;background:var(--mteal);color:var(--mteal-ink);display:none;align-items:center;justify-content:center;font-size:12px;font-weight:900}
