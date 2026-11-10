@@ -403,6 +403,80 @@ def belanja_catat(usd, mode):
         log.warning("exa belanja catat gagal: %s", e)
 
 
+def job_catat(mode, ok):
+    """Catat penyelesaian satu job mendalam (selesai/gagal) per mode
+    per hari kalender WITA ke store belanja (kunci "job"), supaya tab
+    Sistem admin bisa menampilkan hitungan job hari ini. Fail-safe:
+    galat hanya dicatat di log, tidak pernah mengganggu job."""
+    try:
+        m = str(mode or "").strip().lower()
+        if m not in MODE_SEMUA:
+            return
+        with _LOCK:
+            d = _muat(_PATH_BELANJA)
+            job = d.setdefault("job", {})
+            hari = job.setdefault("hari", {})
+            entri = hari.setdefault(_hari_ini(), {})
+            s = entri.setdefault(m, {"selesai": 0, "gagal": 0})
+            kunci = "selesai" if ok else "gagal"
+            s[kunci] = int(s.get(kunci) or 0) + 1
+            for k in sorted(hari.keys())[:-92]:
+                hari.pop(k, None)
+            _simpan(_PATH_BELANJA, d)
+    except Exception as e:
+        log.warning("exa job catat gagal: %s", e)
+
+
+_SALDO_BASIS_DEFAULT = 50.0  # USD, basis perkiraan sisa kredit akun
+
+
+def _saldo_basis():
+    """Basis kredit akun (USD) untuk perkiraan sisa: angka yang
+    tersimpan di store belanja (kunci saldo_basis_usd); bawaan 50."""
+    try:
+        v = float((_muat(_PATH_BELANJA).get("saldo_basis_usd") or 0))
+    except (TypeError, ValueError):
+        v = 0
+    return v if v > 0 else _SALDO_BASIS_DEFAULT
+
+
+def monitor_ringkas():
+    """Ringkasan pemantauan mesin mendalam untuk tab Sistem admin:
+    status kunci (boolean saja, nilainya tidak pernah dibaca di
+    sini), belanja vs plafon, hitungan job hari ini per mode, total
+    belanja sejak fitur berjalan, dan perkiraan sisa kredit akun
+    (basis tersimpan dikurangi total belanja tercatat)."""
+    r = belanja_ringkas()
+    d = _muat(_PATH_BELANJA)
+    job_hari = ((d.get("job") or {}).get("hari") or {}).get(
+        _hari_ini()) or {}
+
+    def _jm(mode):
+        s = job_hari.get(mode) or {}
+        return {"selesai": int(s.get("selesai") or 0),
+                "gagal": int(s.get("gagal") or 0)}
+
+    basis = _saldo_basis()
+    return {
+        "kunci_terpasang": bool(
+            (os.environ.get("EXA_API_KEY") or "").strip()),
+        "belanja_hari_ini_usd": round(r["hari_ini"], 4),
+        "belanja_bulan_ini_usd": round(r["bulan_ini"], 4),
+        "total_belanja_usd": round(r["total"], 4),
+        "cap_harian_usd": r["cap_harian"],
+        "cap_bulanan_usd": r["cap_bulanan"],
+        "sisa_cap_harian_usd": round(
+            max(0.0, r["cap_harian"] - r["hari_ini"]), 4),
+        "sisa_cap_bulanan_usd": round(
+            max(0.0, r["cap_bulanan"] - r["bulan_ini"]), 4),
+        "job_hari_ini": {m: _jm(m) for m in MODE_SEMUA},
+        "belanja_per_mode_usd": {
+            k: round(float(v or 0), 4)
+            for k, v in (d.get("per_mode") or {}).items()},
+        "saldo_basis_usd": basis,
+        "perkiraan_sisa_kredit_usd": round(basis - r["total"], 4)}
+
+
 def estimasi_biaya(mode, num):
     """Estimasi kasar biaya panggilan (untuk gerbang plafon)."""
     n = max(1, int(num or 10))

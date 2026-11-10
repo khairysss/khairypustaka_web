@@ -3555,6 +3555,7 @@ function mdlBaruState() {
   return {info: null, mode: "bedah", start: "konteks",
     saringan: {fokus: "paper", tahunMode: "semua", rentang: 5, dari: 2018, sampai: 2026, bahasa: "semua", jumlah: 10, urutan: "relevan", kedalaman: "standar", domain: "", isi_penuh: true},
     jobId: null, hasil: null, hasilMode: null, kunci: null, queryAktif: "",
+    beliIv: null,
     banding: {}, simpan: {}, saringAkses: "semua", saringTahun: "semua", previewMode: null};
 }
 
@@ -3619,7 +3620,7 @@ function pageMendalam() {
   const pill = (grup, val, label) => `<button type="button" class="mdl-pill ${F[grup] === val ? "on" : ""}" data-mgrup="${grup}" data-mval="${esc(String(val))}">${esc(label)}</button>`;
   view().innerHTML = `
   <div class="mdl-wrap">
-    <div class="back-row"><button class="btn-back" onclick="goBack()">${tic("back")} Kembali</button></div>
+    <div class="back-row"><button class="btn-back" type="button">${tic("back")} Kembali</button></div>
     <div class="mdl-stages">
       <span class="mdl-stage on" id="mdlPill1" data-label="1. Formulir">1. Formulir</span>
       <span class="mdl-stage" id="mdlPill2" data-label="2. Proses">2. Proses</span>
@@ -3879,7 +3880,9 @@ async function mdlBeliMulai() {
   area.innerHTML = `<span class="muted">Menyiapkan pembayaran…</span>`;
   const r = await apiPOST("/mendalam/beli/create", {});
   if (!r.ok) {
-    area.innerHTML = `<span class="muted">${esc((r.data && (r.data.pesan || r.data.error)) || "Pembayaran belum bisa disiapkan.")}</span> <button class="mdl-btn" onclick="mdlRenderBeli()">Coba Lagi</button>`;
+    area.innerHTML = `<span class="muted">${esc((r.data && (r.data.pesan || r.data.error)) || "Pembayaran belum bisa disiapkan.")}</span> <button class="mdl-btn" id="mdlBeliLagi">Coba Lagi</button>`;
+    const bl = $("#mdlBeliLagi");
+    if (bl) bl.onclick = () => mdlRenderBeli();
     return;
   }
   const d = r.data;
@@ -3892,14 +3895,19 @@ async function mdlBeliMulai() {
         <div class="muted" style="font-size:13px;margin-top:3px">Referensi: ${esc(d.ref_id)}</div>
         <div class="muted" style="font-size:13px;margin:4px 0 10px">Bisa dari aplikasi bank atau e-wallet apa pun (GoPay, OVO, DANA, ShopeePay, m-banking). Kredit masuk otomatis begitu pembayaran terdeteksi, biasanya dalam hitungan detik. Kode berlaku sekitar 1 jam.</div>
         <div class="mdl-chip" id="mdlBeliStatus">Menunggu pembayaran…</div>
-        <div style="margin-top:10px"><button class="mdl-btn" onclick="mdlRenderBeli()">Batalkan</button></div>
+        <div style="margin-top:10px"><button class="mdl-btn" id="mdlBeliBatal">Batalkan</button></div>
       </div>
     </div>`;
+  const bb = $("#mdlBeliBatal");
+  if (bb) bb.onclick = () => {
+    if (MDL.beliIv) { clearInterval(MDL.beliIv); MDL.beliIv = null; }
+    mdlRenderBeli();
+  };
   let tries = 0;
   const iv = setInterval(async () => {
     tries++;
     const st = $("#mdlBeliStatus");
-    if (!st || tries > 120) { clearInterval(iv); return; }
+    if (!st || tries > 120) { clearInterval(iv); MDL.beliIv = null; return; }
     const s = await apiJSON("/mendalam/beli/status/" + encodeURIComponent(d.ref_id));
     if (s.ok && s.data.paid) {
       clearInterval(iv);
@@ -3913,6 +3921,7 @@ async function mdlBeliMulai() {
       st.textContent = "Pembayaran gagal atau dibatalkan. Silakan coba lagi.";
     }
   }, 4000);
+  MDL.beliIv = iv;
   regTimer(iv);
 }
 
@@ -4732,6 +4741,35 @@ async function admMuatSistem() {
         '<div class="muted tiny">' + esc(orr.catatan || "") + "</div>";
       orDetail = t;
     }
+    const md = d.mendalam || {};
+    let mdPill = admPill("Belum terbaca", "warn");
+    let mdDetail = esc(md.catatan || "");
+    if (md.aktif) {
+      mdPill = md.kunci_terpasang ? admPill("Kunci terpasang", "ok")
+        : admPill("Kunci belum terpasang", "warn");
+      const j = md.job_hari_ini || {};
+      const jSelesai = function(m) { return (j[m] || {}).selesai || 0; };
+      const lap = j.laporan || {};
+      mdDetail =
+        '<div class="muted tiny">Status kunci: ' +
+          (md.kunci_terpasang ? "terpasang" : "belum terpasang") + "</div>" +
+        "<div>Belanja hari ini <b>" + fmtUsd(md.belanja_hari_ini_usd) + "</b>" +
+          " · Sisa plafon harian <b>" + fmtUsd(md.sisa_cap_harian_usd) + "</b>" +
+          " dari " + fmtUsd(md.cap_harian_usd) + "</div>" +
+        '<div class="muted tiny">Belanja bulan ini ' + fmtUsd(md.belanja_bulan_ini_usd) +
+          " · Sisa plafon bulanan " + fmtUsd(md.sisa_cap_bulanan_usd) +
+          " dari " + fmtUsd(md.cap_bulanan_usd) + "</div>" +
+        '<div class="muted tiny">Job hari ini: Cari Jurnal Mendalam ' + jSelesai("cari") +
+          " · Jawaban Cepat " + jSelesai("cepat") +
+          " · Bedah Mendalam " + jSelesai("bedah") +
+          " · Laporan Riset selesai " + (lap.selesai || 0) +
+          ", gagal " + (lap.gagal || 0) + "</div>" +
+        "<div>Total belanja <b>" + fmtUsd(md.total_belanja_usd) + "</b>" +
+          " · <b>Perkiraan sisa kredit " + fmtUsd(md.perkiraan_sisa_kredit_usd) + "</b></div>" +
+        '<div class="muted tiny">Perkiraan dihitung dari basis kredit ' +
+          fmtUsd(md.saldo_basis_usd) + " dikurangi total belanja yang " +
+          "tercatat situs sejak fitur berjalan.</div>";
+    }
     const modelRows = (d.model || []).map(function(mo) {
       const kelas = mo.status === "sehat" ? "ok" : mo.status === "error" ? "err" :
         mo.status === "lambat" ? "warn" : "grey";
@@ -4771,6 +4809,9 @@ async function admMuatSistem() {
       '<div class="list-row"><div class="lr-main"><b>OpenRouter</b>' +
       "<div>" + orDetail + "</div></div>" +
       orPill + "</div>" +
+      '<div class="list-row"><div class="lr-main"><b>Mesin Pencarian Mendalam</b>' +
+      "<div>" + mdDetail + "</div></div>" +
+      mdPill + "</div>" +
       "<h4>Antrean Pekerjaan</h4>" +
       '<p class="muted tiny">Yang jalan dan antre adalah kondisi saat panel dibuka; selesai dan gagal tercatat permanen di basis data.</p>' +
       barisAntre("AI Studio dan Tanya AI", an.ai) +
@@ -5585,6 +5626,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#menuBtn").addEventListener("click", () => $("#mainNav").classList.toggle("open"));
   const bk = document.getElementById("btnBack");
   if (bk) bk.addEventListener("click", pergiKembali);
+  // Tombol Kembali di dalam konten halaman (kelas .btn-back selain
+  // tombol global #btnBack, mis. di halaman Mendalam): delegasi klik
+  // dokumen. Menggantikan atribut onclick inline lama yang diblokir
+  // CSP situs (script-src tanpa 'unsafe-inline').
+  document.addEventListener("click", e => {
+    const bb = e.target && e.target.closest ? e.target.closest(".btn-back") : null;
+    if (bb && bb.id !== "btnBack") pergiKembali();
+  });
   window.addEventListener("hashchange", router);
   initFABRiwayat(); // tombol melayang Riwayat ala live chat (sekali saat boot)
   document.addEventListener("click", admKlikGlobal); // tombol Salin/Tambah panel admin

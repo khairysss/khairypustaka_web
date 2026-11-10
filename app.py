@@ -2272,6 +2272,7 @@ def _mdl_kerja_ringan(jid):
         log.warning("mendalam job %s (%s) gagal: %s", jid, mode, e)
         if not job.get("is_admin"):
             exa.kuota_refund(uid)
+        exa.job_catat(mode, False)
         with _MDL_LOCK:
             job["status"] = "gagal"
             job["tahap"] = "Gagal"
@@ -2281,6 +2282,7 @@ def _mdl_kerja_ringan(jid):
         return
     biaya = exacli.biaya(body)
     exa.belanja_catat(biaya, mode)
+    exa.job_catat(mode, True)
     hasil["penyaring"] = {"fokus": s.get("fokus"),
                           "domain": s.get("domain") or ""}
     if job["start"] == "doi":
@@ -2343,6 +2345,7 @@ def _mdl_kerja_laporan(jid):
         log.warning("mendalam laporan %s gagal: %s", jid, e)
         if not job.get("is_admin"):
             exa.kredit_lepas_cadangan(uid)
+        exa.job_catat("laporan", False)
         with _MDL_LOCK:
             job["status"] = "gagal"
             job["tahap"] = "Gagal"
@@ -2353,6 +2356,7 @@ def _mdl_kerja_laporan(jid):
     if not job.get("is_admin"):
         exa.kredit_potong_cadangan(uid)
     lid = exa.laporan_simpan(uid, job["query"], teks, biaya)
+    exa.job_catat("laporan", True)
     exa.riwayat_tambah(uid, "laporan", job["query"], 0, "lap:" + lid)
     with _MDL_LOCK:
         job["status"] = "selesai"
@@ -2447,6 +2451,7 @@ def mendalam_job():
                 job = _MDL_JOBS[jid]
             exa.riwayat_tambah(g.uid, mode, query,
                                len(hit["hasil"].get("papers") or []), kunci)
+            exa.job_catat(mode, True)
             return jsonify(_mdl_job_json(job))
         # Plafon belanja global ditegakkan untuk semua (termasuk admin).
         if not exa.belanja_boleh(exa.estimasi_biaya(mode,
@@ -3257,6 +3262,9 @@ def admin_sistem():
     cerebras_usage) karena API Cerebras tidak menyediakan saldo.
     Pemakaian OpenRouter dibaca dari API resmi OpenRouter memakai
     kunci yang sudah dipakai rotasi AI (modul openrouter_usage).
+    Pemantauan mesin pencarian mendalam (status kunci, belanja,
+    hitungan job) dibaca dari pencatatan persisten modul exa_mendalam
+    sendiri (fungsi monitor_ringkas di modul itu).
     Ketiga sumber itu fail-safe: kegagalannya tidak menggagalkan
     endpoint ini dan tidak pernah diganti angka karangan."""
     err = _need_admin()
@@ -3320,6 +3328,7 @@ def admin_sistem():
         "render": _blok_render(),
         "cerebras": _blok_cerebras(),
         "openrouter": _blok_openrouter(),
+        "mendalam": _blok_mendalam(),
         "kuota": {"tamu_per_hari": 5, "member_ai_per_hari": 15}})
 
 
@@ -3576,6 +3585,27 @@ def _blok_openrouter():
         return {"terhubung": False, "status": "galat",
                 "catatan": "Data pemakaian OpenRouter belum terbaca "
                            "saat ini."}
+
+
+def _blok_mendalam():
+    """Blok Mesin Pencarian Mendalam untuk tab Sistem: status kunci
+    (boolean saja), belanja terhadap plafon, hitungan job hari ini,
+    dan perkiraan sisa kredit, semuanya dari pencatatan persisten
+    modul exa_mendalam sendiri. Fail-safe seperti blok lain: galat
+    jatuh ke status jujur tanpa angka."""
+    try:
+        if not exa:
+            return {"aktif": False,
+                    "catatan": "Modul pencarian mendalam tidak aktif "
+                               "di server ini."}
+        blok = {"aktif": True}
+        blok.update(exa.monitor_ringkas())
+        return blok
+    except Exception as e:
+        log.warning("admin_sistem: blok mendalam gagal: %s", e)
+        return {"aktif": False,
+                "catatan": "Data pemantauan pencarian mendalam belum "
+                           "terbaca saat ini."}
 
 
 def _peta_tool(path, kind=None):
