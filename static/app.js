@@ -1268,6 +1268,7 @@ const TAHUN_CHIPS = [[5, tic("clock")+" 5 thn terakhir"], [10, tic("calendar")+"
 function pageCari() {
   view().innerHTML =
     "<h2>"+tic("search")+" Cari Jurnal</h2>" +
+    '<p class="muted">Pencarian cepat dari katalog jurnal, untuk member bisa dipakai sepuasnya. Beda dari Cari Jurnal Mendalam yang membaca isi jurnalnya dan punya kuota harian.</p>' +
     '<div class="chip-row">' +
       TAHUN_CHIPS.map(c =>
         '<button class="filter-chip' + (cariState.tahun === c[0] ? " active" : "") +
@@ -3512,7 +3513,7 @@ function tampilPopupFeedback() {
    bila pernah top up >= Rp5.000) dan kredit Laporan Riset semua di
    server; halaman ini hanya menampilkan keadaan dari /mendalam/info. */
 const MDL_MODES = {
-  cari: {nama: "Cari Jurnal", desc: "Daftar paper yang relevan dengan konteksmu, lengkap dengan cuplikan bagian yang paling berkaitan.", waktu: {kilat: "Sekitar 2 sampai 3 detik", standar: "Sekitar 3 sampai 5 detik", mendalam: "Sekitar 5 sampai 8 detik"}},
+  cari: {nama: "Cari Jurnal Mendalam", desc: "Daftar paper yang relevan dengan konteksmu, lengkap dengan cuplikan bagian yang paling berkaitan.", waktu: {kilat: "Sekitar 2 sampai 3 detik", standar: "Sekitar 3 sampai 5 detik", mendalam: "Sekitar 5 sampai 8 detik"}},
   cepat: {nama: "Jawaban Cepat", desc: "Pertanyaanmu dijawab langsung dalam satu paragraf ringkas dan setiap klaimnya ditempeli sitasi.", waktu: {kilat: "Sekitar 3 sampai 4 detik", standar: "Sekitar 5 detik", mendalam: "Sekitar 6 sampai 8 detik"}},
   bedah: {nama: "Bedah Mendalam", desc: "Jawaban terstruktur per subtopik, membandingkan isi beberapa sumber, dengan sitasi di tiap klaim penting.", waktu: {kilat: "Sekitar 4 sampai 8 detik", standar: "Sekitar 8 sampai 12 detik", mendalam: "Sekitar 10 sampai 15 detik"}},
   laporan: {nama: "Laporan Riset", desc: "Laporan utuh berisi latar belakang, perbandingan sumber, temuan per subtopik, dan kesimpulan. Berjalan di latar belakang dan ada pemberitahuan saat selesai.", waktu: {kilat: "Sekitar 1 sampai 2 menit", standar: "Sekitar 1 sampai 3 menit", mendalam: "Sekitar 2 sampai 3 menit"}}
@@ -3597,7 +3598,7 @@ function mdlChipInfo() {
   if (i.tier >= 2) tierNote = "Kamu di Tier 2 berkat total top up Rp10.000 atau lebih. Limit harianmu sudah yang tertinggi.";
   else if (i.tier >= 1) tierNote = "Limitmu naik permanen berkat top up (Tier 1). Total top up sampai Rp10.000 menaikkannya lagi jadi 10x sehari.";
   else tierNote = "Top up Kredit Laporan sekali saja (Rp5.000) menaikkan limit harianmu permanen jadi 5x sehari, dan total Rp10.000 menaikkannya jadi 10x sehari.";
-  return `<span class="mdl-chip">Kuota mode ringan hari ini tersisa <b>${i.kuota_sisa != null ? i.kuota_sisa : 0} kali</b> (limit harianmu <b>${total}x</b>, gabungan Cari Jurnal, Jawaban Cepat, dan Bedah Mendalam)</span>` +
+  return `<span class="mdl-chip">Kuota mode ringan hari ini tersisa <b>${i.kuota_sisa != null ? i.kuota_sisa : 0} kali</b> (limit harianmu <b>${total}x</b>, gabungan Cari Jurnal Mendalam, Jawaban Cepat, dan Bedah Mendalam)</span>` +
     `<span class="mdl-chip">Kredit laporan: <b>${i.kredit_tersedia != null ? i.kredit_tersedia : (i.kredit_saldo != null ? i.kredit_saldo : 0)}</b></span>` +
     `<span class="mdl-chip">Hasil pencarian disimpan di cache <b>7 hari</b></span>` +
     `<div class="mdl-chip amber" style="width:100%">${esc(tierNote)}</div>`;
@@ -3627,7 +3628,7 @@ function pageMendalam() {
 
     <div class="mdl-panel" id="mdlStage1">
       <div class="mdl-head"><h1>Cari Jurnal Mendalam</h1><span class="mdl-badge">Fitur Member</span></div>
-      <p class="muted" style="margin-top:6px">Ceritakan kebutuhan risetmu. Mesin pencari khusus riset akan mencarikan papernya, membaca isinya, lalu menyusun jawaban bersitasi. Tiap sumber diberi label akses, jadi kamu tahu mana yang bisa langsung dibaca penuh dan mana yang hanya abstrak, sebelum mengklik apa pun.</p>
+      <p class="muted" style="margin-top:6px">Ceritakan kebutuhan risetmu. Mesin pencari khusus riset akan mencarikan papernya, membaca isinya, lalu menyusun jawaban bersitasi. Tiap sumber diberi label akses, jadi kamu tahu mana yang bisa langsung dibaca penuh dan mana yang hanya abstrak, sebelum mengklik apa pun. Bedanya dari Cari Jurnal biasa: yang biasa mencari dari katalog jurnal pakai kata kunci, cepat dan bisa dipakai sepuasnya. Yang mendalam membaca ceritamu, memahami konteksnya, lalu membaca isi jurnalnya sekalian, jadi hasilnya lebih dalam, tapi kuotanya dibatasi tiap hari.</p>
       <div class="mdl-chips" id="mdlInfoChips"><span class="mdl-chip">Memuat kuota dan kredit akunmu…</span></div>
 
       <div class="mdl-example-bar">
@@ -3765,7 +3766,7 @@ function pageMendalam() {
       <h2>Yang Diperlukan</h2>
       <div class="mdl-need-grid">
         <div class="mdl-need"><b>Akun member KhairyPustaka</b>Fitur ini khusus member. Tamu diarahkan masuk atau daftar dulu, gratis.</div>
-        <div class="mdl-need"><b>Kuota harian untuk mode ringan</b>Cari Jurnal, Jawaban Cepat, dan Bedah Mendalam berbagi satu kuota gabungan per hari, pulih pukul 00.00 WITA. Hasil yang tersimpan di cache tidak memotong kuota.</div>
+        <div class="mdl-need"><b>Kuota harian untuk mode ringan</b>Cari Jurnal Mendalam, Jawaban Cepat, dan Bedah Mendalam berbagi satu kuota gabungan per hari, pulih pukul 00.00 WITA. Hasil yang tersimpan di cache tidak memotong kuota.</div>
         <div class="mdl-need"><b>Kredit khusus untuk Laporan Riset</b>Laporan Riset memakai kredit laporan: Rp5.000 dapat 2 kredit dan 1 kredit terpotong per laporan yang selesai. Kredit tidak kedaluwarsa.</div>
       </div>
     </div>
@@ -4028,7 +4029,7 @@ async function mdlMuatRiwayat() {
   }
   host.innerHTML = `<h2 style="font-size:16px">Riwayat Pencarian Mendalam</h2>` + r.data.riwayat.map(it => `
     <button type="button" class="mdl-hist-item" data-mhist="${esc(it.kunci)}">
-      <span class="mdl-hist-top"><span>${esc(it.mode_nama)}</span><span>${esc(it.waktu_label || "")}</span></span>
+      <span class="mdl-hist-top"><span>${esc(it.mode_nama || (MDL_MODES[it.mode] || {}).nama || "")}</span><span>${esc(it.waktu_label || "")}</span></span>
       <span class="mdl-hist-q" style="display:block">${esc(it.query)}</span>
       <span class="mdl-hist-meta">${it.jumlah} sumber ditemukan. Klik untuk memuat lagi.</span>
     </button>`).join("");
