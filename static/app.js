@@ -1071,7 +1071,8 @@ function pageBeranda() {
       ["#/convert?alat=pisah", "doc", "Pisah PDF", ""],
       ["#/convert?alat=kompres", "doc", "Kompres PDF", ""],
       ["#/convert?alat=gambar_pdf", "doc", "Gambar ke PDF", ""],
-      ["#/convert?alat=pdf_gambar", "doc", "PDF ke Gambar", ""]
+      ["#/convert?alat=pdf_gambar", "doc", "PDF ke Gambar", ""],
+      ["#/ekstrak-teks", "doc", "Ekstrak Teks", "Ambil teks dari PDF, Word, TXT"]
     ]],
     ["nulis", tic("pencil")+" Nulis", [
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
@@ -2331,6 +2332,62 @@ function pageParafrase() {
       riwTamuCatat("chat", teks, { sumber: "parafrase", text: teks, hasil: gabung });
       $("#pfCopy").addEventListener("click", () => copyText(gabung));
     }
+  });
+}
+
+/* ----- Ekstrak Teks (alat mandiri, memakai /api/ekstrak-teks) ----- */
+function pageEkstrakTeks() {
+  view().innerHTML =
+    "<h2>" + tic("doc") + " Ekstrak Teks</h2>" +
+    '<div class="card">' +
+    "<p style=\"margin-top:0\">Ambil isi teks dari file <b>PDF, Word (.docx), atau TXT</b>, buat ditempel ke naskah, dicek kemiripannya, atau diolah lagi di alat lain. File dibaca seketika dan <b>tidak disimpan</b>.</p>" +
+    '<label for="etFile">Pilih file (.pdf, .docx, .txt, maks 2 MB)</label>' +
+    '<input type="file" id="etFile" accept="' + ACCEPT_DOK + '">' +
+    '<button class="btn btn-primary btn-block" id="btnEt" style="margin-top:12px">' + tic("doc") + ' Ambil Teks dari File</button>' +
+    '<p class="muted" style="margin-top:8px">PDF hasil pindai (scan gambar) tidak punya lapisan teks, jadi hasilnya bisa kosong. Teks ditampilkan maksimal 150.000 karakter pertama.</p></div>' +
+    '<div id="hasilEt"></div>';
+  let namaFile = "";
+  $("#btnEt").addEventListener("click", async () => {
+    const f = $("#etFile").files[0];
+    if (!f) { toast("Pilih file-nya dulu ya"); return; }
+    namaFile = f.name || "dokumen";
+    const box = $("#hasilEt");
+    box.innerHTML = '<p class="loading">Lagi membaca file...</p>';
+    const btn = $("#btnEt"); setLoading(btn, true, "Lagi membaca...");
+    const res = await ekstrakTeksFile(f);
+    setLoading(btn, false);
+    if (!res.ok) { box.innerHTML = ""; toast(" " + errFile(res)); return; }
+    const d = res.data || {};
+    const teks = d.teks || "";
+    let info = "Dari file <b>" + esc(d.nama || namaFile) + "</b>: " +
+      (d.karakter || teks.length).toLocaleString("id-ID") + " karakter, " +
+      (d.kata || 0).toLocaleString("id-ID") + " kata.";
+    if (d.terpotong) info += " Teksnya panjang banget, jadi yang ditampilkan 150.000 karakter pertama.";
+    box.innerHTML =
+      '<div class="card"><p class="muted" style="margin-top:0">' + info + "</p>" +
+      '<label for="etTeks">Hasil teksnya</label>' +
+      '<textarea id="etTeks" rows="14"></textarea>' +
+      '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">' +
+      '<button class="btn btn-primary" id="btnEtSalin">' + tic("quote") + ' Salin Teks</button>' +
+      '<button class="btn" id="btnEtUnduh">' + tic("doc") + ' Unduh .txt</button>' +
+      "</div></div>";
+    $("#etTeks").value = teks;
+    $("#btnEtSalin").addEventListener("click", async () => {
+      const t = $("#etTeks").value || "";
+      if (!t) { toast("Teksnya masih kosong"); return; }
+      try { await navigator.clipboard.writeText(t); toast("Teks tersalin, tinggal tempel di mana aja"); }
+      catch (e) { $("#etTeks").select(); toast("Blok teksnya lalu salin manual ya"); }
+    });
+    $("#btnEtUnduh").addEventListener("click", () => {
+      const t = $("#etTeks").value || "";
+      if (!t) { toast("Teksnya masih kosong"); return; }
+      const dasar = (namaFile || "dokumen").replace(/\.(pdf|docx|txt)$/i, "");
+      const blob = new Blob([t], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob); a.download = dasar + ".txt"; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    });
+    box.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 
@@ -4466,6 +4523,7 @@ const ROUTES = {
   "/parafrase": pageParafrase,
   "/terjemah": pageTerjemah,
   "/kemiripan": pageKemiripan,
+  "/ekstrak-teks": pageEkstrakTeks,
   "/convert": pageConvert,
   "/ai": pageAI,
   "/tanya": pageTanya,
