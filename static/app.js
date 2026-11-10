@@ -3606,7 +3606,7 @@ function pageMendalam() {
   if (!AUTH.login) {
     view().innerHTML = `<div class="page-head"><h1>${tic("spark")} Cari Jurnal Mendalam</h1></div>
       <div class="card glass center">
-        <p class="muted">Fitur ini khusus member. Masuk dulu untuk memakai Cari Jurnal Mendalam: pencarian jurnal berbasis Exa dengan label akses tiap sumber, jawaban bersitasi, bedah terstruktur, dan Laporan Riset.</p>
+        <p class="muted">Fitur ini khusus member. Masuk dulu untuk memakai Cari Jurnal Mendalam: pencarian jurnal mendalam dengan label akses tiap sumber, jawaban bersitasi, bedah terstruktur, dan Laporan Riset.</p>
         <button class="btn btn-primary" id="mdlLogin">Masuk / Daftar</button>
       </div>`;
     $("#mdlLogin").onclick = () => openAuth();
@@ -3735,7 +3735,7 @@ function pageMendalam() {
       <p class="muted" id="mdlTahapTeks" style="font-size:14px">Menyiapkan pencarian.</p>
       <ul class="mdl-steps">
         <li data-step="1">Menyusun kata kunci dari konteks</li>
-        <li data-step="2">Mencari di Exa</li>
+        <li data-step="2">Mencari sumber</li>
         <li data-step="3">Membaca isi sumber</li>
         <li data-step="4">Menyusun jawaban</li>
       </ul>
@@ -3753,7 +3753,7 @@ function pageMendalam() {
     <div class="mdl-history" id="mdlRiwayatHost"><h2 style="font-size:16px">Riwayat Pencarian Mendalam</h2><div class="muted" style="font-size:13.5px">Memuat riwayat…</div></div>
 
     <div style="margin-top:26px">
-      <h2>Kemampuan Exa</h2>
+      <h2>Kemampuan</h2>
       <p class="muted" style="font-size:13.5px">Mesin di balik fitur ini dibangun khusus untuk riset, jadi cara kerjanya beda dari pencarian biasa.</p>
       <div class="mdl-cap-grid">
         ${[["PENCARIAN NEURAL", "Neural Search", "Memahami maksud pertanyaanmu, bukan sekadar mencocokkan kata, jadi paper yang nyambung secara makna ikut ketemu."], ["KATEGORI SUMBER", "Kategori Paper Ilmiah", "Pencarian bisa dikunci ke kategori paper riset, berita, data perusahaan, sampai repositori kode."], ["ISI PENUH", "Contents / Isi Penuh", "Sistem mengambil dan membaca isi sumber, bukan cuma judul dan abstraknya."], ["PENCARIAN MENDALAM", "Deep Search", "Pertanyaan dipecah menjadi beberapa subpertanyaan terarah, lalu hasilnya dibandingkan."], ["JAWABAN BERSITASI", "Answer Bersitasi", "Pertanyaan dijawab langsung dalam satu paragraf dan setiap klaimnya ditempeli sitasi."], ["SKEMA TERSTRUKTUR", "Output Terstruktur", "Bedah Mendalam memakai skema keluaran resmi: ringkasan, faktor penyebab, dampak, rekomendasi."], ["AGEN RISET", "Agent / Laporan Riset", "Agen riset otonom yang merencanakan, mencari berlapis, membaca, lalu menulis laporan utuh."], ["PAPER SERUPA", "Find Similar", "Dari satu paper atau DOI, sistem mencarikan paper lain yang serupa."], ["SARING DOMAIN", "Saring Domain dan Tanggal", "Hasil bisa dikunci ke domain tertentu seperti jurnal kampus atau situs resmi, dan ke rentang tahun."], ["DASAR SITASI", "Grounding Sitasi", "Klaim di jawaban Bedah Mendalam ditempeli bukti dari sumbernya lewat grounding per bidang."]].map(c => `<div class="mdl-cap"><span class="mdl-cap-tag">${c[0]}</span><b>${c[1]}</b>${c[2]}</div>`).join("")}
@@ -3772,7 +3772,7 @@ function pageMendalam() {
     <div style="margin-top:26px">
       <h2>Di Balik Layar</h2>
       <div class="mdl-cap-grid" style="grid-template-columns:1fr 1fr">
-        ${[["URUTAN PROSES", "Pencarian otomatis berantai", "Konteksmu disusun menjadi kata kunci, dicari ke Exa, isi sumber dibaca, lalu jawaban disusun. Semua berjalan otomatis."], ["BIAYA MESIN", "Biaya mesin dijaga", "Ada plafon belanja harian untuk mode ringan dan hasil pencarian disimpan di cache 7 hari, jadi pertanyaan yang sama tidak dicari dua kali."], ["KENAPA PERLU WAKTU", "Hasil dicari saat itu juga", "Hasil tidak diambil dari stok lama. Laporan Riset paling lama karena agennya mencari berlapis dan menulis laporan utuh."], ["PENYIMPANAN", "Hasilmu tersimpan di akunmu", "Laporan selesai dan riwayat pencarian tersimpan di akunmu, bisa dibuka lagi kapan pun."]].map(c => `<div class="mdl-cap"><span class="mdl-cap-tag">${c[0]}</span><b>${c[1]}</b>${c[2]}</div>`).join("")}
+        ${[["URUTAN PROSES", "Pencarian otomatis berantai", "Konteksmu disusun menjadi kata kunci, dicari memakai mesin pencari riset, isi sumber dibaca, lalu jawaban disusun. Semua berjalan otomatis."], ["BIAYA MESIN", "Biaya mesin dijaga", "Ada plafon belanja harian untuk mode ringan dan hasil pencarian disimpan di cache 7 hari, jadi pertanyaan yang sama tidak dicari dua kali."], ["KENAPA PERLU WAKTU", "Hasil dicari saat itu juga", "Hasil tidak diambil dari stok lama. Laporan Riset paling lama karena agennya mencari berlapis dan menulis laporan utuh."], ["PENYIMPANAN", "Hasilmu tersimpan di akunmu", "Laporan selesai dan riwayat pencarian tersimpan di akunmu, bisa dibuka lagi kapan pun."]].map(c => `<div class="mdl-cap"><span class="mdl-cap-tag">${c[0]}</span><b>${c[1]}</b>${c[2]}</div>`).join("")}
       </div>
     </div>
   </div>`;
@@ -3864,7 +3864,7 @@ function mdlRenderBeli() {
   <div class="mdl-buy">
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
       <div><b style="font-size:15.5px">Beli Kredit Laporan</b>
-      <div class="muted" style="font-size:13.5px;margin-top:3px">Rp5.000 dapat <b>2 kredit laporan</b> (1 kredit = 1 Laporan Riset yang selesai). Kredit tidak kedaluwarsa. Total top up-mu juga menaikkan limit harian secara permanen: Tier 1 di total Rp5.000 (Exa ringan 5x sehari, kuota AI 20x sehari) dan Tier 2 di total Rp10.000 (Exa ringan 10x sehari, kuota AI 25x sehari).</div></div>
+      <div class="muted" style="font-size:13.5px;margin-top:3px">Rp5.000 dapat <b>2 kredit laporan</b> (1 kredit = 1 Laporan Riset yang selesai). Kredit tidak kedaluwarsa. Total top up-mu juga menaikkan limit harian secara permanen: Tier 1 di total Rp5.000 (mode ringan 5x sehari, kuota AI 20x sehari) dan Tier 2 di total Rp10.000 (mode ringan 10x sehari, kuota AI 25x sehari).</div></div>
       <span class="mdl-chip">Kreditmu sekarang: <b>${i.kredit_tersedia || 0}</b></span>
     </div>
     <div id="mdlBeliArea" style="margin-top:12px"><button class="mdl-btn primary" id="mdlBeliBtn">Beli 2 Kredit (Rp5.000, QRIS)</button></div>

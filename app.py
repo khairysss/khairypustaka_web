@@ -2210,7 +2210,7 @@ def _mdl_job_json(job):
     elif tahap.startswith("Membaca isi sumber") or \
             tahap.startswith("Laporan lagi disusun"):
         langkah = 3
-    elif tahap.startswith("Mencari di Exa") or \
+    elif tahap.startswith("Mencari sumber") or \
             tahap.startswith("Laporan mulai disusun"):
         langkah = 2
     else:
@@ -2233,7 +2233,7 @@ def _mdl_kerja_ringan(jid):
         if not job:
             return
         job["status"] = "memproses"
-        job["tahap"] = "Mencari di Exa..."
+        job["tahap"] = "Mencari sumber..."
     uid, mode, s = job["uid"], job["mode"], job["saringan"]
     try:
         if mode == "cari":
