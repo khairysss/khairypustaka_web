@@ -340,26 +340,49 @@ def _google_redirect_uri():
 
 
 # ---------------------------------------------------------------- rate limit
-_RL = {}          # {ip: [timestamps]}
+_RL = {}          # {kunci: [timestamps]} kunci: "u:<uid>" / "ip:<ip>" / "poll:..."
 _RL_LOCK = threading.Lock()
-RL_LIMIT, RL_WINDOW = 60, 3600  # 60x/jam/IP
+RL_LIMIT, RL_WINDOW = 60, 3600  # 60x/jam per kunci (per akun bila login, per IP bila tamu)
+# PERBAIKAN 2026-11-11 (keputusan Sul): endpoint polling status job memakai
+# ember terpisah yang longgar, TIDAK lagi menggerus jatah utama 60/jam.
+# Dulu polling tiap 2,5-8 detik (job AI/Mendalam/convert/sitasi + status
+# pembayaran) sendirian bisa menghabiskan seluruh jatah 1 jam, sehingga
+# pengguna aktif — atau banyak mahasiswa di 1 IP WiFi kampus yang dulu
+# dihitung gabungan per IP — menabrak 429 "Terlalu banyak permintaan" di
+# SEMUA fitur. Endpoint polling tetap dibatasi (plafon anti banjir) tapi
+# jauh di atas kebutuhan sah: batas frontend maks 200 putaran per job,
+# jadi 1800/jam setara belasan job berturut-turut dalam 1 jam.
+RL_POLL_LIMIT = 1800
 
 
-def rate_limited(ip):
+def rate_limited(key, limit=None, window=None):
+    limit = RL_LIMIT if limit is None else limit
+    window = RL_WINDOW if window is None else window
     now = time.time()
     with _RL_LOCK:
-        hits = [t for t in _RL.get(ip, []) if now - t < RL_WINDOW]
-        if len(hits) >= RL_LIMIT:
-            _RL[ip] = hits
+        hits = [t for t in _RL.get(key, []) if now - t < window]
+        if len(hits) >= limit:
+            _RL[key] = hits
             return True
         hits.append(now)
-        _RL[ip] = hits
+        _RL[key] = hits
         # I2 (audit 2026-10-13): sapu key kedaluwarsa bila tabel membesar
         if len(_RL) > 10000:
             for k in [k for k, v in _RL.items()
-                      if not v or now - v[-1] >= RL_WINDOW]:
+                      if not v or now - v[-1] >= window]:
                 del _RL[k]
         return False
+
+
+def _rl_key():
+    """Kunci rate limit: per akun bila sesi login valid, per IP bila tamu.
+
+    before_request (_session) sudah mengisi g.user/g.uid sebelum view
+    berjalan, jadi decorator yang membaca kunci ini selalu melihat sesi
+    final. Tamu tetap per IP persis seperti sebelumnya."""
+    if getattr(g, "user", None) and getattr(g, "uid", None):
+        return "u:" + str(g.uid)
+    return "ip:" + _ip()
 
 
 # Rentang IP publik Cloudflare (sumber: https://www.cloudflare.com/ips,
@@ -431,7 +454,26 @@ def _ip():
 
 def with_rl(view):
     def wrapped(*a, **kw):
-        if rate_limited(_ip()):
+        if rate_limited(_rl_key()):
+            return jsonify({"error": "rate_limit",
+                            "pesan": "Terlalu banyak permintaan, coba lagi nanti."}), 429
+        return view(*a, **kw)
+    wrapped.__name__ = view.__name__
+    return wrapped
+
+
+def with_rl_poll(view):
+    """Varian @with_rl khusus endpoint polling status (PERBAIKAN 2026-11-11).
+
+    Ember terpisah berkunci "poll:<kunci akun/IP>" dengan plafon
+    RL_POLL_LIMIT, jadi polling tidak mengurangi jatah utama sama sekali.
+    Aman dilonggarkan karena semua endpoint yang memakainya terikat
+    kepemilikan: status job hanya menjawab bila job[uid] == g.uid, dan
+    status pembayaran hanya menjawab invoice milik g.uid (endpoint
+    pembayaran juga punya throttle pemeriksa merchant 10 detik sendiri).
+    """
+    def wrapped(*a, **kw):
+        if rate_limited("poll:" + _rl_key(), limit=RL_POLL_LIMIT):
             return jsonify({"error": "rate_limit",
                             "pesan": "Terlalu banyak permintaan, coba lagi nanti."}), 429
         return view(*a, **kw)
@@ -1722,7 +1764,7 @@ def ai_job():
 
 
 @app.get("/api/ai/job-status")
-@with_rl
+@with_rl_poll
 def ai_job_status():
     """Status job AI untuk polling frontend (±3 detik)."""
     jid = (request.args.get("id") or "").strip()
@@ -1815,7 +1857,7 @@ def sitasi_pdf_job():
 
 
 @app.get("/api/sitasi-pdf/job-status")
-@with_rl
+@with_rl_poll
 def sitasi_pdf_job_status():
     """Status job sitasi-pdf untuk polling frontend (±3 detik)."""
     jid = (request.args.get("id") or "").strip()
@@ -2066,7 +2108,7 @@ _STATUS_THROTTLE_SECS = 10
 
 
 @app.get("/api/topup/status/<ref_id>")
-@with_rl  # R-2 (audit 2026-10-17)
+@with_rl_poll  # R-2 (audit 2026-10-17); polling -> ember terpisah 2026-11-11
 def topup_status(ref_id):
     if not ppay:
         return _err("pembayaran belum aktif", 503)
@@ -2491,7 +2533,7 @@ def mendalam_job():
 
 
 @app.get("/api/mendalam/job-status")
-@with_rl
+@with_rl_poll
 def mendalam_job_status():
     jid = (request.args.get("id") or "").strip()
     with _MDL_LOCK:
@@ -2620,7 +2662,7 @@ def mendalam_beli_create():
 
 
 @app.get("/api/mendalam/beli/status/<ref_id>")
-@with_rl
+@with_rl_poll
 def mendalam_beli_status(ref_id):
     if not exa or not ppay:
         return _err("pembayaran belum aktif", 503)
@@ -4621,7 +4663,7 @@ def convert_buat():
 
 
 @app.get("/api/convert/status")
-@with_rl
+@with_rl_poll
 def convert_status():
     """Status job untuk polling frontend (±3 detik). Transparan:
     posisi antrean, tahap nyata, waktu berjalan, estimasi kasar."""
