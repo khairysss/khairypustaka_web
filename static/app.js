@@ -460,9 +460,14 @@ function pageSitasi() {
     cek.innerHTML = '<p class="muted tiny" style="margin-top:8px">Lagi membaca file...</p>';
     const fd = new FormData();
     fd.append("file", f);
-    btn.disabled = true;
+    // FIX 2026-11-11: handler ini dulu memakai variabel "btn" yang tidak
+    // pernah didefinisikan di sini, jadi ReferenceError meledak SETELAH
+    // teks "Lagi membaca file..." tampil tetapi SEBELUM unggahan jalan;
+    // halaman macet diam diam selamanya (temuan audit gelombang 3).
+    const btnSit = $("#btnBuatSit");
+    if (btnSit) btnSit.disabled = true;
     let res = await unggahForm("/api/sitasi-pdf/job", fd);
-    btn.disabled = false;
+    if (btnSit) btnSit.disabled = false;
     if (!res.ok) { cek.innerHTML = ""; toast(" " + errFile(res)); return; }
     const sjid = res.data && res.data.id;
     if (!sjid) { cek.innerHTML = ""; toast(" " + errFile(res)); return; }
