@@ -187,7 +187,7 @@ def pesan_ai_habis():
     semua fitur; login: jatah AI 15x/hari)."""
     if _is_tamu():
         return ("Jatah harian tamu habis (5x/hari buat semua fitur). "
-                "Login gratis biar fitur non-AI sepuasnya! ✨")
+                "Login gratis biar fitur non-AI sepuasnya! ")
     return ("Jatah AI gratis harianmu habis (15x/hari). "
             "Besok reset lagi.")
 
@@ -1874,7 +1874,7 @@ def tanya():
 def _riwayat_need_login():
     """401 + flag need_login bila tamu (biar frontend tampilkan ajakan login)."""
     if not g.user:
-        return jsonify({"error": "login dulu ya 🔐",
+        return jsonify({"error": "login dulu ya ",
                         "need_login": True}), 401
     return None
 
@@ -3317,7 +3317,7 @@ def auth_register():
         log.warning("email verifikasi gagal untuk %s: %s", uid, merr)
         return _err("akun dibuat tapi email verifikasi gagal terkirim — coba kirim ulang dari halaman Masuk", 502)
     return jsonify({"ok": True, "need_verify": True,
-                    "msg": "cek email kamu buat verifikasi 📧"})
+                    "msg": "cek email kamu buat verifikasi "})
 
 
 @app.post("/api/auth/verifikasi")
@@ -3327,7 +3327,7 @@ def auth_verifikasi():
     body = request.get_json(silent=True) or {}
     uid = authmod.consume_token(body.get("token"), "verify")
     if not uid:
-        return _err("link verifikasi nggak valid / sudah kedaluwarsa 😅", 400)
+        return _err("link verifikasi nggak valid / sudah kedaluwarsa ", 400)
     authmod.set_email_verified(uid)
     # K-1: referral HANYA dihitung untuk akun yang emailnya terverifikasi.
     # Kode yang dibawa saat daftar diproses tepat di titik ini (sekali saja).
@@ -3381,7 +3381,7 @@ def auth_kirim_ulang():
             return _err("batas pengiriman email ke alamat ini tercapai, coba lagi sejam ya", 429)
         tok = authmod.issue_token(uid, "verify", authmod.VERIFY_TTL)
         mailmod.send_verify_email(user.get("email"), user.get("nama") or "kamu", tok)
-    return jsonify({"ok": True, "msg": "kalau email terdaftar & belum verifikasi, link dikirim 📧"})
+    return jsonify({"ok": True, "msg": "kalau email terdaftar & belum verifikasi, link dikirim "})
 
 
 @app.post("/api/auth/ganti-email-pending")
@@ -3421,7 +3421,7 @@ def auth_ganti_email_pending():
         return _err("email berhasil diganti, tapi link verifikasi gagal terkirim — "
                     "coba kirim ulang dari halaman Masuk", 502)
     return jsonify({"ok": True, "email_baru": mail,
-                    "msg": "email diganti — link verifikasi baru sudah dikirim 📧"})
+                    "msg": "email diganti — link verifikasi baru sudah dikirim "})
 
 
 @app.post("/api/auth/lupa")
@@ -3442,7 +3442,7 @@ def auth_lupa():
             tok = authmod.issue_token(uid, "reset", authmod.RESET_TTL)
             mailmod.send_reset_email(user.get("email"), user.get("nama") or "kamu", tok)
     # selalu OK biar nggak bisa ditebak email siapa yang terdaftar
-    return jsonify({"ok": True, "msg": "kalau email terdaftar, link reset dikirim 📧"})
+    return jsonify({"ok": True, "msg": "kalau email terdaftar, link reset dikirim "})
 
 
 @app.post("/api/auth/reset")
@@ -3457,11 +3457,11 @@ def auth_reset():
         return _err(perr, 400)
     uid = authmod.consume_token(body.get("token"), "reset")
     if not uid:
-        return _err("link reset nggak valid / sudah kedaluwarsa 😅", 400)
+        return _err("link reset nggak valid / sudah kedaluwarsa ", 400)
     err = authmod.update_password(uid, pw)
     if err:
         return _err(err, 400)
-    return jsonify({"ok": True, "msg": "password berhasil diganti! Silakan masuk 🎉"})
+    return jsonify({"ok": True, "msg": "password berhasil diganti! Silakan masuk "})
 
 
 # rate limit endpoint email: {ip: [timestamp]} — maks 5 / 10 menit
@@ -3537,7 +3537,7 @@ def auth_login():
     user = authmod.get_user(uid) or {}
     if (user.get("provider") == "password" and user.get("email")
             and not user.get("email_verified")):
-        return _err("verifikasi email kamu dulu ya 📧 (cek inbox/spam)", 403)
+        return _err("verifikasi email kamu dulu ya (cek inbox/spam)", 403)
     _do_login(uid, "web_" + g.sid if not g.user else g.uid)
     g.user = authmod.get_user(uid)
     g.uid = uid
@@ -3549,7 +3549,7 @@ def auth_login():
 def _need_login():
     """Return response error bila belum login, else None."""
     if not g.user:
-        return _err("login dulu ya 🔐", 401)
+        return _err("login dulu ya ", 401)
     return None
 
 
@@ -3565,7 +3565,7 @@ def auth_ubah_password():
                                   body.get("password_baru") or "")
     if msg:
         return _err(msg, 400)
-    return jsonify({"ok": True, "msg": "password berhasil diganti 🎉"})
+    return jsonify({"ok": True, "msg": "password berhasil diganti "})
 
 
 @app.post("/api/auth/ubah-username")
@@ -3581,7 +3581,7 @@ def auth_ubah_username():
         return _err(msg, 400)
     g.user = authmod.get_user(g.uid)
     return jsonify({"ok": True, **_auth_status_payload(),
-                    "msg": "username berhasil diganti 🎉"})
+                    "msg": "username berhasil diganti "})
 
 
 @app.post("/api/auth/ubah-email")
@@ -3603,7 +3603,7 @@ def auth_ubah_email():
     if g.user.get("provider") == "password":
         if not authmod.verify_password(body.get("password") or "",
                                        g.user.get("pw_hash") or ""):
-            return _err("password salah 😅", 401)
+            return _err("password salah ", 401)
     _mail_hit(ip)
     tok, mail, msg = authmod.request_email_change(g.uid, body.get("email_baru") or "")
     if msg:
@@ -3616,7 +3616,7 @@ def auth_ubah_email():
         log.warning("email konfirmasi ubah-email gagal untuk %s: %s", g.uid, merr)
         return _err("link gagal terkirim — coba lagi nanti", 502)
     return jsonify({"ok": True,
-                    "msg": "link verifikasi dikirim ke email barumu 📧 (berlaku 24 jam)"})
+                    "msg": "link verifikasi dikirim ke email barumu (berlaku 24 jam)"})
 
 
 @app.post("/api/auth/ubah-avatar")
@@ -3632,7 +3632,7 @@ def auth_ubah_avatar():
         return _err(msg, 400)
     g.user = authmod.get_user(g.uid)
     return jsonify({"ok": True, **_auth_status_payload(),
-                    "msg": "foto profil diganti 🎉"})
+                    "msg": "foto profil diganti "})
 
 
 @app.get("/api/auth/konfirmasi-email")
@@ -3642,11 +3642,11 @@ def auth_konfirmasi_email():
     token = (request.args.get("token") or "").strip()
     rec = authmod.consume_token_data(token, "ubah_email")
     if not rec:
-        return _err("link konfirmasi nggak valid / sudah kedaluwarsa 😅", 400)
+        return _err("link konfirmasi nggak valid / sudah kedaluwarsa ", 400)
     msg = authmod.apply_email_change(rec.get("uid"), rec.get("email_baru") or "")
     if msg:
         return _err(msg, 400)
-    return jsonify({"ok": True, "msg": "email berhasil diganti! 🎉"})
+    return jsonify({"ok": True, "msg": "email berhasil diganti! "})
 
 
 # ------------------------------------------------------- convert file

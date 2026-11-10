@@ -399,7 +399,7 @@ ol.langkah,ul.bersih{padding-left:20px}
   .btn{padding:12px 14px}
 }
 
-/* ---------- Avatar picker 🎨 ---------- */
+/* ---------- Avatar picker ---------- */
 .avatar-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:12px 0 4px}
 .avatar-opt{border:3px solid transparent;border-radius:50%;padding:0;background:none;cursor:pointer;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease;-webkit-tap-highlight-color:transparent}
 .avatar-opt img{width:100%;aspect-ratio:1/1;border-radius:50%;display:block;object-fit:cover}

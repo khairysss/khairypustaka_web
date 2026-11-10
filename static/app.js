@@ -270,7 +270,7 @@ function kuotaTamuBox(box, res) {
 function kuotaTamuToast(res) {
   const pesan = _kuotaTamuMatch(res);
   if (pesan != null) {
-    toast("🔒 " + (pesan || "Jatah harian tamu habis (5x/hari buat semua fitur).") + " Login gratis biar sepuasnya! ✨");
+    toast(" " + (pesan || "Jatah harian tamu habis (5x/hari buat semua fitur).") + " Login gratis biar sepuasnya! ");
     popupJatahHabis();
     return true;
   }
@@ -434,9 +434,9 @@ function pageSitasi() {
                 ["chicago", "Chicago"], ["vancouver", "Vancouver"], ["ieee", "IEEE"]];
   view().innerHTML =
     "<h2>"+tic("quote")+" Buat Sitasi</h2>" +
-    '<div class="card"><p class="muted">Isi detail sumbernya, pilih gaya sitasi, langsung jadi. ✨</p>' +
+    '<div class="card"><p class="muted">Isi detail sumbernya, pilih gaya sitasi, langsung jadi.</p>' +
     '<div style="border:1.5px dashed #75909e;border-radius:10px;padding:10px 12px;margin-bottom:12px">' +
-    '<label for="sitFile" style="margin-top:0">📄 Isi otomatis dari file jurnal (.pdf/.docx/.txt)</label>' +
+    '<label for="sitFile" style="margin-top:0">' + tic("doc") + ' Isi otomatis dari file jurnal (.pdf/.docx/.txt)</label>' +
     '<input type="file" id="sitFile" accept="' + ACCEPT_DOK + '">' +
     '<p class="muted tiny" style="margin:6px 0 0">Judul, penulis, tahun, dan jurnal dibaca otomatis dari file. Hasil baca otomatis bisa meleset, jadi <b>wajib cek lagi</b> isinya sebelum dipakai ya.</p>' +
     '<div id="sitCek"></div></div>' +
@@ -457,15 +457,15 @@ function pageSitasi() {
     const f = e.target.files[0];
     if (!f) return;
     const cek = $("#sitCek");
-    cek.innerHTML = '<p class="muted tiny" style="margin-top:8px">Lagi membaca file... ⏳</p>';
+    cek.innerHTML = '<p class="muted tiny" style="margin-top:8px">Lagi membaca file...</p>';
     const fd = new FormData();
     fd.append("file", f);
     btn.disabled = true;
     let res = await unggahForm("/api/sitasi-pdf/job", fd);
     btn.disabled = false;
-    if (!res.ok) { cek.innerHTML = ""; toast("😅 " + errFile(res)); return; }
+    if (!res.ok) { cek.innerHTML = ""; toast(" " + errFile(res)); return; }
     const sjid = res.data && res.data.id;
-    if (!sjid) { cek.innerHTML = ""; toast("😅 " + errFile(res)); return; }
+    if (!sjid) { cek.innerHTML = ""; toast(" " + errFile(res)); return; }
     // LAPIS 4 (2026-10-29): pemrosesan jalan di antrean worker; poll
     // status tiap 3 detik sampai selesai/gagal.
     let sdata = null;
@@ -480,12 +480,12 @@ function pageSitasi() {
       const st = await apiJSON("/sitasi-pdf/job-status?id=" + encodeURIComponent(sjid));
       const sd = st.data || {};
       if (st.ok && sd.status === "selesai") { sdata = sd; break; }
-      if (st.ok && sd.status === "gagal") { cek.innerHTML = ""; toast("😅 " + (sd.error || errFile(st))); return; }
+      if (st.ok && sd.status === "gagal") { cek.innerHTML = ""; toast(" " + (sd.error || errFile(st))); return; }
       if (!st.ok) {
         gagalBeruntun++;
         if (gagalBeruntun >= 3) {
           cek.innerHTML = "";
-          toast("😅 Pekerjaan membaca PDF ini sepertinya hilang di server. Coba unggah lagi ya.");
+          toast(" Pekerjaan membaca PDF ini sepertinya hilang di server. Coba unggah lagi ya.");
           return;
         }
       } else {
@@ -494,7 +494,7 @@ function pageSitasi() {
     }
     if (!sdata) {
       cek.innerHTML = "";
-      toast("😅 Membaca PDF ini kelamaan. Pekerjaannya mungkin hilang, coba unggah lagi ya.");
+      toast(" Membaca PDF ini kelamaan. Pekerjaannya mungkin hilang, coba unggah lagi ya.");
       return;
     }
     res = { ok: true, data: sdata };
@@ -506,10 +506,10 @@ function pageSitasi() {
     if (w.volume) $("#sitVolume").value = w.volume;
     if (w.pages) $("#sitPages").value = w.pages;
     const dariDoi = res.data.sumber === "doi";
-    cek.innerHTML = '<div class="warn-box" style="margin-top:10px;text-align:left">📄 Kolom di bawah sudah diisi otomatis dari file' +
+    cek.innerHTML = '<div class="warn-box" style="margin-top:10px;text-align:left">' + tic("doc") + ' Kolom di bawah sudah diisi otomatis dari file' +
       (dariDoi ? " (metadata resmi dari database jurnal, ketemu lewat DOI di file itu)." : " (ditebak dari teks halaman pertama file).") +
       ' <b>Cek lagi satu per satu ya</b>, terutama judul, nama penulis, dan tahunnya, sebelum klik Buatkan Sitasi.</div>';
-    toast("Kolom terisi dari file. Cek lagi isinya ya 😉");
+    toast("Kolom terisi dari file. Cek lagi isinya ya ");
   });
   $$("#sitGaya .chip").forEach(c => c.addEventListener("click", () => {
     $$("#sitGaya .chip").forEach(x => x.classList.remove("active"));
@@ -530,11 +530,11 @@ function pageSitasi() {
       volume: $("#sitVolume").value.trim(),
       pages: $("#sitPages").value.trim()
     };
-    if (!work.judul) { toast("Isi dulu judulnya 😄"); return; }
+    if (!work.judul) { toast("Isi dulu judulnya "); return; }
     const box = $("#sitHasil");
-    box.innerHTML = '<p class="loading">Lagi nyusun sitasi... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi nyusun sitasi...</p>';
     const res = await apiPOST("/sitasi", { work: work, gaya: gaya });
-    if (!res.ok) { if (!kuotaTamuBox(box, res)) box.innerHTML = '<div class="err-box">Gagal bikin sitasi, coba lagi ya. 😅</div>'; return; }
+    if (!res.ok) { if (!kuotaTamuBox(box, res)) box.innerHTML = '<div class="err-box">Gagal bikin sitasi, coba lagi ya.</div>'; return; }
     const teks = res.data && (res.data.sitasi || res.data.hasil || res.data.text);
     if (!teks) { box.innerHTML = '<div class="err-box">Server nggak ngasih sitasi, coba lagi ya.</div>'; return; }
     box.innerHTML = '<div class="card hasil"><h3>Hasil sitasi (' + esc((res.data && res.data.gaya) || gaya) + ")</h3>" +
@@ -542,8 +542,8 @@ function pageSitasi() {
       '<button class="btn btn-accent" id="btnSalinSit">' + tic("clipboard") + ' Salin</button></div>';
     riwTamuCatat("sitasi", work.judul || "", { gaya: (res.data && res.data.gaya) || gaya, sitasi: teks, work: work });
     $("#btnSalinSit").addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(teks); toast("Disalin! 📋"); }
-      catch (e) { toast("Gagal nyalin 😅"); }
+      try { await navigator.clipboard.writeText(teks); toast("Disalin! "); }
+      catch (e) { toast("Gagal nyalin "); }
     });
     } finally { btnSit.disabled = false; }
   });
@@ -553,9 +553,9 @@ function pageSitasi() {
 function pageMasuk() {
   const q = (location.hash.split("?")[1] || "");
   const err = new URLSearchParams(q).get("err");
-  const errMsg = err === "batal" ? "Login Google dibatalkan. 😅"
-    : err === "noconfig" ? "Login Google belum dikonfigurasi admin. 🙏"
-    : err ? "Login gagal, coba lagi ya. 😅" : "";
+  const errMsg = err === "batal" ? "Login Google dibatalkan. "
+    : err === "noconfig" ? "Login Google belum dikonfigurasi admin. "
+    : err ? "Login gagal, coba lagi ya. " : "";
   if (AUTH.login) { location.hash = "#/akun"; return; }
   function verifyHelpHTML(idp) {
     return '<div class="warn-box" style="text-align:left">' +
@@ -582,11 +582,11 @@ function pageMasuk() {
     var resendBtn = document.getElementById(idp + "Resend");
     if (resendBtn) resendBtn.addEventListener("click", async function () {
       var ident = identEl && identEl.value.trim() ? identEl.value.trim() : (opts.email || "");
-      if (!ident) { toast("Isi dulu username atau email kamu 😄"); if (identEl) identEl.focus(); return; }
+      if (!ident) { toast("Isi dulu username atau email kamu "); if (identEl) identEl.focus(); return; }
       setLoading(resendBtn, true, "Mengirim...");
       var r = await apiPOST("/auth/kirim-ulang", { email: ident });
       setLoading(resendBtn, false);
-      toast(r.ok ? "Dikirim! Cek email ya 📧" : "😅 " + pesanErrAkun(r, "Server lagi bermasalah, gagal mengirim. Coba lagi beberapa saat ya"));
+      toast(r.ok ? "Dikirim! Cek email ya " : " " + pesanErrAkun(r, "Server lagi bermasalah, gagal mengirim. Coba lagi beberapa saat ya"));
     });
     var toggleBtn = document.getElementById(idp + "Toggle");
     if (toggleBtn && boxEl) toggleBtn.addEventListener("click", function () {
@@ -598,7 +598,7 @@ function pageMasuk() {
       var ident = identEl ? identEl.value.trim() : "";
       var pass = passEl ? passEl.value : "";
       var mail = mailEl ? mailEl.value.trim() : "";
-      if (!ident || !pass || !mail) { toast("Lengkapi username/email, password, dan email baru ya 😄"); return; }
+      if (!ident || !pass || !mail) { toast("Lengkapi username/email, password, dan email baru ya "); return; }
       if (msgEl) msgEl.textContent = "Lagi mengganti email dan mengirim link baru...";
       setLoading(submitBtn, true, "Memproses...");
       var r = await apiPOST("/auth/ganti-email-pending", { username: ident, password: pass, email_baru: mail });
@@ -608,11 +608,11 @@ function pageMasuk() {
         if (msgEl) msgEl.textContent = "Berhasil! Link verifikasi baru sudah dikirim ke " + mail + ". Cek Inbox dan Spam ya.";
         if (passEl) passEl.value = "";
         if (opts.onChanged) opts.onChanged(mail);
-        toast("Email berhasil diganti 📧");
+        toast("Email berhasil diganti ");
       } else {
         var emsg = pesanErrAkun(r, "Server lagi bermasalah, gagal mengganti email. Coba lagi beberapa saat ya");
         if (msgEl) msgEl.textContent = emsg;
-        toast("😅 " + emsg);
+        toast(" " + emsg);
       }
     });
   }
@@ -631,7 +631,7 @@ function pageMasuk() {
     '<div class="kp-brand-block"><img src="maskot.jpg" class="kp-brand-maskot" alt="Maskot KhairyPustaka">' +
     '<div class="kp-brand-text"><h3 class="kp-brand-name">KhairyPustaka</h3>' +
     '<p class="kp-brand-tag">Asisten skripsi dan nugas, seratus persen gratis</p></div></div>' +
-    '<p class="muted">Login biar saldomu aman & bisa dipakai di semua perangkat. ✨</p>' +
+    '<p class="muted">Login biar saldomu aman & bisa dipakai di semua perangkat.</p>' +
     '<div class="chip-row" style="justify-content:center;margin-bottom:10px">' +
     '<button class="chip active" id="tabPwMasuk">Masuk</button>' +
     '<button class="chip" id="tabPwDaftar">Daftar</button></div>' +
@@ -640,7 +640,7 @@ function pageMasuk() {
     '<div class="pw-wrap"><input type="password" id="pwPassIn" placeholder="password" autocomplete="current-password">' +
     '<button type="button" class="pw-eye" data-for="pwPassIn" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
     '<button class="btn btn-primary btn-block" id="btnPwMasuk">Masuk</button>' +
-    '<p class="center tiny" style="margin-top:8px"><a href="#/lupa">Lupa password? 🤔</a> · <a href="#" id="linkResend">Belum terima email verifikasi? 📧</a></p></div>' +
+    '<p class="center tiny" style="margin-top:8px"><a href="#/lupa">Lupa password?</a> · <a href="#" id="linkResend">Belum terima email verifikasi?</a></p></div>' +
     '<div id="loginVerifyHelp" class="hidden">' + verifyHelpHTML("lv") + '</div>' +
     '<div id="pwDaftarBox" class="hidden">' +
     '<input type="text" id="pwUserUp" placeholder="pilih username" autocomplete="username" autocapitalize="off" spellcheck="false">' +
@@ -648,10 +648,10 @@ function pageMasuk() {
     '<div class="pw-wrap"><input type="password" id="pwPassUp" placeholder="password (min. 8 karakter)" autocomplete="new-password">' +
     '<button type="button" class="pw-eye" data-for="pwPassUp" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
     '<button class="btn btn-accent btn-block" id="btnPwDaftar">Daftar Akun</button>' +
-    '<p class="muted tiny">Kami kirim link verifikasi ke emailmu 📧</p></div>' +
+    '<p class="muted tiny">Kami kirim link verifikasi ke emailmu</p></div>' +
     '<div class="login-or"><span>atau</span></div>' +
     '<a class="btn btn-block" href="#/beranda">' + tic("person") + ' Lanjut sebagai tamu</a>' +
-    '<p class="muted tiny">Mode tamu tetap bisa pakai semua fitur gratis. Tapi top-up wajib login biar saldonya nggak hilang. 🔐</p></div>';
+    '<p class="muted tiny">Mode tamu tetap bisa pakai semua fitur gratis. Tapi top-up wajib login biar saldonya nggak hilang.</p></div>';
   // tab Masuk / Daftar
   const tabM = $("#tabPwMasuk"), tabD = $("#tabPwDaftar");
   const boxM = $("#pwMasukBox"), boxD = $("#pwDaftarBox");
@@ -664,13 +664,13 @@ function pageMasuk() {
   tabM.addEventListener("click", () => pwTab(true));
   tabD.addEventListener("click", () => pwTab(false));
   wireVerifyHelp("lv", {});
-  // toggle intip password 👁️/🙈
+  // toggle intip password (ikon mata SVG)
   $$(".pw-eye", view()).forEach(b => b.addEventListener("click", () => {
     const inp = $("#" + b.dataset.for, view());
     if (!inp) return;
     const show = inp.type === "password";
     inp.type = show ? "text" : "password";
-    b.textContent = show ? "🙈" : "👁️";
+    b.innerHTML = show ? tic("eye-off") : tic("eye");
     b.setAttribute("aria-label", show ? "Sembunyikan password" : "Tampilkan password");
   }));
   let pwSibuk = false;
@@ -680,7 +680,7 @@ function pageMasuk() {
     const u = $(mode === "in" ? "#pwUserIn" : "#pwUserUp").value.trim();
     const p = $(mode === "in" ? "#pwPassIn" : "#pwPassUp").value;
     const m = mode === "up" ? $("#pwMailUp").value.trim() : "";
-    if (!u || !p || (mode === "up" && !m)) { toast("Lengkapi dulu ya 😄"); return; }
+    if (!u || !p || (mode === "up" && !m)) { toast("Lengkapi dulu ya "); return; }
     const payload = mode === "in" ? { username: u, password: p }
                                   : { username: u, password: p, email: m };
     // K-1: bawa kode referral (bila ada) supaya diproses saat verifikasi email
@@ -699,9 +699,9 @@ function pageMasuk() {
       if (mode === "up" && res.data && res.data.need_verify) {
         view().innerHTML =
           "<h2>"+tic("mail")+" Cek Email</h2>" +
-          '<div class="card center"><p>Akun <b>' + esc(u) + '</b> dibuat! 🎉</p>' +
+          '<div class="card center"><p>Akun <b>' + esc(u) + '</b> dibuat!</p>' +
           '<p class="muted">Kami kirim link verifikasi ke <b id="regEmail">' + esc(m) + '</b>. ' +
-          "Klik linknya, terus masuk deh. ✨</p>" +
+          "Klik linknya, terus masuk deh.</p>" +
           verifyHelpHTML("rv") +
           '<a class="btn btn-primary" href="#/masuk">Ke halaman Masuk</a></div>';
         wireVerifyHelp("rv", { ident: u, email: m, onChanged: function (mail) {
@@ -711,7 +711,7 @@ function pageMasuk() {
         return;
       }
       await refreshAuth();
-      toast(mode === "in" ? "Selamat datang kembali! 🎉" : "Akun dibuat! 🎉");
+      toast(mode === "in" ? "Selamat datang kembali! " : "Akun dibuat! ");
       location.hash = "#/akun";
     } else {
       const konteks = mode === "in"
@@ -721,7 +721,7 @@ function pageMasuk() {
       if (mode === "in" && res.status === 403 && msg.indexOf("verifikasi email") >= 0) {
         showLoginVerifyHelp(u);
       }
-      toast(res.status === 429 ? "⏳ " + msg : "😅 " + msg);
+      toast(msg);
     }
   }
   // Buka panel bantuan verifikasi: user bisa kirim ulang atau ganti email.
@@ -742,17 +742,17 @@ function pageLupa() {
   view().innerHTML =
     "<h2>"+tic("help")+" Lupa Password</h2>" +
     '<div class="card center"><p class="muted">Masukin email yang dipakai daftar. ' +
-    "Kalau terdaftar, kami kirim link reset ke sana. 📧</p>" +
+    "Kalau terdaftar, kami kirim link reset ke sana.</p>" +
     '<input type="email" id="lupaMail" placeholder="email" autocomplete="email" autocapitalize="off" spellcheck="false">' +
     '<button class="btn btn-primary btn-block" id="btnLupa" style="margin-top:12px">Kirim Link Reset</button>' +
     '<p class="center tiny" style="margin-top:8px"><a href="#/masuk">← Balik ke Masuk</a></p></div>';
   const go = async () => {
     const m = $("#lupaMail").value.trim();
-    if (!m) { toast("Isi emailnya dulu 😄"); return; }
+    if (!m) { toast("Isi emailnya dulu "); return; }
     const btn = $("#btnLupa"); setLoading(btn, true, "Ngirim...");
     const res = await apiPOST("/auth/lupa", { email: m });
     setLoading(btn, false);
-    toast(res.ok ? "📧 " + ((res.data && res.data.msg) || "dikirim!") : "😅 coba lagi ya");
+    toast(res.ok ? " " + ((res.data && res.data.msg) || "dikirim!") : " coba lagi ya");
   };
   $("#btnLupa").addEventListener("click", go);
   $("#lupaMail").addEventListener("keydown", e => { if (e.key === "Enter") go(); });
@@ -763,7 +763,7 @@ function pageReset() {
   const token = new URLSearchParams((location.hash.split("?")[1] || "")).get("token") || "";
   if (!token) {
     view().innerHTML = "<h2>"+tic("key")+" Reset Password</h2>" +
-      '<div class="err-box">Link resetnya nggak lengkap 😅 Minta link baru dari halaman <a href="#/lupa">Lupa Password</a> ya.</div>';
+      '<div class="err-box">Link resetnya nggak lengkap Minta link baru dari halaman <a href="#/lupa">Lupa Password</a> ya.</div>';
     return;
   }
   view().innerHTML =
@@ -779,21 +779,21 @@ function pageReset() {
     if (!inp) return;
     const show = inp.type === "password";
     inp.type = show ? "text" : "password";
-    b.textContent = show ? "🙈" : "👁️";
+    b.innerHTML = show ? tic("eye-off") : tic("eye");
   }));
   $("#btnReset").addEventListener("click", async () => {
     const p1 = $("#rstPw1").value, p2 = $("#rstPw2").value;
-    if (p1 !== p2) { toast("Passwordnya nggak sama 😅"); return; }
-    if (p1.length < 8) { toast("Password minimal 8 karakter ya 😄"); return; }
+    if (p1 !== p2) { toast("Passwordnya nggak sama "); return; }
+    if (p1.length < 8) { toast("Password minimal 8 karakter ya "); return; }
     const btn = $("#btnReset"); setLoading(btn, true, "Nyimpen...");
     const res = await apiPOST("/auth/reset", { token: token, password: p1 });
     setLoading(btn, false);
     if (res.ok) {
       view().innerHTML = "<h2>"+tic("check")+" Berhasil!</h2>" +
-        '<div class="card center"><p>Password berhasil diganti! Silakan masuk pakai password barumu. ✨</p>' +
+        '<div class="card center"><p>Password berhasil diganti! Silakan masuk pakai password barumu.</p>' +
         '<a class="btn btn-primary btn-block" href="#/masuk">Masuk</a></div>';
     } else {
-      toast("😅 " + pesanErrAkun(res, "gagal, coba minta link baru"));
+      toast(" " + pesanErrAkun(res, "gagal, coba minta link baru"));
     }
   });
 }
@@ -802,11 +802,11 @@ function pageReset() {
 function pageVerifikasi() {
   const token = new URLSearchParams((location.hash.split("?")[1] || "")).get("token") || "";
   view().innerHTML = "<h2>"+tic("mail")+" Verifikasi Email</h2>" +
-    '<div class="card center"><p class="loading">Lagi verifikasi... ⏳</p></div>';
+    '<div class="card center"><p class="loading">Lagi verifikasi...</p></div>';
   (async () => {
     if (!token) {
       view().innerHTML = "<h2>"+tic("mail")+" Verifikasi Email</h2>" +
-        '<div class="err-box">Link verifikasinya nggak lengkap 😅</div>';
+        '<div class="err-box">Link verifikasinya nggak lengkap</div>';
       return;
     }
     const res = await apiPOST("/auth/verifikasi", { token: token });
@@ -814,11 +814,11 @@ function pageVerifikasi() {
       await refreshAuth();
       flushRefPending(); // K-1: klaim referral tepat setelah verifikasi email
       view().innerHTML = "<h2>"+tic("check")+" Email Terverifikasi!</h2>" +
-        '<div class="card center"><p>Akunmu aktif! Selamat datang di KhairyPustaka ✨</p>' +
+        '<div class="card center"><p>Akunmu aktif! Selamat datang di KhairyPustaka</p>' +
         '<a class="btn btn-primary btn-block" href="#/akun">Ke Akun Saya</a></div>';
     } else {
       view().innerHTML = "<h2>"+tic("mail")+" Verifikasi Email</h2>" +
-        '<div class="err-box">😅 ' + esc(pesanErrAkun(res, "verifikasi gagal")) + "</div>" +
+        '<div class="err-box"> ' + esc(pesanErrAkun(res, "verifikasi gagal")) + "</div>" +
         '<div class="card center"><p class="muted">Link mungkin sudah dipakai / kedaluwarsa. ' +
         'Minta link baru dari halaman Masuk ya.</p><a class="btn btn-primary" href="#/masuk">Ke halaman Masuk</a></div>';
     }
@@ -838,7 +838,7 @@ function pageAkun() {
     view().innerHTML =
       "<h2>"+tic("person")+" Akun</h2>" +
       '<div class="card center"><img src="' + avatarURL("teal") + '" alt="maskot" class="akun-foto">' +
-      '<p class="muted">Kamu lagi mode tamu. Login biar saldo & datamu aman di semua perangkat. 🔐</p>' +
+      '<p class="muted">Kamu lagi mode tamu. Login biar saldo & datamu aman di semua perangkat.</p>' +
       '<a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk / Daftar</a></div>' + kartuPasangAppHTML();
     ikatTombolPasang();
     return;
@@ -853,8 +853,8 @@ function pageAkun() {
     "<h3>" + esc(u.nama || "Pengguna") + "</h3>" +
     (u.admin ? '<div><span class="badge-admin">ADMIN</span></div>' : "") +
     (isPw
-      ? '<p class="pf-akun-info">👤 @' + esc(u.username || "") + "</p>" +
-        '<p class="pf-akun-info">📧 ' + esc(u.email || "") + "</p>"
+      ? '<p class="pf-akun-info">' + tic("person") + ' @' + esc(u.username || "") + "</p>" +
+        '<p class="pf-akun-info">' + tic("mail") + ' ' + esc(u.email || "") + "</p>"
       : (via ? '<p class="muted">' + esc(via) + "</p>" : "")) +
     (u.admin ? "" : '<a class="btn btn-primary btn-block" href="#/topup">' + tic("bolt") + ' Jatah AI</a>') +
     (u.admin ? '<a class="btn btn-block" href="#/admin">' + tic("shield") + ' Panel Admin</a>' : "") +
@@ -886,16 +886,16 @@ function pageAkun() {
       '<p class="pf-msg" id="pfMailMsg"></p>' +
       '<button class="btn btn-primary btn-block" id="btnUbahMail">Kirim Link Verifikasi</button></div>'
       : '<div class="card"><p class="muted">Akun ini login ' + esc(via || "via Google") +
-        " — ubah username, password & email hanya tersedia untuk akun username+password. 🙂</p></div>");
+        " — ubah username, password & email hanya tersedia untuk akun username+password.</p></div>");
   ikatTombolPasang();
   $("#btnLogout").addEventListener("click", async () => {
     await apiPOST("/auth/logout", {});
     AUTH = { login: false };
     await refreshAuth();
-    toast("Sampai jumpa! 👋");
+    toast("Sampai jumpa! ");
     location.hash = "#/beranda";
   });
-  // pilih avatar maskot 🎨 (klik = langsung simpan)
+  // pilih avatar maskot  (klik = langsung simpan)
   $$(".avatar-opt", view()).forEach(function(b) {
     b.addEventListener("click", async () => {
       const p = b.getAttribute("data-av");
@@ -903,68 +903,68 @@ function pageAkun() {
       if (res.ok) {
         await refreshAuth();
         pageAkun();
-        toast("Foto profil diganti 🎉");
+        toast("Foto profil diganti ");
       } else {
-        pfMsg("pfAvMsg", false, "😅 " + ((res.data && res.data.error) || "gagal, coba lagi ya"));
+        pfMsg("pfAvMsg", false, " " + ((res.data && res.data.error) || "gagal, coba lagi ya"));
       }
     });
   });
   if (!isPw) return;
 
-  // toggle intip password 👁️/🙈
+  // toggle intip password (ikon mata SVG)
   $$(".pw-eye", view()).forEach(b => b.addEventListener("click", () => {
     const inp = $("#" + b.dataset.for, view());
     if (!inp) return;
     const show = inp.type === "password";
     inp.type = show ? "text" : "password";
-    b.textContent = show ? "🙈" : "👁️";
+    b.innerHTML = show ? tic("eye-off") : tic("eye");
     b.setAttribute("aria-label", show ? "Sembunyikan password" : "Tampilkan password");
   }));
 
   $("#btnUbahUser").addEventListener("click", async () => {
     const v = $("#pfUserBaru", view()).value.trim();
-    if (!v) { pfMsg("pfUserMsg", false, "isi username barunya dulu 😄"); return; }
+    if (!v) { pfMsg("pfUserMsg", false, "isi username barunya dulu "); return; }
     const btn = $("#btnUbahUser"); setLoading(btn, true, "Nyimpen...");
     const res = await apiPOST("/auth/ubah-username", { username_baru: v });
     setLoading(btn, false);
     if (res.ok) {
       await refreshAuth();
       pageAkun();
-      toast("Username berhasil diganti 🎉");
+      toast("Username berhasil diganti ");
     } else {
-      pfMsg("pfUserMsg", false, "😅 " + ((res.data && res.data.error) || "gagal"));
+      pfMsg("pfUserMsg", false, " " + ((res.data && res.data.error) || "gagal"));
     }
   });
 
   $("#btnUbahPw").addEventListener("click", async () => {
     const lama = $("#pfPwLama", view()).value, baru = $("#pfPwBaru", view()).value;
-    if (!lama || !baru) { pfMsg("pfPwMsg", false, "isi password lama & barunya 😄"); return; }
-    if (baru.length < 8) { pfMsg("pfPwMsg", false, "password baru minimal 8 karakter ya 😄"); return; }
+    if (!lama || !baru) { pfMsg("pfPwMsg", false, "isi password lama & barunya "); return; }
+    if (baru.length < 8) { pfMsg("pfPwMsg", false, "password baru minimal 8 karakter ya "); return; }
     const btn = $("#btnUbahPw"); setLoading(btn, true, "Nyimpen...");
     const res = await apiPOST("/auth/ubah-password", { password_lama: lama, password_baru: baru });
     setLoading(btn, false);
     if (res.ok) {
-      pfMsg("pfPwMsg", true, (res.data && res.data.msg) || "password diganti! 🎉");
+      pfMsg("pfPwMsg", true, (res.data && res.data.msg) || "password diganti! ");
       $("#pfPwLama", view()).value = ""; $("#pfPwBaru", view()).value = "";
     } else {
-      pfMsg("pfPwMsg", false, "😅 " + ((res.data && res.data.error) || "gagal"));
+      pfMsg("pfPwMsg", false, " " + ((res.data && res.data.error) || "gagal"));
     }
   });
 
   $("#btnUbahMail").addEventListener("click", async () => {
     const v = $("#pfMailBaru", view()).value.trim();
-    if (!v) { pfMsg("pfMailMsg", false, "isi email barunya dulu 😄"); return; }
+    if (!v) { pfMsg("pfMailMsg", false, "isi email barunya dulu "); return; }
     const pw = $("#pfMailPw", view()).value;
-    if (!pw) { pfMsg("pfMailMsg", false, "isi password buat konfirmasi 😄"); return; }
+    if (!pw) { pfMsg("pfMailMsg", false, "isi password buat konfirmasi "); return; }
     const btn = $("#btnUbahMail"); setLoading(btn, true, "Ngirim...");
     const res = await apiPOST("/auth/ubah-email", { email_baru: v, password: pw });
     setLoading(btn, false);
     $("#pfMailPw", view()).value = "";
     if (res.ok) {
-      pfMsg("pfMailMsg", true, (res.data && res.data.msg) || "link terkirim! 📧");
+      pfMsg("pfMailMsg", true, (res.data && res.data.msg) || "link terkirim! ");
       $("#pfMailBaru", view()).value = "";
     } else {
-      pfMsg("pfMailMsg", false, "😅 " + ((res.data && res.data.error) || "gagal"));
+      pfMsg("pfMailMsg", false, " " + ((res.data && res.data.error) || "gagal"));
     }
   });
 }
@@ -973,22 +973,22 @@ function pageAkun() {
 function pageKonfirmasiEmail() {
   const token = new URLSearchParams((location.hash.split("?")[1] || "")).get("token") || "";
   view().innerHTML = "<h2>"+tic("mail")+" Konfirmasi Email</h2>" +
-    '<div class="card center"><p class="loading">Lagi konfirmasi... ⏳</p></div>';
+    '<div class="card center"><p class="loading">Lagi konfirmasi...</p></div>';
   (async () => {
     if (!token) {
       view().innerHTML = "<h2>"+tic("mail")+" Konfirmasi Email</h2>" +
-        '<div class="err-box">Link konfirmasinya nggak lengkap 😅</div>';
+        '<div class="err-box">Link konfirmasinya nggak lengkap</div>';
       return;
     }
     const res = await apiJSON("/auth/konfirmasi-email?token=" + encodeURIComponent(token));
     if (res.ok) {
       await refreshAuth();
       view().innerHTML = "<h2>"+tic("check")+" Email Diganti!</h2>" +
-        '<div class="card center"><p>Email akunmu berhasil diganti! 🎉</p>' +
+        '<div class="card center"><p>Email akunmu berhasil diganti!</p>' +
         '<a class="btn btn-primary btn-block" href="#/akun">Ke Akun Saya</a></div>';
     } else {
       view().innerHTML = "<h2>"+tic("mail")+" Konfirmasi Email</h2>" +
-        '<div class="err-box">😅 ' + esc((res.data && res.data.error) || "konfirmasi gagal") + "</div>" +
+        '<div class="err-box"> ' + esc((res.data && res.data.error) || "konfirmasi gagal") + "</div>" +
         '<div class="card center"><p class="muted">Link mungkin sudah dipakai / kedaluwarsa (24 jam). ' +
         'Minta link baru dari halaman Akun Saya ya.</p><a class="btn btn-primary" href="#/akun">Ke Akun Saya</a></div>';
     }
@@ -1157,7 +1157,7 @@ function pageBeranda() {
     '<div class="grid" id="featGrid">' + gridHTML() + "</div>" +
     '<div class="card kp-show-card" style="margin-top:16px">' +
       "<h3>"+tic("spark")+" Postingan terbaru KhairyPustaka</h3>" +
-      '<p class="muted">Video dan postingan edukasi dari akun resmi kami. Ketuk gambarnya buat buka langsung. 🎓</p>' +
+      '<p class="muted">Video dan postingan edukasi dari akun resmi kami. Ketuk gambarnya buat buka langsung.</p>' +
       '<div class="kp-show-strip" id="kpShowStrip"><div class="kp-show-track" id="kpShowTrack">' + showcaseHTML() + "</div></div>" +
     "</div>";
   function tampilKategori() {
@@ -1289,20 +1289,20 @@ function pageCari() {
 
 function renderHasilCari() {
   const box = $("#hasilCari");
-  if (!cariState.hasil.length) { box.innerHTML = '<p class="empty">Nggak ketemu hasil. Coba kata kunci lain ya. 😅</p>'; return; }
+  if (!cariState.hasil.length) { box.innerHTML = '<p class="empty">Nggak ketemu hasil. Coba kata kunci lain ya.</p>'; return; }
   const cat = Array.isArray(cariState.catatan) && cariState.catatan.length
     ? '<div class="warn-box tiny">' + cariState.catatan.map(esc).join("<br>") + "</div>" : "";
   box.innerHTML = cat +
-    '<p class="muted">Ditemukan <b>' + cariState.hasil.length + "</b> hasil 🎉</p>" +
+    '<p class="muted">Ditemukan <b>' + cariState.hasil.length + "</b> hasil</p>" +
     cariState.hasil.map((h, i) => kartuHasil(h, i)).join("");
   wireKartu(box);
 }
 
 async function doCari() {
   const q = ($("#q").value || "").trim();
-  if (!q) { toast("Ketik dulu kata kuncinya dong 😄"); return; }
+  if (!q) { toast("Ketik dulu kata kuncinya dong "); return; }
   const box = $("#hasilCari");
-  box.innerHTML = '<p class="loading">Lagi nyari jurnal terbaik buatmu... ⏳</p>';
+  box.innerHTML = '<p class="loading">Lagi nyari jurnal terbaik buatmu...</p>';
   const btn = $("#btnCari"); setLoading(btn, true, "Lagi nyari...");
   const res = await apiPOST("/cari", { q: q, tahun: cariState.tahun });
   setLoading(btn, false);
@@ -1318,15 +1318,15 @@ async function doCari() {
 
 async function ringkasAI(item, btn) {
   const teks = ((item.judul || "") + "\n\n" + (item.abstrak || "")).trim();
-  if (teks.length < 30) { toast("Jurnal ini nggak punya abstrak buat diringkas 😅"); return; }
+  if (teks.length < 30) { toast("Jurnal ini nggak punya abstrak buat diringkas "); return; }
   setLoading(btn, true, "AI meringkas...");
   const res = await apiPOST("/ai", { kind: "ringkas", text: teks.slice(0, 3000) });
   setLoading(btn, false);
   const d = res.data || {};
   if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) { popupJatahHabis(); return; }
-  if (!res.ok) { toast("AI-nya lagi gangguan, coba lagi ya 😅"); return; }
+  if (!res.ok) { toast("AI-nya lagi gangguan, coba lagi ya "); return; }
   const hasil = d.hasil || d.result || d.text;
-  if (!hasil) { toast("AI-nya bengong, coba lagi ya 😅"); return; }
+  if (!hasil) { toast("AI-nya bengong, coba lagi ya "); return; }
   const card = btn.closest("article");
   if (card) {
     let box = card.querySelector(".ringkas-ai");
@@ -1339,37 +1339,37 @@ async function terjemahAbstrak(item, btn) {
   const card = btn.closest("article");
   const det = card ? card.querySelector(".abstrak") : null;
   const p = det ? det.querySelector("p") : null;
-  if (!p) { toast("Jurnal ini nggak punya abstrak 😅"); return; }
+  if (!p) { toast("Jurnal ini nggak punya abstrak "); return; }
   if (btn.dataset.mode === "asli") {
     p.textContent = btn.dataset.asli || p.textContent;
-    btn.innerHTML = "🌐 Terjemah";
+    btn.innerHTML = tic("globe") + " Terjemah";
     btn.dataset.mode = "";
     return;
   }
   if (btn.dataset.terjemahan) {
     btn.dataset.asli = p.textContent;
     p.textContent = btn.dataset.terjemahan;
-    btn.innerHTML = "↩️ Lihat Asli";
+    btn.innerHTML = "↩ Lihat Asli";
     btn.dataset.mode = "asli";
     det.open = true;
     return;
   }
   const teks = (item.abstrak || "").trim();
-  if (teks.length < 20) { toast("Abstraknya terlalu pendek buat diterjemahkan 😅"); return; }
+  if (teks.length < 20) { toast("Abstraknya terlalu pendek buat diterjemahkan "); return; }
   setLoading(btn, true, "Menerjemahkan...");
   const res = await apiPOST("/terjemah", { teks: teks.slice(0, 3000) });
   setLoading(btn, false);
   const d = res.data || {};
-  if (!res.ok) { toast("Terjemahannya gagal, coba lagi ya 😅"); return; }
-  if (d.sumber === "sudah_indonesia") { toast("Abstraknya sudah berbahasa Indonesia, tidak perlu diterjemahkan 😉"); return; }
-  if (!d.hasil) { toast("Terjemahannya kosong, coba lagi ya 😅"); return; }
+  if (!res.ok) { toast("Terjemahannya gagal, coba lagi ya "); return; }
+  if (d.sumber === "sudah_indonesia") { toast("Abstraknya sudah berbahasa Indonesia, tidak perlu diterjemahkan "); return; }
+  if (!d.hasil) { toast("Terjemahannya kosong, coba lagi ya "); return; }
   btn.dataset.terjemahan = d.hasil;
   btn.dataset.asli = p.textContent;
   p.textContent = d.hasil;
-  btn.innerHTML = "↩️ Lihat Asli";
+  btn.innerHTML = "↩ Lihat Asli";
   btn.dataset.mode = "asli";
   det.open = true;
-  toast(d.sumber === "argos" ? "Diterjemahkan 🤖 (terjemahan offline)" : "Diterjemahkan 🤖 (terjemahan mesin)");
+  toast(d.sumber === "argos" ? "Diterjemahkan (terjemahan offline)" : "Diterjemahkan (terjemahan mesin)");
 }
 
 function wireKartu(scope) {
@@ -1382,7 +1382,7 @@ function wireKartu(scope) {
     else if (b.dataset.aksi === "terjemah") terjemahAbstrak(item, b);
     else if (b.dataset.aksi === "simpan") {
       const r = koleksiTambah(item);
-      toast(r === "ok" ? "Kesimpen di Koleksiku! 💾" : (r === "duplikat" ? "Udah ada di koleksimu 😉" : "Gagal nyimpen (penyimpanan browser diblokir?). 😅"));
+      toast(r === "ok" ? "Kesimpen di Koleksiku! " : (r === "duplikat" ? "Udah ada di koleksimu " : "Gagal nyimpen (penyimpanan browser diblokir?). "));
     }
   }));
 }
@@ -1408,7 +1408,7 @@ let carifileHasil = []; // state lokal halaman ini (jangan pakai cariState)
 function pageCarifile() {
   view().innerHTML =
     "<h2>"+tic("doc")+" Cari dari Sitasi</h2>" +
-    '<div class="card"><p class="muted">Punya sitasi tapi nggak tahu filenya di mana? Paste aja di sini, biar aku yang lacak. 🕵️</p>' +
+    '<div class="card"><p class="muted">Punya sitasi tapi nggak tahu filenya di mana? Paste aja di sini, biar aku yang lacak.</p>' +
     '<label for="teksSit">Teks sitasi</label>' +
     '<textarea id="teksSit" placeholder="cth: Sugiyono. (2019). Metode Penelitian Kuantitatif. Bandung: Alfabeta."></textarea>' +
     '<label for="cfFile" style="margin-top:10px">Atau unggah file daftar pustaka (.docx/.pdf/.txt)</label>' +
@@ -1419,20 +1419,20 @@ function pageCarifile() {
   $("#cfFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    toast("Lagi membaca file... ⏳");
+    toast("Lagi membaca file... ");
     const res = await ekstrakTeksFile(f);
-    if (!res.ok) { toast("😅 " + errFile(res)); return; }
+    if (!res.ok) { toast(" " + errFile(res)); return; }
     let teks = (res.data.teks || "").trim();
     let potong = "";
     if (teks.length > 30000) { teks = teks.slice(0, 30000); potong = " (dipotong ke 30.000 karakter pertama)"; }
     $("#teksSit").value = teks;
-    toast("Teks dari file sudah dimasukkan" + potong + ". Cek dulu, lalu klik Lacak File 🔎");
+    toast("Teks dari file sudah dimasukkan" + potong + ". Cek dulu, lalu klik Lacak File ");
   });
   $("#btnCarifile").addEventListener("click", async () => {
     const teks = ($("#teksSit").value || "").trim();
-    if (!teks) { toast("Paste dulu sitasinya 😄"); return; }
+    if (!teks) { toast("Paste dulu sitasinya "); return; }
     const box = $("#hasilCarifile");
-    box.innerHTML = '<p class="loading">Lagi ngelacak... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi ngelacak...</p>';
     const btn = $("#btnCarifile"); setLoading(btn, true, "Lagi ngelacak...");
     const res = await apiPOST("/carifile", { teks: teks });
     setLoading(btn, false);
@@ -1443,7 +1443,7 @@ function pageCarifile() {
     const found = Array.isArray(d.hasil) ? d.hasil : [];
     if (found.length) {
       carifileHasil = found;
-      html += '<p class="muted">Ditemukan <b>' + found.length + "</b> karya 🎉</p>" +
+      html += '<p class="muted">Ditemukan <b>' + found.length + "</b> karya</p>" +
         found.map((h, i) => kartuHasil(h, "cf" + i)).join("");
     }
     const miss = Array.isArray(d.tidak_ketemu) ? d.tidak_ketemu : [];
@@ -1451,8 +1451,8 @@ function pageCarifile() {
       html += '<div class="card"><h3>Tidak ketemu ' + tic("search") + '</h3><p class="muted tiny">Sitasi di bawah ini nggak kelacak sumbernya:</p><ul class="bersih">' +
         miss.map(m => "<li>" + esc(typeof m === "string" ? m : JSON.stringify(m)) + "</li>").join("") + "</ul></div>";
     }
-    if (d.parsial) html += '<p class="muted tiny">⏱️ Sebagian sitasi belum diproses (waktu habis) — coba lagi dengan teks lebih pendek.</p>';
-    if (!html) html = '<div class="warn-box">Hmm, belum nemu petunjuk file dari sitasi itu. 🤔 Coba cek lagi teksnya udah lengkap atau belum.</div>';
+    if (d.parsial) html += '<p class="muted tiny"> Sebagian sitasi belum diproses (waktu habis) — coba lagi dengan teks lebih pendek.</p>';
+    if (!html) html = '<div class="warn-box">Hmm, belum nemu petunjuk file dari sitasi itu. Coba cek lagi teksnya udah lengkap atau belum.</div>';
     else if (d.pesan || d.message) html += '<p class="muted">' + esc(d.pesan || d.message) + "</p>";
     box.innerHTML = html;
     // S3 (audit 2026-10-13): Cari dari Sitasi = pencarian jurnal -> catat riwayat tamu
@@ -1468,7 +1468,7 @@ function pageCarifile() {
       else if (b.dataset.aksi === "terjemah") terjemahAbstrak(item, b);
       else if (b.dataset.aksi === "simpan") {
         const r = koleksiTambah(item);
-        toast(r === "ok" ? "Kesimpen di Koleksiku! 💾" : (r === "duplikat" ? "Udah ada di koleksimu 😉" : "Gagal nyimpen (penyimpanan browser diblokir?). 😅"));
+        toast(r === "ok" ? "Kesimpen di Koleksiku! " : (r === "duplikat" ? "Udah ada di koleksimu " : "Gagal nyimpen (penyimpanan browser diblokir?). "));
       }
     }));
   });
@@ -1500,9 +1500,9 @@ function pageRekomendasi() {
     '<div id="hasilRek"></div>';
   $("#btnRek").addEventListener("click", async () => {
     const topik = ($("#topikRek").value || "").trim();
-    if (!topik) { toast("Isi dulu topiknya 😄"); return; }
+    if (!topik) { toast("Isi dulu topiknya "); return; }
     const box = $("#hasilRek");
-    box.innerHTML = '<p class="loading">Lagi nyari jurnal yang cocok... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi nyari jurnal yang cocok...</p>';
     const btn = $("#btnRek"); setLoading(btn, true, "Lagi nyari...");
     const res = await apiPOST("/rekomendasi", { topik: topik });
     setLoading(btn, false);
@@ -1511,23 +1511,23 @@ function pageRekomendasi() {
     const daftar = Array.isArray(d.daftar) ? d.daftar : (Array.isArray(d.hasil) ? d.hasil : []);
     box.innerHTML = daftar.length
       ? '<div class="card"><h3>Jurnal yang cocok buatmu ' + tic("spark") + '</h3><ul class="bersih">' + daftar.map(daftarItemHTML).join("") + "</ul></div>"
-      : '<div class="warn-box">Belum nemu rekomendasi buat topik itu. 😅 Coba kata kunci yang lebih umum ya.</div>';
+      : '<div class="warn-box">Belum nemu rekomendasi buat topik itu. Coba kata kunci yang lebih umum ya.</div>';
   });
 }
 
 function pagePublisher() {
   view().innerHTML =
     "<h2>"+tic("building")+" Publisher</h2>" +
-    '<div class="card"><p class="muted">Jelajahi penerbit &amp; jurnal per indeks. Tulis bidangnya dulu ya. 📚</p>' +
+    '<div class="card"><p class="muted">Jelajahi penerbit &amp; jurnal per indeks. Tulis bidangnya dulu ya.</p>' +
     '<label for="bidangPub">Bidang *</label>' +
     '<input type="text" id="bidangPub" placeholder="cth: kesehatan, pendidikan, teknik">' +
     '<button class="btn btn-primary btn-block" id="btnPub" style="margin-top:12px">' + tic("building") + ' Tampilkan</button></div>' +
     '<div id="hasilPub"></div>';
   $("#btnPub").addEventListener("click", async () => {
     const bidang = ($("#bidangPub").value || "").trim();
-    if (!bidang) { toast("Isi dulu bidangnya 😄"); return; }
+    if (!bidang) { toast("Isi dulu bidangnya "); return; }
     const box = $("#hasilPub");
-    box.innerHTML = '<p class="loading">Lagi ngumpulin data publisher... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi ngumpulin data publisher...</p>';
     const btn = $("#btnPub"); setLoading(btn, true, "Lagi ngumpulin...");
     const res = await apiPOST("/publisher", { bidang: bidang });
     setLoading(btn, false);
@@ -1536,7 +1536,7 @@ function pagePublisher() {
     const daftar = Array.isArray(d.daftar) ? d.daftar : [];
     box.innerHTML = daftar.length
       ? '<div class="card"><h3>Daftar publisher &amp; jurnal ' + tic("building") + '</h3><ul class="bersih">' + daftar.map(daftarItemHTML).join("") + "</ul></div>"
-      : '<div class="warn-box">Datanya lagi kosong. 😅 Coba lagi nanti ya.</div>';
+      : '<div class="warn-box">Datanya lagi kosong. Coba lagi nanti ya.</div>';
   });
 }
 
@@ -1550,9 +1550,9 @@ function pagePenulis() {
     '<div id="hasilPen"></div>';
   $("#btnPen").addEventListener("click", async () => {
     const nama = ($("#namaPen").value || "").trim();
-    if (!nama) { toast("Isi dulu namanya 😄"); return; }
+    if (!nama) { toast("Isi dulu namanya "); return; }
     const box = $("#hasilPen");
-    box.innerHTML = '<p class="loading">Lagi nyari profilnya... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi nyari profilnya...</p>';
     const btn = $("#btnPen"); setLoading(btn, true, "Lagi nyari...");
     const res = await apiPOST("/penulis", { nama: nama });
     setLoading(btn, false);
@@ -1560,10 +1560,10 @@ function pagePenulis() {
     const d = res.data || {};
     const list = Array.isArray(d.daftar) ? d.daftar : (Array.isArray(d) ? d : []);
     if (!list.length) {
-      box.innerHTML = '<div class="warn-box">Penulisnya nggak ketemu. 😅 Coba ejaan nama yang lain ya.</div>';
+      box.innerHTML = '<div class="warn-box">Penulisnya nggak ketemu. Coba ejaan nama yang lain ya.</div>';
       return;
     }
-    box.innerHTML = '<p class="muted">Ditemukan <b>' + list.length + "</b> penulis 🎉</p>" +
+    box.innerHTML = '<p class="muted">Ditemukan <b>' + list.length + "</b> penulis</p>" +
       list.map((a, i) => kartuPenulis(a, i)).join("");
   });
 }
@@ -1575,12 +1575,12 @@ function kartuPenulis(a) {
   const profUrl = safeUrl(a.url);
   return '<div class="card"><h3>' + tic("person") + ' ' + esc(a.name || "-") + "</h3>" +
     '<ul class="bersih">' +
-    (afil ? "<li>🏛️ <b>Afiliasi:</b> " + esc(afil) + "</li>" : "") +
-    (a.h_index != null ? "<li>📊 <b>H-index:</b> " + esc(a.h_index) + "</li>" : "") +
-    (a.cited_by_count != null ? "<li>📑 <b>Total sitasi:</b> " + esc(a.cited_by_count) + "</li>" : "") +
-    (a.works_count != null ? "<li>📚 <b>Jumlah karya:</b> " + esc(a.works_count) + "</li>" : "") +
-    (a.i10_index != null ? "<li>🔟 <b>i10-index:</b> " + esc(a.i10_index) + "</li>" : "") +
-    (topik ? "<li>🏷️ <b>Topik:</b> " + esc(topik) + "</li>" : "") +
+    (afil ? "<li>" + tic("building") + " <b>Afiliasi:</b> " + esc(afil) + "</li>" : "") +
+    (a.h_index != null ? "<li>" + tic("chart") + " <b>H-index:</b> " + esc(a.h_index) + "</li>" : "") +
+    (a.cited_by_count != null ? "<li>" + tic("doc") + " <b>Total sitasi:</b> " + esc(a.cited_by_count) + "</li>" : "") +
+    (a.works_count != null ? "<li>" + tic("books") + " <b>Jumlah karya:</b> " + esc(a.works_count) + "</li>" : "") +
+    (a.i10_index != null ? "<li><b>i10-index:</b> " + esc(a.i10_index) + "</li>" : "") +
+    (topik ? "<li><b>Topik:</b> " + esc(topik) + "</li>" : "") +
     "</ul>" +
     (profUrl ? '<p class="tiny"><a href="' + esc(profUrl) + '" target="_blank" rel="noopener">Lihat profil lengkap ↗</a></p>' : "") +
     "</div>";
@@ -1590,7 +1590,7 @@ function kartuPenulis(a) {
 function pageTopik() {
   view().innerHTML =
     "<h2>"+tic("bulb")+" Ide Topik</h2>" +
-    '<div class="card"><p class="muted">Buntu ide? Kasih keyword, aku kasih tren publikasi + saran topik &amp; research gap. 🧠</p>' +
+    '<div class="card"><p class="muted">Buntu ide? Kasih keyword, aku kasih tren publikasi + saran topik &amp; research gap.</p>' +
     '<label for="kwTopik">Keyword</label>' +
     '<input type="text" id="kwTopik" placeholder="cth: kecerdasan buatan pendidikan">' +
     pickerHTML("tp") +
@@ -1600,17 +1600,17 @@ function pageTopik() {
   ambilInfoKuota().then(() => pickerSegarkan("tp"));
   const kirimTopik = async (modelKey) => {
     const keyword = ($("#kwTopik").value || "").trim();
-    if (!keyword) { toast("Isi dulu keywordnya 😄"); return; }
+    if (!keyword) { toast("Isi dulu keywordnya "); return; }
     const mk = modelKey || modelPilihan();
     const box = $("#hasilTopik");
-    box.innerHTML = '<p class="loading">Lagi ngulik tren publikasi... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi ngulik tren publikasi...</p>';
     const btn = $("#btnTopik"); setLoading(btn, true, "Lagi ngulik...");
     const res = await apiPOST("/topik", { keyword: keyword, model: mk });
     setLoading(btn, false);
     if (!res.ok) { netErr(box, res); return; }
     const d = res.data || {};
     if (d.kuota_habis || d.error === "kuota_habis") {
-      box.innerHTML = '<div class="warn-box">Yah, kuota AI harianmu habis. 🥲 Tenang, besok reset lagi kok! Sementara pakai fitur non-AI dulu ya. 💪</div>';
+      box.innerHTML = '<div class="warn-box">Yah, kuota AI harianmu habis. Tenang, besok reset lagi kok! Sementara pakai fitur non-AI dulu ya.</div>';
       popupJatahHabis();
       return;
     }
@@ -1625,7 +1625,7 @@ function pageTopik() {
     const saran = (Array.isArray(d.saran) && d.saran.length) ? d.saran : (d.topik || []);
     if (Array.isArray(saran) && saran.length)
       html += '<div class="card"><h3>Saran topik &amp; research gap ' + tic("bulb") + '</h3><ul class="bersih">' + saran.map(s => "<li>" + esc(typeof s === "string" ? s : (s.judul || s.topik || JSON.stringify(s))) + "</li>").join("") + "</ul></div>";
-    if (!html) html = '<div class="warn-box">Belum ada ide yang keluar. 😅 Coba keyword lain ya.</div>';
+    if (!html) html = '<div class="warn-box">Belum ada ide yang keluar. Coba keyword lain ya.</div>';
     box.innerHTML = html;
     if (d.ide) ambilInfoKuota().then(() => pickerSegarkan("tp"));
     // R5 (audit 2026-10-13): jangan catat entri zonk
@@ -1667,7 +1667,7 @@ function pageKoleksi() {
     "<h2>"+tic("books")+" Koleksiku</h2>" +
     (AUTH.login
       ? '<p class="muted">Tersimpan di browser HP-mu. Total: <b>' + arr.length + "</b> referensi.</p>"
-      : '<p class="muted">⏰ Mode tamu: koleksi tersimpan di browser HP-mu maksimal <b>24 jam</b>, setelah itu otomatis terhapus. 🛟 Amankan koleksimu: pakai tombol <b>Export</b> di bawah buat simpan jadi file, atau <a href="#/masuk"><b>login gratis</b></a> biar tidak kena batas waktu. Total: <b>' + arr.length + "</b> referensi.</p>") +
+      : '<p class="muted">' + tic("clock") + ' Mode tamu: koleksi tersimpan di browser HP-mu maksimal <b>24 jam</b>, setelah itu otomatis terhapus. Amankan koleksimu: pakai tombol <b>Export</b> di bawah buat simpan jadi file, atau <a href="#/masuk"><b>login gratis</b></a> biar tidak kena batas waktu. Total: <b>' + arr.length + "</b> referensi.</p>") +
     (arr.length ?
       '<div class="card"><h3>Export Daftar Pustaka ' + tic("download") + '</h3><p class="tiny muted">Pilih gaya sitasi & format, filenya langsung keunduh. Urutan entri otomatis sesuai kaidah gaya (A-Z untuk APA/Harvard/MLA/Chicago).</p>' +
       '<label class="muted" for="expGaya">Gaya sitasi</label>' +
@@ -1685,27 +1685,27 @@ function pageKoleksi() {
         '<div class="meta">' + esc(Array.isArray(it.penulis) ? it.penulis.join(", ") : (it.penulis || "-")) +
         " | " + esc(it.tahun || "-") + " | " + esc(it.jurnal || "-") + "</div>" +
         '<div class="aksi-row"><button class="btn btn-danger" data-hapus="' + i + '">Hapus</button></div></div>'
-      ).join("") : '<p class="empty">Koleksimu masih kosong. 📭<br>Cari jurnal dulu, terus tekan <b>Simpan ke Koleksi</b> di tiap hasil. <a href="#/cari">Gas cari →</a></p>') +
+      ).join("") : '<p class="empty">Koleksimu masih kosong. <br>Cari jurnal dulu, terus tekan <b>Simpan ke Koleksi</b> di tiap hasil. <a href="#/cari">Gas cari →</a></p>') +
     "</div>";
 
   $$("[data-hapus]", view()).forEach(b => b.addEventListener("click", () => {
-    if (!confirm("Hapus dari koleksi? Tindakan ini permanen. 🗑️")) return;
+    if (!confirm("Hapus dari koleksi? Tindakan ini permanen. ")) return;
     koleksiHapus(parseInt(b.dataset.hapus, 10));
-    toast("Dihapus dari koleksi. 🗑️");
+    toast("Dihapus dari koleksi. ");
     pageKoleksi();
   }));
   $("#btnImpor").addEventListener("click", async () => {
     const f = $("#impFile").files[0];
     const box = $("#imporHasil");
-    if (!f) { toast("Pilih dulu file .bib atau .ris-nya 😄"); return; }
+    if (!f) { toast("Pilih dulu file.bib atau.ris-nya "); return; }
     const btn = $("#btnImpor"); setLoading(btn, true, "Lagi mengimpor...");
     const fd = new FormData();
     fd.append("file", f);
     const res = await unggahForm("/api/koleksi-impor", fd);
     setLoading(btn, false);
-    if (!res.ok) { box.innerHTML = '<div class="err-box" style="margin-top:10px">😅 ' + esc(errFile(res)) + "</div>"; return; }
+    if (!res.ok) { box.innerHTML = '<div class="err-box" style="margin-top:10px"> ' + esc(errFile(res)) + "</div>"; return; }
     const r = koleksiImpor((res.data && res.data.items) || []);
-    toast("Impor selesai: " + r.tambah + " referensi masuk koleksi" + (r.duplikat ? ", " + r.duplikat + " duplikat dilewati" : "") + " 📚");
+    toast("Impor selesai: " + r.tambah + " referensi masuk koleksi" + (r.duplikat ? ", " + r.duplikat + " duplikat dilewati" : "") + " ");
     pageKoleksi();
   });
   $$("[data-exp]", view()).forEach(b => b.addEventListener("click", async () => {
@@ -1719,7 +1719,7 @@ function pageKoleksi() {
       body: JSON.stringify({ items: koleksiGet(), format: format, style: gayaEl ? gayaEl.value : "apa" })
     }, "daftar-pustaka-khairypustaka." + ext);
     setLoading(b, false);
-    toast(res.ok ? "File keunduh! Cek folder download ya. ⬇️" : "Gagal export, coba lagi ya. 😅");
+    toast(res.ok ? "File keunduh! Cek folder download ya. " : "Gagal export, coba lagi ya. ");
   }));
 }
 
@@ -1758,7 +1758,7 @@ function riwTamuSet(a) {
     // I3 (audit 2026-10-13): jangan gagal diam-diam
     if (!_riwTamuGagalPernah) {
       _riwTamuGagalPernah = true;
-      toast("Riwayat tamu gagal disimpan (penyimpanan browser penuh?) 😅");
+      toast("Riwayat tamu gagal disimpan (penyimpanan browser penuh?) ");
     }
   }
 }
@@ -1855,7 +1855,7 @@ function riwayatDetailHTML(e) {
         '<div class="meta">' + esc(Array.isArray(w.penulis) ? w.penulis.join(", ") : (w.penulis || "-")) +
         " | " + esc(w.tahun || "-") + " | " + esc(w.jurnal || "-") + "</div>" +
         (wu ? '<a href="' + esc(wu) + '" target="_blank" rel="noopener">Buka sumber ↗</a>' : "") +
-        "</div>"; }).join("") : '<p class="empty">Nggak ada hasil tersimpan. 😅</p>');
+        "</div>"; }).join("") : '<p class="empty">Nggak ada hasil tersimpan.</p>');
   }
   if (t === "topik") {
     const saran = Array.isArray(d.saran) ? d.saran : [];
@@ -1863,7 +1863,7 @@ function riwayatDetailHTML(e) {
     if (d.ide) h += '<div class="card"><h3>Ide judul dari AI ' + tic("bulb") + '</h3><div>' + mdRapi(d.ide) + "</div></div>";
     if (saran.length) h += '<div class="card"><h3>Saran topik &amp; research gap ' + tic("bulb") + '</h3><ul class="bersih">' +
       saran.map(s => "<li>" + esc(typeof s === "string" ? s : (s.judul || s.topik || JSON.stringify(s))) + "</li>").join("") + "</ul></div>";
-    if (!d.ide && !saran.length) h += '<p class="empty">Nggak ada ide tersimpan. 😅</p>';
+    if (!d.ide && !saran.length) h += '<p class="empty">Nggak ada ide tersimpan.</p>';
     return h;
   }
   return "";
@@ -1875,14 +1875,14 @@ function pageRiwayat() {
   const namaAktif = () => tipe ? RIWAYAT_NAMA[tipe] : "semua riwayat";
 
   const bannerTamu = isTamu
-    ? '<div class="warn-box" style="margin-bottom:12px">⏰ <b>Mode tamu:</b> semua pencarian & pemakaianmu tercatat di sini, tapi cuma disimpan maksimal <b>24 jam</b> di HP-mu, habis itu <b>otomatis terhapus</b> dan nggak dikirim ke server.<br><br>🛟 <b>Amankan riwayatmu dari sekarang:</b> export jadi file pakai tombol di bawah ini, atau <a href="#/masuk"><b>login gratis</b></a> biar tersimpan permanen di akunmu tanpa batas waktu. ✨</div>' +
+    ? '<div class="warn-box" style="margin-bottom:12px">' + tic("clock") + ' <b>Mode tamu:</b> semua pencarian & pemakaianmu tercatat di sini, tapi cuma disimpan maksimal <b>24 jam</b> di HP-mu, habis itu <b>otomatis terhapus</b> dan nggak dikirim ke server.<br><br><b>Amankan riwayatmu dari sekarang:</b> export jadi file pakai tombol di bawah ini, atau <a href="#/masuk"><b>login gratis</b></a> biar tersimpan permanen di akunmu tanpa batas waktu.</div>' +
       '<div style="margin-bottom:12px"><button class="btn btn-primary btn-block" id="btnRiwExport">' + tic("download") + ' Export Riwayat (TXT)</button></div>'
     : "";
 
   view().innerHTML =
     "<h2>"+tic("clock")+" Riwayat</h2>" +
     bannerTamu +
-    '<p class="muted">Semua jejak nugas & skripsianmu — chat AI, sitasi, pencarian jurnal, ide topik. Klik <b>Buka</b> buat lihat lagi. 👇</p>' +
+    '<p class="muted">Semua jejak nugas & skripsianmu — chat AI, sitasi, pencarian jurnal, ide topik. Klik <b>Buka</b> buat lihat lagi.</p>' +
     '<div class="chip-row" id="riwFilter">' +
       RIWAYAT_FILTERS.map(f =>
         '<button class="filter-chip' + (f[0] === tipe ? " active" : "") + '" data-tipe="' + f[0] + '">' + f[1] + "</button>"
@@ -1890,11 +1890,11 @@ function pageRiwayat() {
     "</div>" +
     '<div class="card"><label for="riwQ">Cari riwayat</label>' +
     '<input type="text" id="riwQ" placeholder="cth: stunting, sitasi APA, ..." autocomplete="off"></div>' +
-    '<div id="listRiwayat"><p class="loading">Lagi ngambil riwayat... ⏳</p></div>' +
+    '<div id="listRiwayat"><p class="loading">Lagi ngambil riwayat...</p></div>' +
     '<div class="center" style="margin:14px 0"><button class="btn btn-danger" id="btnRiwHapusSemua"></button></div>';
 
   const aturTombolHapus = () => {
-    $("#btnRiwHapusSemua").textContent = "🗑️ Hapus " + namaAktif();
+    $("#btnRiwHapusSemua").innerHTML = tic("trash") + " Hapus " + namaAktif();
   };
   aturTombolHapus();
 
@@ -1903,7 +1903,7 @@ function pageRiwayat() {
   const bExpRiw = $("#btnRiwExport");
   if (bExpRiw) bExpRiw.addEventListener("click", () => {
     const arr = riwTamuGet();
-    if (!arr.length) { toast("Riwayatmu masih kosong. 📭"); return; }
+    if (!arr.length) { toast("Riwayatmu masih kosong. "); return; }
     let teks = "RIWAYAT KhairyPustaka (mode tamu)\nDiexport: " + new Date().toLocaleString("id-ID") +
       "\nTotal: " + arr.length + " entri\n" + "=".repeat(50) + "\n\n";
     arr.slice().reverse().forEach((e, i) => {
@@ -1928,7 +1928,7 @@ function pageRiwayat() {
     a.download = "riwayat-khairypustaka.txt";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-    toast("Riwayat keexport! Simpan filenya baik-baik ya. ⬇️");
+    toast("Riwayat keexport! Simpan filenya baik-baik ya. ");
   });
 
   const muat = async () => {
@@ -1948,14 +1948,14 @@ function pageRiwayat() {
       const res = await apiJSON(qs);
       if (!res.ok) {
         if (res.data && res.data.need_login) { pageRiwayat(); return; }
-        box.innerHTML = '<div class="err-box">Gagal ngambil riwayat, coba refresh ya. 😅</div>';
+        box.innerHTML = '<div class="err-box">Gagal ngambil riwayat, coba refresh ya.</div>';
         return;
       }
       arr = (res.data && res.data.riwayat) || [];
     }
     if (!arr.length) {
-      box.innerHTML = '<p class="empty">Masih kosong nih. 📭<br>' +
-        (q ? "Coba kata kunci lain ya." : "Pakai fitur-fiturnya dulu — riwayatmu otomatis kecatat di sini. ✨") + "</p>";
+      box.innerHTML = '<p class="empty">Masih kosong nih. <br>' +
+        (q ? "Coba kata kunci lain ya." : "Pakai fitur-fiturnya dulu — riwayatmu otomatis kecatat di sini. ") + "</p>";
       return;
     }
     box.innerHTML = arr.map(e =>
@@ -1974,14 +1974,14 @@ function pageRiwayat() {
     const bLanjut = ev.target.closest("[data-lanjut-chat]");
     const bSalin = ev.target.closest("[data-salin-sitasi]");
     if (bHapus) {
-      if (!confirm("Hapus riwayat ini? Tindakan ini permanen. 🗑️")) return;
+      if (!confirm("Hapus riwayat ini? Tindakan ini permanen. ")) return;
       if (isTamu) {
         riwTamuSet(riwTamuGet().filter(e => e.id !== bHapus.dataset.riwHapus));
-        toast("Riwayat dihapus. 🗑️"); if (bukaId) bukaId = null; muat();
+        toast("Riwayat dihapus. "); if (bukaId) bukaId = null; muat();
       } else {
         const r = await apiJSON("/history/" + encodeURIComponent(bHapus.dataset.riwHapus), { method: "DELETE" });
-        if (r.ok) { toast("Riwayat dihapus. 🗑️"); if (bukaId) bukaId = null; muat(); }
-        else toast("Gagal hapus, coba lagi ya. 😅");
+        if (r.ok) { toast("Riwayat dihapus. "); if (bukaId) bukaId = null; muat(); }
+        else toast("Gagal hapus, coba lagi ya. ");
       }
       return;
     }
@@ -2006,8 +2006,8 @@ function pageRiwayat() {
         dd = (r.ok && r.data && r.data.riwayat && r.data.riwayat.data) || {};
       }
       if (dd.sitasi) {
-        try { await navigator.clipboard.writeText(dd.sitasi); toast("Disalin! 📋"); }
-        catch (e) { toast("Gagal nyalin 😅"); }
+        try { await navigator.clipboard.writeText(dd.sitasi); toast("Disalin! "); }
+        catch (e) { toast("Gagal nyalin "); }
       }
       return;
     }
@@ -2028,7 +2028,7 @@ function pageRiwayat() {
         const r = await apiJSON("/history/" + encodeURIComponent(id));
         ent = (r.ok && r.data && r.data.riwayat) || null;
       }
-      if (!ent) { toast("Gagal buka riwayat 😅"); return; }
+      if (!ent) { toast("Gagal buka riwayat "); return; }
       det.innerHTML = riwayatDetailHTML(ent);
       det.classList.remove("hidden");
       bukaId = id; bBuka.textContent = "Tutup";
@@ -2048,14 +2048,14 @@ function pageRiwayat() {
   });
 
   $("#btnRiwHapusSemua").addEventListener("click", async () => {
-    if (!confirm("Hapus " + namaAktif() + "? Tindakan ini permanen. 🗑️")) return;
+    if (!confirm("Hapus " + namaAktif() + "? Tindakan ini permanen. ")) return;
     if (isTamu) {
       riwTamuSet(tipe ? riwTamuGet().filter(e => e.tipe !== tipe) : []);
-      toast("Beres, udah dihapus semua. 🗑️"); bukaId = null; muat();
+      toast("Beres, udah dihapus semua. "); bukaId = null; muat();
     } else {
       const r = await apiJSON("/history" + (tipe ? "?type=" + encodeURIComponent(tipe) : ""), { method: "DELETE" });
-      if (r.ok) { toast("Beres, udah dihapus semua. 🗑️"); bukaId = null; muat(); }
-      else toast("Gagal hapus, coba lagi ya. 😅");
+      if (r.ok) { toast("Beres, udah dihapus semua. "); bukaId = null; muat(); }
+      else toast("Gagal hapus, coba lagi ya. ");
     }
   });
 
@@ -2067,11 +2067,11 @@ function pageMatriks() {
   const arr = koleksiGet();
   view().innerHTML =
     "<h2>"+tic("grid")+" Matriks Literatur</h2>" +
-    '<div class="card"><p class="muted">Bikin tabel sintesis (matriks) dari koleksimu — format DOCX, siap tempel ke Bab 2. 📊</p>' +
+    '<div class="card"><p class="muted">Bikin tabel sintesis (matriks) dari koleksimu — format DOCX, siap tempel ke Bab 2.</p>' +
     "<p>Koleksi saat ini: <b>" + arr.length + "</b> referensi.</p>" +
     (arr.length
       ? '<button class="btn btn-primary btn-block" id="btnMatriks">' + tic("grid") + ' Buat Matriks (DOCX)</button>'
-      : '<p class="empty">Koleksimu kosong. 📭 <a href="#/cari">Cari &amp; simpan jurnal dulu →</a></p>') +
+      : '<p class="empty">Koleksimu kosong. <a href="#/cari">Cari &amp; simpan jurnal dulu →</a></p>') +
     "</div>";
   const btn = $("#btnMatriks");
   if (btn) btn.addEventListener("click", async () => {
@@ -2082,8 +2082,8 @@ function pageMatriks() {
       body: JSON.stringify({ items: koleksiGet() })
     }, "matriks-literatur.docx");
     setLoading(btn, false);
-    if (!res.ok && !kuotaTamuToast(res)) toast("Gagal bikin matriks, coba lagi ya. 😅");
-    else if (res.ok) toast("Matriks keunduh! 🎉");
+    if (!res.ok && !kuotaTamuToast(res)) toast("Gagal bikin matriks, coba lagi ya. ");
+    else if (res.ok) toast("Matriks keunduh! ");
   });
 }
 
@@ -2106,7 +2106,7 @@ function pageStatistik() {
   statAnswers = {};
   view().innerHTML =
     "<h2>"+tic("chart")+" Panduan Uji Statistik</h2>" +
-    '<p class="muted">Bingung pilih uji statistik? Jawab aja pertanyaannya, aku tunjukin yang cocok. 🧭</p>' +
+    '<p class="muted">Bingung pilih uji statistik? Jawab aja pertanyaannya, aku tunjukin yang cocok.</p>' +
     '<div id="statBox"></div>';
   statLangkah({ restart: true });
 }
@@ -2116,7 +2116,7 @@ function statTanya(d) {
   const keys = Object.keys(statAnswers);
   let html = keys.length ? '<button class="btn btn-ghost" id="statBack">← Kembali</button>' : "";
   // d.teks dibuat backend dan boleh mengandung <b>/<i> -> render sebagai HTML
-  html += '<div class="card"><h3>' + (d.teks || "Pilih salah satu:") + " ❓</h3>" +
+  html += '<div class="card"><h3>' + (d.teks || "Pilih salah satu:") + "</h3>" +
     '<div class="chip-row">' + ops.map(o => {
       const val = Array.isArray(o) ? o[0] : o;
       const label = Array.isArray(o) ? o[1] : o;
@@ -2152,7 +2152,7 @@ function statHasil(d) {
   const btnAi = $("#statAi");
   if (btnAi) btnAi.addEventListener("click", async () => {
     const out = $("#statAiOut");
-    out.innerHTML = '<p class="loading">AI lagi nulis... ⏳</p>';
+    out.innerHTML = '<p class="loading">AI lagi nulis...</p>';
     setLoading(btnAi, true, "AI lagi nulis...");
     const teks = [r.nama, r.kapan, r.baca, r.contoh].filter(Boolean).join("\n");
     const res = await apiPOST("/ai", { kind: "interpretasi", text: teks });
@@ -2161,26 +2161,26 @@ function statHasil(d) {
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) { out.innerHTML = kuotaHabisBox(); popupJatahHabis(); return; }
     if (!res.ok) { out.innerHTML = ""; netErr(out, res); return; }
     const hasil = d.hasil || d.result || d.text;
-    out.innerHTML = hasil ? '<div class="hasil-ai">' + mdRapi(hasil) + "</div>" : '<div class="warn-box">AI-nya bengong. 😅 Coba lagi ya.</div>';
+    out.innerHTML = hasil ? '<div class="hasil-ai">' + mdRapi(hasil) + "</div>" : '<div class="warn-box">AI-nya bengong. Coba lagi ya.</div>';
   });
 }
 async function statLangkah(body) {
   const box = $("#statBox");
   if (!box) return;
-  box.innerHTML = '<p class="loading">Lagi mikir... ⏳</p>';
+  box.innerHTML = '<p class="loading">Lagi mikir...</p>';
   const res = await apiPOST("/statistik", body || {});
   if (!res.ok) { netErr(box, res); return; }
   const d = res.data || {};
   if (d.tipe === "hasil") statHasil(d);
   else if (d.tipe === "pertanyaan") statTanya(d);
-  else box.innerHTML = '<div class="warn-box">Responsnya nggak kebaca. 😅 Coba ulangi ya.</div>';
+  else box.innerHTML = '<div class="warn-box">Responsnya nggak kebaca. Coba ulangi ya.</div>';
 }
 
 /* ----- Template ----- */
 function pageTemplate() {
   view().innerHTML =
     "<h2>"+tic("pencil")+" Template Skripsi</h2>" +
-    '<div class="card"><p class="muted">Template proposal &amp; skripsi format DOCX, tinggal isi. Pilih jenis penelitianmu: 👇</p>' +
+    '<div class="card"><p class="muted">Template proposal &amp; skripsi format DOCX, tinggal isi. Pilih jenis penelitianmu:</p>' +
     '<button class="btn btn-primary btn-block" data-tmpl="kuantitatif">' + tic("chart") + ' Template Kuantitatif</button>' +
     '<button class="btn btn-primary btn-block" data-tmpl="kualitatif">' + tic("books") + ' Template Kualitatif</button></div>';
   $$("[data-tmpl]", view()).forEach(b => b.addEventListener("click", async () => {
@@ -2188,7 +2188,7 @@ function pageTemplate() {
     setLoading(b, true, "Lagi nyiapin template...");
     const res = await apiDownload("/template?jenis=" + encodeURIComponent(jenis), {}, "template-" + jenis + ".docx");
     setLoading(b, false);
-    toast(res.ok ? "Template keunduh! Gas nulis! ✍️" : "Gagal unduh template, coba lagi ya. 😅");
+    toast(res.ok ? "Template keunduh! Gas nulis! " : "Gagal unduh template, coba lagi ya. ");
   }));
 }
 
@@ -2210,32 +2210,32 @@ function pageTerjemah() {
   $("#tjFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    toast("Lagi membaca file... ⏳");
+    toast("Lagi membaca file... ");
     const res = await ekstrakTeksFile(f);
-    if (!res.ok) { toast("😅 " + errFile(res)); return; }
+    if (!res.ok) { toast(" " + errFile(res)); return; }
     let teks = (res.data.teks || "").replace(/\s+/g, " ").trim();
     const m = teks.match(/\babstract\b/i);
     if (m && m.index < 2500) teks = teks.slice(m.index + m[0].length).replace(/^[:\s]+/, "");
     ta.value = teks.slice(0, 3000);
     hitung();
-    toast("Teks dari file sudah dimasukkan. Pangkas sampai tersisa abstraknya saja, lalu klik Terjemahkan 🌐");
+    toast("Teks dari file sudah dimasukkan. Pangkas sampai tersisa abstraknya saja, lalu klik Terjemahkan ");
   });
   $("#btnTj").addEventListener("click", async () => {
     const teks = (ta.value || "").trim();
-    if (teks.length < 20) { toast("Teksnya terlalu pendek buat diterjemahkan 😅"); return; }
-    if (teks.length > 3000) { toast("Kepanjangan, pangkas ke 3.000 karakter ya 😄"); return; }
+    if (teks.length < 20) { toast("Teksnya terlalu pendek buat diterjemahkan "); return; }
+    if (teks.length > 3000) { toast("Kepanjangan, pangkas ke 3.000 karakter ya "); return; }
     const box = $("#hasilTj");
-    box.innerHTML = '<p class="loading">Lagi menerjemahkan... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi menerjemahkan...</p>';
     const btn = $("#btnTj"); setLoading(btn, true, "Menerjemahkan...");
     const res = await apiPOST("/terjemah", { teks: teks });
     setLoading(btn, false);
     const d = res.data || {};
     if (!res.ok) { if (!kuotaTamuBox(box, res)) netErr(box, res); return; }
-    if (d.sumber === "sudah_indonesia") { box.innerHTML = '<div class="warn-box">Teksnya sudah berbahasa Indonesia, tidak perlu diterjemahkan 😉</div>'; return; }
-    if (!d.hasil) { box.innerHTML = '<div class="warn-box">Hasil terjemahannya kosong, coba lagi ya 😅</div>'; return; }
+    if (d.sumber === "sudah_indonesia") { box.innerHTML = '<div class="warn-box">Teksnya sudah berbahasa Indonesia, tidak perlu diterjemahkan</div>'; return; }
+    if (!d.hasil) { box.innerHTML = '<div class="warn-box">Hasil terjemahannya kosong, coba lagi ya</div>'; return; }
     box.innerHTML = '<div class="card"><h3>Hasil terjemahan ' + tic("spark") + '</h3><p style="white-space:pre-wrap">' + esc(d.hasil) + '</p><button class="btn" id="tjCopy">' + tic("clipboard") + ' Salin</button></div>';
     $("#tjCopy").addEventListener("click", () => copyText(d.hasil));
-    toast(d.sumber === "mymemory" ? "Diterjemahkan 🤖 (terjemahan mesin)" : "Diterjemahkan 🤖");
+    toast(d.sumber === "mymemory" ? "Diterjemahkan (terjemahan mesin)" : "Diterjemahkan ");
   });
 }
 
@@ -2267,7 +2267,7 @@ function pecahTeksParafrase(teks, maks) {
 function pageParafrase() {
   view().innerHTML =
     "<h2>"+tic("refresh")+" Parafrase</h2>" +
-    '<div class="card"><p class="muted">Tempel kalimat yang mau diubah, biar nggak kepentok plagiarisme. 😉</p>' +
+    '<div class="card"><p class="muted">Tempel kalimat yang mau diubah, biar nggak kepentok plagiarisme.</p>' +
     '<label for="pfTeks">Teks asli</label><textarea id="pfTeks" placeholder="Tempel kalimat/paragraf di sini..."></textarea>' +
     '<label for="pfFile" style="margin-top:10px">Atau unggah file satu bab (.docx/.pdf/.txt)</label>' +
     '<input type="file" id="pfFile" accept="' + ACCEPT_DOK + '">' +
@@ -2277,15 +2277,15 @@ function pageParafrase() {
   $("#pfFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    toast("Lagi membaca file... ⏳");
+    toast("Lagi membaca file... ");
     const res = await ekstrakTeksFile(f);
-    if (!res.ok) { toast("😅 " + errFile(res)); return; }
+    if (!res.ok) { toast(" " + errFile(res)); return; }
     $("#pfTeks").value = (res.data.teks || "").trim();
-    toast("Teks dari file sudah dimasukkan (" + (res.data.karakter || 0) + " karakter). Klik Parafrase-kan buat memproses 🔁");
+    toast("Teks dari file sudah dimasukkan (" + (res.data.karakter || 0) + " karakter). Klik Parafrase-kan buat memproses ");
   });
   $("#btnPf").addEventListener("click", async () => {
     const teks = ($("#pfTeks").value || "").trim();
-    if (!teks) { toast("Tempel dulu teksnya, atau unggah file-nya 😄"); return; }
+    if (!teks) { toast("Tempel dulu teksnya, atau unggah file-nya "); return; }
     const box = $("#hasilPf");
     const btn = $("#btnPf");
     const potongan = pecahTeksParafrase(teks, 750);
@@ -2293,7 +2293,7 @@ function pageParafrase() {
     let gagalDi = 0;
     setLoading(btn, true, "Lagi muter kata...");
     for (let i = 0; i < potongan.length; i++) {
-      box.innerHTML = '<p class="loading">Lagi muter-muter kata... ⏳' +
+      box.innerHTML = '<p class="loading">Lagi muter-muter kata... ' +
         (potongan.length > 1 ? " (potongan " + (i + 1) + " dari " + potongan.length + ")" : "") + "</p>";
       const res = await apiPOST("/parafrase", { teks: potongan[i] });
       if (!res.ok) {
@@ -2302,7 +2302,7 @@ function pageParafrase() {
           gagalDi = i + 1;
           break;
         }
-        box.innerHTML = '<div class="warn-box">Potongan ke-' + (i + 1) + " gagal diproses. 😅 " + (hasilBagian.length ? "Bagian sebelumnya tetap ditampilkan di bawah." : "Coba lagi ya.") + "</div>" +
+        box.innerHTML = '<div class="warn-box">Potongan ke-' + (i + 1) + " gagal diproses. " + (hasilBagian.length ? "Bagian sebelumnya tetap ditampilkan di bawah." : "Coba lagi ya.") + "</div>" +
           (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ' + tic("spark") + '</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
         gagalDi = i + 1;
         break;
@@ -2310,7 +2310,7 @@ function pageParafrase() {
       const d = res.data || {};
       const h = d.hasil || d.parafrase || d.text;
       if (!h) {
-        box.innerHTML = '<div class="warn-box">Hasil potongan ke-' + (i + 1) + ' kosong. 😅' + (hasilBagian.length ? " Bagian sebelumnya tetap ditampilkan di bawah." : "") + "</div>" +
+        box.innerHTML = '<div class="warn-box">Hasil potongan ke-' + (i + 1) + ' kosong. ' + (hasilBagian.length ? " Bagian sebelumnya tetap ditampilkan di bawah." : "") + "</div>" +
           (hasilBagian.length ? '<div class="card"><h3>Hasil parafrase sebagian ' + tic("spark") + '</h3><p style="white-space:pre-wrap">' + esc(hasilBagian.join("\n\n")) + "</p></div>" : "");
         gagalDi = i + 1;
         break;
@@ -2318,7 +2318,7 @@ function pageParafrase() {
       hasilBagian.push(h);
     }
     setLoading(btn, false);
-    if (!hasilBagian.length) { if (!gagalDi) box.innerHTML = '<div class="warn-box">Hasilnya kosong. 😅 Coba teks yang lebih panjang ya.</div>'; return; }
+    if (!hasilBagian.length) { if (!gagalDi) box.innerHTML = '<div class="warn-box">Hasilnya kosong. Coba teks yang lebih panjang ya.</div>'; return; }
     const gabung = hasilBagian.join("\n\n");
     if (!gagalDi) {
       box.innerHTML = '<div class="card"><h3>Hasil parafrase ' + tic("spark") + '</h3>' +
@@ -2336,7 +2336,7 @@ function pageKemiripan() {
   view().innerHTML =
     "<h2>" + tic("check") + " Cek Plagiarisme</h2>" +
     '<div class="warn-box" style="border:2px solid #f0a832;background:rgba(232,147,12,.12);font-size:1rem;line-height:1.65">' +
-    "<b>⚠️ Baca Dulu Sebelum Pakai, Penting Banget</b><br>" +
+    "<b>" + tic("warn") + " Baca Dulu Sebelum Pakai, Penting Banget</b><br>" +
     "Alat ini membandingkan naskahmu <b>hanya dengan teks sumber yang kamu tempel di halaman ini</b>. Alat ini tidak memindai internet, tidak terhubung ke database Turnitin mana pun, dan tidak bisa melihat skripsi atau tugas mahasiswa lain.<br><br>" +
     "Kalau skormu rendah di sini, artinya naskahmu sudah cukup berbeda dari sumber yang kamu tempel itu. <b>Skor ini bukan jaminan lolos cek Turnitin di kampusmu</b>, karena hasil Turnitin juga dipengaruhi sumber lain yang tidak kamu tempel di sini.<br><br>" +
     "Pakai alat ini buat memastikan hasil parafrasemu sudah aman dari sumber aslinya, dan jangan pernah lupa mencantumkan sitasi. Parafrase yang baik plus sitasi yang benar adalah cara paling aman menghindari plagiarisme.</div>" +
@@ -2345,7 +2345,7 @@ function pageKemiripan() {
     '<textarea id="kmNaskah" rows="7" placeholder="Tempel potongan naskahmu di sini (maks 10.000 karakter)..."></textarea>' +
     '<label for="kmSumber" style="margin-top:10px">Teks sumber yang kamu pakai</label>' +
     '<textarea id="kmSumber" rows="7" placeholder="Tempel teks asli dari jurnal/buku yang kamu parafrase di sini. Boleh gabung beberapa sumber sekaligus (maks 30.000 karakter)..."></textarea>' +
-    '<p class="muted" style="margin-top:12px">📎 Atau unggah file (boleh dicampur: satu sisi tempel teks, sisi lain file). File naskah maks 50.000 karakter, file sumber maks 150.000 karakter, ukuran file maks 2 MB.</p>' +
+    '<p class="muted" style="margin-top:12px"> Atau unggah file (boleh dicampur: satu sisi tempel teks, sisi lain file). File naskah maks 50.000 karakter, file sumber maks 150.000 karakter, ukuran file maks 2 MB.</p>' +
     '<label for="kmFileNaskah">File naskah (.docx/.txt/.pdf)</label>' +
     '<input type="file" id="kmFileNaskah" accept=".docx,.txt,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">' +
     '<label for="kmFileSumber" style="margin-top:8px">File sumber (.docx/.txt/.pdf)</label>' +
@@ -2358,9 +2358,9 @@ function pageKemiripan() {
     const sumber = ($("#kmSumber").value || "").trim();
     const fNaskah = $("#kmFileNaskah").files[0];
     const fSumber = $("#kmFileSumber").files[0];
-    if ((!naskah && !fNaskah) || (!sumber && !fSumber)) { toast("Isi naskah dan teks sumbernya dulu ya, tempel teks atau unggah file 😄"); return; }
+    if ((!naskah && !fNaskah) || (!sumber && !fSumber)) { toast("Isi naskah dan teks sumbernya dulu ya, tempel teks atau unggah file "); return; }
     const box = $("#hasilKm");
-    box.innerHTML = '<p class="loading">Lagi membandingkan kata per kata... ⏳</p>';
+    box.innerHTML = '<p class="loading">Lagi membandingkan kata per kata...</p>';
     const btn = $("#btnKm"); setLoading(btn, true, "Lagi mengecek...");
     let res;
     if (fNaskah || fSumber) {
@@ -2533,17 +2533,17 @@ function cvMulaiPoll(id) {
 async function cvBatalkan(id) {
   const box = $("#cvStatus");
   const res = await apiPOST("/convert/batal", { id: id });
-  if (!res.ok) { toast("😅 " + ((res.data && (res.data.pesan || res.data.error)) || "Tidak bisa dibatalkan")); return; }
-  toast("Convertnya dibatalkan 👍");
+  if (!res.ok) { toast(" " + ((res.data && (res.data.pesan || res.data.error)) || "Tidak bisa dibatalkan")); return; }
+  toast("Convertnya dibatalkan ");
   if (box) box.innerHTML = '<p class="muted">Convertnya dibatalkan. Mulai lagi kapan pun kamu siap.</p>';
   if (_cvTimer) { clearInterval(_cvTimer); _cvTimer = null; }
 }
 
 async function cvKirim(alat, inputFile, inputRentang, btn) {
   const files = Array.from((inputFile && inputFile.files) || []);
-  if (!files.length) { toast("Pilih filenya dulu ya 😄"); return; }
+  if (!files.length) { toast("Pilih filenya dulu ya "); return; }
   const box = $("#cvStatus");
-  box.innerHTML = '<p class="loading">Masuk antrean... ⏳</p>';
+  box.innerHTML = '<p class="loading">Masuk antrean...</p>';
   const fd = new FormData();
   fd.append("alat", alat);
   files.forEach(f => fd.append("file", f));
@@ -2659,17 +2659,17 @@ async function ambilKuota() {
 function kuotaBadgeUpdate(sisa) {
   const b = $("#kuotaBadge");
   if (!b) return;
-  if (sisa == null) { b.textContent = "Kuota nggak kebaca ❓"; return; }
-  if (sisa >= 999) { b.textContent = "Kuota unlimited ⚡"; return; }
-  b.textContent = sisa > 0 ? "Sisa kuota hari ini: " + sisa + "x ⚡" : "Kuota hari ini habis 🥲";
+  if (sisa == null) { b.textContent = "Kuota nggak kebaca"; return; }
+  if (sisa >= 999) { b.innerHTML = "Kuota unlimited " + tic("bolt"); return; }
+  b.innerHTML = sisa > 0 ? "Sisa kuota hari ini: " + sisa + "x " + tic("bolt") : "Kuota hari ini habis";
   b.classList.toggle("habis", sisa <= 0);
 }
 
 function kuotaHabisBox() {
-  return '<div class="warn-box">Yah, kuota AI harianmu habis (' + aiHarian() + 'x/hari). 🥲 ' +
+  return '<div class="warn-box">Yah, kuota AI harianmu habis (' + aiHarian() + 'x/hari). ' +
     (AUTH.login
-      ? 'Besok reset otomatis kok. Semangat ngerjainnya! 💪'
-      : '<a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ✨') + '</div>';
+      ? 'Besok reset otomatis kok. Semangat ngerjainnya! '
+      : '<a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ') + '</div>';
 }
 
 /* Pop up jatah habis (disetujui Sul 2026-10-18, menggantikan sekadar
@@ -2783,10 +2783,10 @@ function labelModelHTML(d) {
 function pageAI() {
   view().innerHTML =
     "<h2>"+tic("spark")+" AI Studio</h2>" +
-    '<p><span class="kuota" id="kuotaBadge">cek kuota... ⏳</span></p>' +
+    '<p><span class="kuota" id="kuotaBadge">cek kuota...</span></p>' +
     '<p class="muted tiny">' + (AUTH.login
-      ? 'Gratis <b>15x/hari</b> buat akun login. Pakai bijak ya! 😉'
-      : 'Tamu dapat <b>5x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! 😉') + '</p>' +
+      ? 'Gratis <b>15x/hari</b> buat akun login. Pakai bijak ya! '
+      : 'Tamu dapat <b>5x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ') + '</p>' +
     pickerHTML("ai") +
     '<div class="ai-grid">' + AI_KINDS.map((k, i) =>
       '<div class="card ai-card"><h3>' + tic(k.ico) + " " + esc(k.nama) + "</h3>" +
@@ -2806,26 +2806,26 @@ function pageAI() {
     const i = parseInt(inp.dataset.aii, 10);
     const f = inp.files[0];
     if (!f) return;
-    toast("Lagi membaca file... ⏳");
+    toast("Lagi membaca file... ");
     const res = await ekstrakTeksFile(f);
-    if (!res.ok) { toast("😅 " + errFile(res)); inp.value = ""; return; }
+    if (!res.ok) { toast(" " + errFile(res)); inp.value = ""; return; }
     const k = AI_KINDS[i];
     const cap = (k.kind === "pembahasan" || k.kind === "bab2") ? 4000 : 2000;
     let teks = (res.data.teks || "").trim();
     let potong = "";
     if (teks.length > cap) { teks = teks.slice(0, cap); potong = " (dipotong ke " + cap.toLocaleString("id-ID") + " karakter pertama, batas generator ini)"; }
     $("#aiIn" + i).value = teks;
-    toast("Draf dari file sudah dimasukkan ke " + k.nama + potong + ". Cek dan edit dulu kalau perlu, baru klik Generate ✨");
+    toast("Draf dari file sudah dimasukkan ke " + k.nama + potong + ". Cek dan edit dulu kalau perlu, baru klik Generate ");
     inp.value = "";
   }));
 
   const kirimAI = async (i, modelKey, btn) => {
     const k = AI_KINDS[i];
     const teks = ($("#aiIn" + i).value || "").trim();
-    if (!teks) { toast("Isi dulu inputnya 😄"); return; }
+    if (!teks) { toast("Isi dulu inputnya "); return; }
     const mk = modelKey || modelPilihan();
     const out = $("#aiOut" + i);
-    out.innerHTML = '<p class="loading">AI lagi nulis... sabar ya ⏳</p>';
+    out.innerHTML = '<p class="loading">AI lagi nulis... sabar ya</p>';
     if (btn) setLoading(btn, true, "AI lagi nulis...");
     const body = { kind: k.kind, text: teks, model: mk };
     if (k.kind === "abstrak") {
@@ -2854,7 +2854,7 @@ function pageAI() {
     // thread web. Poll status tiap 3 detik sampai selesai/gagal; bila
     // kartu sudah tidak tampil (pindah halaman), polling berhenti.
     if (btn) setLoading(btn, true, "AI lagi nulis...");
-    out.innerHTML = '<p class="loading">Masuk antrean... sabar ya ⏳</p>';
+    out.innerHTML = '<p class="loading">Masuk antrean... sabar ya</p>';
     let d = null;
     let gagalPesan = null;
     // FIX 2026-11-08 (audit putaran 2): polling dibatasi 200 putaran
@@ -2883,11 +2883,11 @@ function pageAI() {
       }
       gagalBeruntun = 0;
       if (sd.status === "antre") {
-        out.innerHTML = '<p class="loading">Antrean ke-' + (sd.posisi_antrean || 1) + '... sabar ya ⏳</p>';
+        out.innerHTML = '<p class="loading">Antrean ke-' + (sd.posisi_antrean || 1) + '... sabar ya</p>';
         continue;
       }
       if (sd.status === "memproses") {
-        out.innerHTML = '<p class="loading">AI lagi nulis... sabar ya ⏳</p>';
+        out.innerHTML = '<p class="loading">AI lagi nulis... sabar ya</p>';
         continue;
       }
       if (sd.status === "selesai") { d = sd; break; }
@@ -2901,14 +2901,14 @@ function pageAI() {
       return;
     }
     const hasil = d.hasil || d.result || d.text;
-    if (!hasil) { out.innerHTML = '<div class="warn-box">AI-nya bengong, nggak ngasih hasil. 😅 Coba lagi ya.</div>'; return; }
+    if (!hasil) { out.innerHTML = '<div class="warn-box">AI-nya bengong, nggak ngasih hasil. Coba lagi ya.</div>'; return; }
     const hid = "aiCopy" + i;
     out.innerHTML = '<div class="hasil-ai">' + mdRapi(hasil) + '</div>' + labelModelHTML(d) + '<button class="btn" id="' + hid + '" style="margin-top:8px">' + tic("clipboard") + ' Salin Hasil</button>';
     riwTamuCatat("chat", teks, { sumber: "ai", kind: k.kind, text: teks, hasil: hasil });
     $("#" + hid).addEventListener("click", () => copyText(hasil));
     ambilKuota().then(kuotaBadgeUpdate);
     ambilInfoKuota().then(() => pickerSegarkan("ai"));
-    toast("Jadi! Scroll dikit buat lihat hasilnya. ✨");
+    toast("Jadi! Scroll dikit buat lihat hasilnya. ");
   };
 
   $$("[data-aigen]", view()).forEach(btn => btn.addEventListener("click", () => {
@@ -2921,7 +2921,7 @@ let tanyaRiwayat = [];
 function pageTanya() {
   view().innerHTML =
     "<h2>"+tic("chat")+" Tanya AI</h2>" +
-    '<p class="muted">Tanya apa aja soal tugas & skripsi — dari sitasi sampai sidang. Dijawab AI + panduan. 🤖</p>' +
+    '<p class="muted">Tanya apa aja soal tugas & skripsi — dari sitasi sampai sidang. Dijawab AI + panduan.</p>' +
     '<div class="chat" id="chatBox"></div>' +
     pickerHTML("ty") +
     '<div class="chat-form"><input type="text" id="tanyaIn" placeholder="Ketik pertanyaanmu..." autocomplete="off">' +
@@ -2930,7 +2930,7 @@ function pageTanya() {
   const render = () => {
     const box = $("#chatBox");
     if (!tanyaRiwayat.length) {
-      box.innerHTML = '<div class="bubble bot">Halo! 👋 Aku AI-nya KhairyPustaka. Tanya apa aja soal tugas & skripsi — sitasi, metode, Bab 2, persiapan sidang, gas! 🚀</div>';
+      box.innerHTML = '<div class="bubble bot">Halo! Aku AI-nya KhairyPustaka. Tanya apa aja soal tugas & skripsi — sitasi, metode, Bab 2, persiapan sidang, gas!</div>';
     } else {
       box.innerHTML = tanyaRiwayat.map(m => '<div class="bubble ' + m.dari + '">' + (m.html ? richText(m.teks) : (m.md ? mdRapi(m.teks) : esc(m.teks))) + "</div>").join("");
     }
@@ -2945,7 +2945,7 @@ function pageTanya() {
     // REFERENSI OBJEK dan dibuang via indexOf, bukan pop() buta. Pop
     // bisa membuang pesan yang salah bila ada yang menyisip di tengah
     // (kiriman kedua), menukar urutan riwayat.
-    const placeholder = { dari: "bot", teks: "Lagi mikir... ⏳" };
+    const placeholder = { dari: "bot", teks: "Lagi mikir... " };
     tanyaRiwayat.push(placeholder);
     render();
     const btn = $("#tanyaBtn"); setLoading(btn, true, "...");
@@ -2956,17 +2956,17 @@ function pageTanya() {
     const d = res.data || {};
     // 429 kuota_habis harus dicek SEBELUM !res.ok (lihat pageAI)
     if (!res.ok && (d.error === "kuota_habis" || d.kuota_habis)) {
-      popupJatahHabis(); tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
+      popupJatahHabis(); tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). " + (AUTH.login ? "Besok reset lagi kok! " : "Login gratis biar fitur non-AI sepuasnya! ") });
     } else if (!res.ok) {
-      tanyaRiwayat.push({ dari: "bot", teks: (d.pesan || d.error) ? String(d.pesan || d.error) : "Waduh koneksinya bermasalah. 😭 Coba kirim lagi ya!" });
+      tanyaRiwayat.push({ dari: "bot", teks: (d.pesan || d.error) ? String(d.pesan || d.error) : "Waduh koneksinya bermasalah. Coba kirim lagi ya!" });
     } else {
       if (d.error === "kuota_habis" || d.kuota_habis) {
-        popupJatahHabis(); tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). 🥲 " + (AUTH.login ? "Besok reset lagi kok! 💪" : "Login gratis biar fitur non-AI sepuasnya! ✨") });
+        popupJatahHabis(); tanyaRiwayat.push({ dari: "bot", teks: "Yah, kuota AI harianmu habis (" + aiHarian() + "x/hari). " + (AUTH.login ? "Besok reset lagi kok! " : "Login gratis biar fitur non-AI sepuasnya! ") });
       } else {
         // kontrak backend: {tipe:"panduan"|"ai", jawaban, judul, terkait:[{id,title}]}
-        let teks = d.jawaban || d.hasil || d.text || "Hmm, aku nggak nemu jawabannya. 😅 Coba tanya dengan kata lain ya.";
+        let teks = d.jawaban || d.hasil || d.text || "Hmm, aku nggak nemu jawabannya. Coba tanya dengan kata lain ya.";
         const isPanduan = d.tipe === "panduan";
-        if (isPanduan) teks += "\n\n(dari panduan 📚)";
+        if (isPanduan) teks += "\n\n(dari panduan)";
         if (d.judul) teks = d.judul + "\n\n" + teks;
         if (!isPanduan && d.model_label) {
           if (d.dialihkan) teks += "\n\n• Model pilihanmu mengalami kendala saat generate, jawaban ini dibuat dengan " + d.model_label + ".";
@@ -3028,8 +3028,8 @@ function pageTopup() {
     view().innerHTML =
       "<h2>" + tic("bolt") + " Jatah AI</h2>" +
       '<div class="card"><h3>Sisa jatahmu</h3>' +
-      '<p>🎁 Gratis hari ini: <b id="tamuSisa">' + tamuHarian() + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
-      '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Jatah tamu 5x/hari itu gabungan semua fitur (AI dan non-AI). Login gratis biar fitur non-AI sepuasnya, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman. 🔐</p></div>' +
+      '<p>' + tic("ticket") + ' Gratis hari ini: <b id="tamuSisa">' + tamuHarian() + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>' +
+      '<p class="muted">Kamu lagi mode tamu, jadi belum punya saldo top-up. Jatah tamu 5x/hari itu gabungan semua fitur (AI dan non-AI). Login gratis biar fitur non-AI sepuasnya, plus bisa top-up saldo yang tidak hangus, redeem kode, dan dapat kode referral buat ajak teman.</p></div>' +
       '<div class="card center"><a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk / Daftar — gratis!</a></div>';
     // Samakan angka dengan sisa asli dari server (tamu bisa sudah memakai sebagian).
     apiJSON("/topup").then(res => {
@@ -3042,19 +3042,19 @@ function pageTopup() {
   }
   view().innerHTML =
     "<h2>"+tic("bolt")+" Jatah AI</h2>" +
-    '<div id="topInfo"><p class="loading">Lagi ngecek jatah AI... ⏳</p></div>' +
+    '<div id="topInfo"><p class="loading">Lagi ngecek jatah AI...</p></div>' +
     '<div id="topPay"></div>' +
     '<div class="card" id="redCard"><h3>Punya kode redeem? ' + tic("ticket") + '</h3>' +
     '<label for="kodeRed">Kode redeem</label><input type="text" id="kodeRed" placeholder="Tempel kodemu di sini" autocomplete="off">' +
     '<button class="btn btn-accent btn-block" id="btnRedeem" style="margin-top:12px">' + tic("ticket") + ' Redeem Sekarang</button></div>' +
-    '<div class="card"><h3>Kode referralmu 🎁</h3><p class="muted tiny">Ajak teman pakai KhairyPustaka, tiap 3 teman dapat bonus jatah AI!</p>' +
-    '<div id="refBox"><p class="loading">Lagi ngambil kode... ⏳</p></div></div>';
+    '<div class="card"><h3>' + tic("ticket") + ' Kode referralmu</h3><p class="muted tiny">Ajak teman pakai KhairyPustaka, tiap 3 teman dapat bonus jatah AI!</p>' +
+    '<div id="refBox"><p class="loading">Lagi ngambil kode...</p></div></div>';
 
   function refreshInfo() {
     apiJSON("/topup").then(res => {
       const box = $("#topInfo");
       if (!box) return;
-      if (!res.ok) { box.innerHTML = '<div class="warn-box">Jatah AI lagi nggak kebaca. 😅 Coba refresh ya.</div>'; return; }
+      if (!res.ok) { box.innerHTML = '<div class="warn-box">Jatah AI lagi nggak kebaca. Coba refresh ya.</div>'; return; }
       const d = res.data || {};
       const isAdm = d.admin === true;
       const harian = d.sisa_harian != null ? d.sisa_harian : 0;
@@ -3064,9 +3064,9 @@ function pageTopup() {
       _topMinU = minU; // FIX A12: dipakai topupCreate menyamakan angka
       let html = '<div class="card"><h3>Sisa jatahmu</h3>' +
         (isAdm
-          ? '<p>🎁 Akun admin: jatah AI tanpa batas, pakai sepuasnya ♾️</p>'
-          : '<p>🎁 Gratis hari ini: <b>' + harian + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>') +
-        '<p>💰 Saldo top-up: <b>' + saldo + 'x</b> <span class="muted tiny">(tidak hangus)</span></p></div>';
+          ? '<p>' + tic("ticket") + ' Akun admin: jatah AI tanpa batas, pakai sepuasnya</p>'
+          : '<p>' + tic("ticket") + ' Gratis hari ini: <b>' + harian + 'x</b> <span class="muted tiny">(reset tiap tengah malam WITA)</span></p>') +
+        '<p>' + tic("bolt") + ' Saldo top-up: <b>' + saldo + 'x</b> <span class="muted tiny">(tidak hangus)</span></p></div>';
       if (d.pay_enabled && !isAdm) {
         html += '<div class="card"><h3>Tambah jatah ' + tic("bolt") + '</h3>' +
           '<p class="muted">Rp' + Number(perU).toLocaleString("id-ID") + ' per 1x pakai AI, minimal ' + minU + 'x. Bayar via QRIS, masuk otomatis.</p>' +
@@ -3111,15 +3111,15 @@ function pageTopup() {
     if (!res.ok) {
       const rd = res.data || {};
       if (rd.need_login || res.status === 401) {
-        toast("🔑 Login dulu biar saldomu aman ya.");
+        toast(" Login dulu biar saldomu aman ya.");
         location.hash = "#/masuk";
         return;
       }
-      toast("😅 " + ((res.data && (res.data.error || res.data.pesan)) || "Gagal bikin kode bayar, coba lagi ya."));
+      toast(" " + ((res.data && (res.data.error || res.data.pesan)) || "Gagal bikin kode bayar, coba lagi ya."));
       return;
     }
     const d = res.data || {};
-    if (!d.ref_id) { toast("Gagal bikin kode bayar, coba lagi ya. 😅"); return; }
+    if (!d.ref_id) { toast("Gagal bikin kode bayar, coba lagi ya. "); return; }
     const total = d.total ? "Rp" + Number(d.total).toLocaleString("id-ID") : "";
     tampilkanQR(payBox, d.ref_id, total, d.qr_b64);
     payBox.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -3131,15 +3131,15 @@ function pageTopup() {
     payBox.innerHTML =
       '<div class="card center"><h3>' + tic("grid") + ' Scan QRIS buat bayar ' + esc(total) + '</h3>' +
       (qr ? '<img src="data:image/png;base64,' + qr + '" alt="QRIS" style="max-width:260px;width:100%;border-radius:12px">' : '<p class="muted">QR nggak kebaca, coba lagi ya.</p>') +
-      '<p class="muted tiny" id="payStat">Menunggu pembayaran... ⏳ (otomatis dicek tiap 8 detik)</p></div>';
+      '<p class="muted tiny" id="payStat">Menunggu pembayaran... (otomatis dicek tiap 8 detik)</p></div>';
     const timer = regTimer(setInterval(async () => {
       const st = await apiJSON("/topup/status/" + encodeURIComponent(refId));
       const sd = (st && st.data) || {};
       if (sd.paid) {
         clearInterval(timer);
-        payBox.innerHTML = '<div class="ok-box center">🎉 <b>Pembayaran diterima!</b><br>+' + Number(sd.uses || 0) + 'x Jatah AI ditambahkan. Saldo: <b>' + Number(sd.saldo || 0) + 'x</b> 🚀</div>';
+        payBox.innerHTML = '<div class="ok-box center"> <b>Pembayaran diterima!</b><br>+' + Number(sd.uses || 0) + 'x Jatah AI ditambahkan. Saldo: <b>' + Number(sd.saldo || 0) + 'x</b></div>';
         refreshInfo();
-        toast("Jatah AI masuk! 🎉");
+        toast("Jatah AI masuk! ");
       }
     }, 8000));
     // berhenti polling setelah 65 menit (invoice kedaluwarsa 1 jam).
@@ -3163,7 +3163,7 @@ function pageTopup() {
       if (p && box) {
         const total = p.amount ? "Rp" + Number(p.amount).toLocaleString("id-ID") : "";
         tampilkanQR(box, p.ref_id, total, p.qr_b64);
-        toast("Kamu punya pembayaran yang belum selesai 💳");
+        toast("Kamu punya pembayaran yang belum selesai ");
       }
     });
   }
@@ -3171,58 +3171,58 @@ function pageTopup() {
   apiJSON("/kode-referral").then(res => {
     const box = $("#refBox");
     if (!box) return;
-    if (!res.ok || !res.data) { box.innerHTML = '<p class="muted tiny">Kode referral lagi nggak kebaca. 😅</p>'; return; }
+    if (!res.ok || !res.data) { box.innerHTML = '<p class="muted tiny">Kode referral lagi nggak kebaca.</p>'; return; }
     const kode = res.data.kode || res.data.referral || res.data.code || "";
     const reward = res.data.reward_uses || 30;
     box.innerHTML = kode
       ? '<p><b class="ref-code">' + esc(kode) + '</b></p>' +
-        '<p class="muted tiny">Tiap 3 teman gabung = +' + reward + 'x Jatah AI 🎉</p>' +
+        '<p class="muted tiny">Tiap 3 teman gabung = +' + reward + 'x Jatah AI</p>' +
         '<button class="btn" id="refCopy">' + tic("clipboard") + ' Salin Link Referral</button>'
-      : '<p class="muted tiny">Belum ada kode referral. 😅</p>';
+      : '<p class="muted tiny">Belum ada kode referral.</p>';
     const cp = $("#refCopy");
     if (cp) cp.addEventListener("click", () => copyText(location.origin + "/?ref=" + kode));
   });
 
   $("#btnRedeem").addEventListener("click", async () => {
     const kode = ($("#kodeRed").value || "").trim();
-    if (!kode) { toast("Tempel dulu kodenya 😄"); return; }
+    if (!kode) { toast("Tempel dulu kodenya "); return; }
     const btn = $("#btnRedeem"); setLoading(btn, true, "Lagi dicek...");
     const res = await apiPOST("/redeem", { kode: kode });
     setLoading(btn, false);
     if (!res.ok) {
       const rd = res.data || {};
       if (rd.need_login || res.status === 401) {
-        toast("🔑 Login dulu biar saldomu aman ya.");
+        toast(" Login dulu biar saldomu aman ya.");
         location.hash = "#/masuk";
         return;
       }
-      toast(res.error === "network" ? "Koneksi bermasalah, coba lagi ya. 😭" : "Gagal redeem, coba lagi ya. 😅");
+      toast(res.error === "network" ? "Koneksi bermasalah, coba lagi ya. " : "Gagal redeem, coba lagi ya. ");
       return;
     }
     const d = res.data || {};
     const ok = d.ok === true || d.sukses === true || d.success === true;
     if (ok) {
-      toast("Kode valid! +" + (d.uses || "") + "x Jatah AI! 🎉⚡");
+      toast("Kode valid! +" + (d.uses || "") + "x Jatah AI! ");
       $("#kodeRed").value = ""; refreshInfo();
       return;
     }
     const alasan = d.alasan || d.reason || "";
-    const msg = alasan === "used" ? "Kode ini sudah dipakai. 😅"
-      : alasan === "notfound" ? "Kode nggak ketemu. Cek lagi ya. 🔍"
+    const msg = alasan === "used" ? "Kode ini sudah dipakai. "
+      : alasan === "notfound" ? "Kode nggak ketemu. Cek lagi ya. "
       : (d.pesan || d.message || d.error || "Kode nggak valid / udah dipakai.");
-    toast("😅 " + msg);
+    toast(" " + msg);
   });
 }
 
 /* ----- Bantuan ----- */
 function pageBantuan() {
   const faq = [
-    ["KhairyPustaka itu apa? ❓", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, sampai 14 generator AI naskah. Gratis! 🎓"],
-    ["Beneran gratis? 💰", "Iya! Buat tamu, semua fitur berbagi jatah gabungan " + tamuHarian() + "x/hari (AI dan non-AI dihitung bareng). Login gratis bikin fitur non-AI sepuasnya, jatah AI tetap 15x/hari, dan datamu tersimpan. 😉"],
-    ["Koleksiku kesimpen di mana? 📚", "Di browser HP-mu sendiri (localStorage). Buat tamu, koleksi otomatis terhapus setelah 24 jam; login gratis biar tidak kena batas waktu itu. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang, jadi rajin-rajin export ya!"],
-    ["Sitasi gaya apa aja yang didukung? 📑", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
-    ["AI-nya pakai apa? 🤖", "Otomatis pilih yang terbaik & gratis: Gemini, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu ⚡ Jatah AI — Rp200/x, minimal 25x (Rp5.000), nggak hangus."],
-    ["Error / nggak jalan, gimana? 😭", "Coba refresh dulu. Kalau masih error, cek koneksi internetmu. Masih bandel juga? Hubungi admin lewat tombol Hubungi Admin di bagian bawah halaman. 🛠️"]
+    ["KhairyPustaka itu apa? ", "Asisten skripsi & nugas buat mahasiswa semua jurusan: cari jurnal, bikin sitasi 6 gaya, matriks literatur, sampai 14 generator AI naskah. Gratis! "],
+    ["Beneran gratis? ", "Iya! Buat tamu, semua fitur berbagi jatah gabungan " + tamuHarian() + "x/hari (AI dan non-AI dihitung bareng). Login gratis bikin fitur non-AI sepuasnya, jatah AI tetap 15x/hari, dan datamu tersimpan. "],
+    ["Koleksiku kesimpen di mana? ", "Di browser HP-mu sendiri (localStorage). Buat tamu, koleksi otomatis terhapus setelah 24 jam; login gratis biar tidak kena batas waktu itu. Catatan: kalau hapus data browser / ganti HP, koleksinya ikut hilang, jadi rajin-rajin export ya!"],
+    ["Sitasi gaya apa aja yang didukung? ", "6 gaya: Harvard (default), APA, MLA, Chicago, Vancouver, IEEE. Tinggal pilih, salin, tempel ke tugas/skripsimu."],
+    ["AI-nya pakai apa? ", "Otomatis pilih yang terbaik & gratis: Gemini, Cerebras, OpenRouter. Butuh lebih banyak? Top-up jatah AI di menu Jatah AI — Rp200/x, minimal 25x (Rp5.000), nggak hangus."],
+    ["Error / nggak jalan, gimana? ", "Coba refresh dulu. Kalau masih error, cek koneksi internetmu. Masih bandel juga? Hubungi admin lewat tombol Hubungi Admin di bagian bawah halaman. "]
   ];
   view().innerHTML =
     "<h2>"+tic("help")+" Bantuan</h2>" +
@@ -3419,7 +3419,7 @@ function pageKritikSaran() {
       '<div class="ok-box"><b>Terima kasih banyak.</b> Kritik dan saranmu sudah kami terima dan akan dibaca untuk perbaikan KhairyPustaka.</div>';
     $("#ksSaran").value = "";
     $("#ksFitur").value = "";
-    toast("Feedback terkirim. Terima kasih! 🙏");
+    toast("Feedback terkirim. Terima kasih! ");
     } finally { btnKs.disabled = false; }
   });
 }
@@ -3550,7 +3550,7 @@ function aturMenuAdmin() {
       a = document.createElement("a");
       a.id = "navAdmin";
       a.href = "#/admin";
-      a.textContent = "🛡️ Panel Admin";
+      a.innerHTML = tic("shield") + " Panel Admin";
       nav.appendChild(a);
     }
   } else if (a) {
@@ -3705,7 +3705,7 @@ function admEksporCSV() {
   a2.click();
   a2.remove();
   setTimeout(function() { URL.revokeObjectURL(a2.href); }, 4000);
-  toast("Laporan terunduh 📋");
+  toast("Laporan terunduh ");
 }
 
 async function admMuatSistem() {
@@ -4120,7 +4120,7 @@ function admRenderSakelar() {
 function admSalinTeks(t) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(t).then(
-      function() { toast("Kode tersalin! 📋"); },
+      function() { toast("Kode tersalin! "); },
       function() { admSalinCadangan(t); });
   } else {
     admSalinCadangan(t);
@@ -4134,7 +4134,7 @@ function admSalinCadangan(t) {
   ta.select();
   try {
     document.execCommand("copy");
-    toast("Kode tersalin! 📋");
+    toast("Kode tersalin! ");
   } catch (e) {
     toast("Salin manual ya: " + t);
   }
@@ -4251,7 +4251,7 @@ function popupKonfirmasiHapusAkun(uname, onYa) {
   el.style.padding = "16px";
   el.innerHTML =
     '<div class="modal-box" style="border-radius:20px;max-width:420px;text-align:center">' +
-      '<div style="font-size:40px">🗑️</div>' +
+      '<div style="font-size:40px">' + tic("trash") + '</div>' +
       '<h3 style="margin:8px 0 0">Hapus akun @' + esc(uname) + "?</h3>" +
       '<p class="muted" style="text-align:left">Akun ini akan dihapus <b>permanen</b> beserta data terkaitnya (token, kuota, koleksi, riwayat). Tindakan ini <b>tidak bisa dibatalkan</b>.</p>' +
       '<button class="btn btn-danger btn-block" id="kpHapusYa" type="button">Ya, Hapus Permanen</button>' +
@@ -4279,7 +4279,7 @@ function pageAdmin() {
   if (!AUTH.admin) {
     view().innerHTML =
       "<h2>" + tic('shield') + " Panel Admin</h2>" +
-      '<div class="card center"><p class="muted">Halaman ini khusus akun admin. Kalau kamu merasa ini salah, hubungi admin lewat halaman Bantuan ya. 🙂</p>' +
+      '<div class="card center"><p class="muted">Halaman ini khusus akun admin. Kalau kamu merasa ini salah, hubungi admin lewat halaman Bantuan ya.</p>' +
       '<a class="btn btn-primary btn-block" href="#/beranda">Ke Beranda</a></div>';
     return;
   }
@@ -4462,7 +4462,7 @@ function pageAdmin() {
     const msg = $("#admBackupMsg");
     msg.textContent = "Menyiapkan backup...";
     const r = await apiDownload("/admin/backup", {}, "khairypustaka-backup.json");
-    msg.textContent = r && r.ok ? "Backup terunduh. Simpan file-nya baik-baik ya. 💾" : "Gagal membuat backup. Coba lagi ya.";
+    msg.textContent = r && r.ok ? "Backup terunduh. Simpan file-nya baik-baik ya. " : "Gagal membuat backup. Coba lagi ya.";
   });
   $("#admHapusBtn").addEventListener("click", function() {
     const msg = $("#admHapusMsg");
@@ -4473,7 +4473,7 @@ function pageAdmin() {
       msg.textContent = "Menghapus akun @" + uname + "...";
       const r = await apiPOST("/admin/hapus-user", { username: uname });
       if (!r.ok) { msg.textContent = (r.data && (r.data.pesan || r.data.error)) || "Gagal menghapus."; return; }
-      msg.textContent = "Akun @" + uname + " sudah dihapus permanen. ✅";
+      msg.innerHTML = tic("check") + " Akun @" + uname + " sudah dihapus permanen.";
       $("#admHapusUser").value = "";
       admMuatStatistik();
     });
@@ -4559,7 +4559,7 @@ function router() {
   window.scrollTo(0, 0);
   try { fn(); }
   catch (e) {
-    view().innerHTML = '<div class="err-box">Yah, halamannya error. 😅 Coba refresh ya.</div>';
+    view().innerHTML = '<div class="err-box">Yah, halamannya error. Coba refresh ya.</div>';
   }
   const v = view();
   v.classList.remove("page-in"); void v.offsetWidth; v.classList.add("page-in");
@@ -4589,7 +4589,7 @@ function flushRefPending() {
     // login / belum verifikasi) -> simpan, coba lagi nanti.
     if (d && d.ok) {
       try { localStorage.removeItem("kp_ref_pending"); } catch (e) {}
-      if (d.milestone) toast("Yeay, temanmu dapat bonus referral! 🎉");
+      if (d.milestone) toast("Yeay, temanmu dapat bonus referral! ");
     }
   }).catch(() => {});
 }
@@ -4616,8 +4616,8 @@ async function pasangAplikasi() {
   }
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent || "");
   toast(ios
-    ? "Ketuk tombol Bagikan di Safari, lalu pilih \"Tambah ke Layar Utama\" 📲"
-    : "Buka menu titik tiga di browser, lalu pilih \"Pasang aplikasi\" atau \"Tambah ke Layar Utama\" 📲");
+    ? "Ketuk tombol Bagikan di Safari, lalu pilih \"Tambah ke Layar Utama\" "
+    : "Buka menu titik tiga di browser, lalu pilih \"Pasang aplikasi\" atau \"Tambah ke Layar Utama\" ");
 }
 
 function kartuPasangAppHTML() {
@@ -4631,7 +4631,7 @@ function ikatTombolPasang() {
   const b = $("#btnPasangApp");
   if (!b) return;
   if (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) {
-    b.textContent = "✅ Sudah Terpasang";
+    b.innerHTML = tic("check") + " Sudah Terpasang";
     b.disabled = true;
     return;
   }
