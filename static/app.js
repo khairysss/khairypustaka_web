@@ -3590,14 +3590,15 @@ function mdlChipInfo() {
   const i = MDL.info || {};
   const total = i.kuota_ringan_total != null ? i.kuota_ringan_total : 3;
   if (i.admin) return `<span class="mdl-chip amber">Mode admin: kuota dan kredit tidak dipotong</span>` +
-    `<span class="mdl-chip">Kredit laporan akun ini: <b>${i.kredit_laporan || 0}</b></span>` +
+    `<span class="mdl-chip">Kuota mode ringan: <b>∞</b></span>` +
+    `<span class="mdl-chip">Kredit laporan akun ini: <b>∞</b></span>` +
     `<span class="mdl-chip">Hasil pencarian disimpan di cache <b>7 hari</b></span>`;
   let tierNote;
   if (i.tier >= 2) tierNote = "Kamu di Tier 2 berkat total top up Rp10.000 atau lebih. Limit harianmu sudah yang tertinggi.";
   else if (i.tier >= 1) tierNote = "Limitmu naik permanen berkat top up (Tier 1). Total top up sampai Rp10.000 menaikkannya lagi jadi 10x sehari.";
   else tierNote = "Top up Kredit Laporan sekali saja (Rp5.000) menaikkan limit harianmu permanen jadi 5x sehari, dan total Rp10.000 menaikkannya jadi 10x sehari.";
   return `<span class="mdl-chip">Kuota mode ringan hari ini tersisa <b>${i.kuota_sisa != null ? i.kuota_sisa : 0} kali</b> (limit harianmu <b>${total}x</b>, gabungan Cari Jurnal, Jawaban Cepat, dan Bedah Mendalam)</span>` +
-    `<span class="mdl-chip">Kredit laporan: <b>${i.kredit_laporan || 0}</b></span>` +
+    `<span class="mdl-chip">Kredit laporan: <b>${i.kredit_tersedia != null ? i.kredit_tersedia : (i.kredit_saldo != null ? i.kredit_saldo : 0)}</b></span>` +
     `<span class="mdl-chip">Hasil pencarian disimpan di cache <b>7 hari</b></span>` +
     `<div class="mdl-chip amber" style="width:100%">${esc(tierNote)}</div>`;
 }
@@ -3857,7 +3858,7 @@ function mdlRenderBeli() {
   const i = MDL.info || {};
   if (!i.pay_enabled) {
     host.innerHTML = MDL.mode === "laporan" || (i.kredit_tersedia || 0) < 1
-      ? `<div class="mdl-buy"><b>Beli Kredit Laporan</b><div class="muted" style="font-size:13.5px;margin-top:4px">Pembayaran online untuk kredit laporan belum aktif di situs saat ini. Kredit bisa diberikan manual oleh admin. Kamu punya <b>${i.kredit_tersedia || 0} kredit</b> sekarang.</div></div>` : "";
+      ? `<div class="mdl-buy"><b>Beli Kredit Laporan</b><div class="muted" style="font-size:13.5px;margin-top:4px">Pembayaran online untuk kredit laporan belum aktif di situs saat ini. Kredit bisa diberikan manual oleh admin. Kamu punya <b>${i.admin ? "∞" : (i.kredit_tersedia || 0)} kredit</b> sekarang.</div></div>` : "";
     return;
   }
   host.innerHTML = `
@@ -3865,7 +3866,7 @@ function mdlRenderBeli() {
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
       <div><b style="font-size:15.5px">Beli Kredit Laporan</b>
       <div class="muted" style="font-size:13.5px;margin-top:3px">Rp5.000 dapat <b>2 kredit laporan</b> (1 kredit = 1 Laporan Riset yang selesai). Kredit tidak kedaluwarsa. Total top up-mu juga menaikkan limit harian secara permanen: Tier 1 di total Rp5.000 (mode ringan 5x sehari, kuota AI 20x sehari) dan Tier 2 di total Rp10.000 (mode ringan 10x sehari, kuota AI 25x sehari).</div></div>
-      <span class="mdl-chip">Kreditmu sekarang: <b>${i.kredit_tersedia || 0}</b></span>
+      <span class="mdl-chip">Kreditmu sekarang: <b>${i.admin ? "∞" : (i.kredit_tersedia || 0)}</b></span>
     </div>
     <div id="mdlBeliArea" style="margin-top:12px"><button class="mdl-btn primary" id="mdlBeliBtn">Beli 2 Kredit (Rp5.000, QRIS)</button></div>
   </div>`;
@@ -3901,7 +3902,7 @@ async function mdlBeliMulai() {
     const s = await apiJSON("/mendalam/beli/status/" + encodeURIComponent(d.ref_id));
     if (s.ok && s.data.paid) {
       clearInterval(iv);
-      toast("Pembayaran diterima. Kredit laporanmu sekarang " + s.data.saldo_kredit + ".");
+      toast("Pembayaran diterima. Kredit laporanmu sekarang " + ((MDL.info && MDL.info.admin) ? "∞" : s.data.saldo_kredit) + ".");
       await mdlMuatInfo();
     } else if (s.ok && s.data.state === "expired") {
       clearInterval(iv);
