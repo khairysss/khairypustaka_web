@@ -3886,7 +3886,8 @@ async function mdlBeliMulai() {
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
       ${d.qr_b64 ? `<img class="topup-qr" alt="Kode QR pembayaran" src="data:image/png;base64,${d.qr_b64}">` : ""}
       <div style="flex:1;min-width:220px">
-        <div style="font-weight:800;font-size:15px">Pindai QRIS ini untuk membayar ${rp(d.amount)}</div>
+        <div style="font-weight:800;font-size:15px">Pindai QRIS ini untuk membayar ${rp(d.total)}</div>
+        <div class="muted" style="font-size:13px;margin-top:3px">Referensi: ${esc(d.ref_id)}</div>
         <div class="muted" style="font-size:13px;margin:4px 0 10px">Bisa dari aplikasi bank atau e-wallet apa pun (GoPay, OVO, DANA, ShopeePay, m-banking). Kredit masuk otomatis begitu pembayaran terdeteksi, biasanya dalam hitungan detik. Kode berlaku sekitar 1 jam.</div>
         <div class="mdl-chip" id="mdlBeliStatus">Menunggu pembayaran…</div>
         <div style="margin-top:10px"><button class="mdl-btn" onclick="mdlRenderBeli()">Batalkan</button></div>
@@ -4186,14 +4187,14 @@ async function mdlJalankan() {
   const d = r.data;
   MDL.queryAktif = q;
   if (d.status === "selesai") {
-    MDL.hasil = d.hasil; MDL.hasilMode = d.mode; MDL.kunci = d.kunci_cache;
+    MDL.hasil = d.hasil; MDL.hasilMode = d.mode; MDL.kunci = d.kunci;
     if (d.dari_cache && MDL.hasil) MDL.hasil.dari_cache = true;
     MDL.banding = {}; MDL.simpan = {}; MDL.saringAkses = "semua"; MDL.saringTahun = "semua";
     toast("Hasil yang sama ditemukan di cache (tersimpan 7 hari), jadi kuotamu tidak terpotong.");
     mdlRenderHasil(); mdlSetStage(3); mdlMuatInfo(); mdlMuatRiwayat();
     return;
   }
-  MDL.jobId = d.job_id;
+  MDL.jobId = d.id;
   mdlSetStage(2);
   mdlLangkahSet(1, "Menyusun kata kunci dari konteksmu…");
   $("#mdlProcNote").textContent = MDL.mode === "laporan"
@@ -4203,15 +4204,27 @@ async function mdlJalankan() {
 }
 
 function mdlPollJob() {
+  // FIX 2026-11-10: polling diberi batas 200 putaran seperti polling AI.
+  // Tanpa batas, job yang hilang di server (mis. server restart) membuat
+  // tampilan proses berputar selamanya tanpa pesan apa pun ke pengguna.
+  let putaranMdl = 0;
   const iv = setInterval(async () => {
     if (!MDL || !MDL.jobId) { clearInterval(iv); return; }
+    putaranMdl++;
+    if (putaranMdl > 200) {
+      clearInterval(iv); MDL.jobId = null;
+      mdlSetStage(1);
+      $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Prosesnya kelamaan dan sepertinya terhenti di server. Coba cek Riwayat Pencarian Mendalam sebentar lagi, siapa tahu hasilnya tetap masuk; kalau belum ada, jalankan lagi ya.</div>`;
+      mdlMuatInfo(); mdlMuatRiwayat();
+      return;
+    }
     const r = await apiJSON("/mendalam/job-status?id=" + encodeURIComponent(MDL.jobId));
     if (!r.ok) { clearInterval(iv); toast("Status proses tidak terbaca. Cek lagi dari riwayat sebentar lagi."); mdlSetStage(1); return; }
     const d = r.data;
     mdlLangkahSet(d.langkah || 1, d.tahap || "");
     if (d.status === "selesai") {
       clearInterval(iv);
-      MDL.hasil = d.hasil; MDL.hasilMode = d.mode; MDL.kunci = d.kunci_cache; MDL.jobId = null;
+      MDL.hasil = d.hasil; MDL.hasilMode = d.mode; MDL.kunci = d.kunci; MDL.jobId = null;
       if (d.dari_cache && MDL.hasil) MDL.hasil.dari_cache = true;
       MDL.banding = {}; MDL.simpan = {}; MDL.saringAkses = "semua"; MDL.saringTahun = "semua";
       mdlRenderHasil(); mdlSetStage(3); mdlMuatInfo(); mdlMuatRiwayat();

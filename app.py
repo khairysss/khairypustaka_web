@@ -2201,8 +2201,22 @@ def _mdl_hasil_kanon(hasil, mode):
 
 
 def _mdl_job_json(job):
+    # langkah = nomor langkah tampilan proses di frontend (1..4), dihitung
+    # dari tahap server supaya kontraknya satu sumber (frontend membaca
+    # d.langkah). Selesai/gagal selalu langkah terakhir.
+    tahap = job["tahap"] or ""
+    if job["status"] in ("selesai", "gagal"):
+        langkah = 4
+    elif tahap.startswith("Membaca isi sumber") or \
+            tahap.startswith("Laporan lagi disusun"):
+        langkah = 3
+    elif tahap.startswith("Mencari di Exa") or \
+            tahap.startswith("Laporan mulai disusun"):
+        langkah = 2
+    else:
+        langkah = 1
     data = {"id": job["id"], "mode": job["mode"], "status": job["status"],
-            "tahap": job["tahap"],
+            "tahap": job["tahap"], "langkah": langkah,
             "detik_berjalan": int(time.time() - job["dibuat"]),
             "dari_cache": bool(job.get("dari_cache"))}
     if job["status"] == "selesai":
