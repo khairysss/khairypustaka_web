@@ -68,6 +68,14 @@ except Exception as e:  # pembayaran opsional di web
     ppay = None
     logging.getLogger("kpweb").warning("premium_pay tidak bisa diimport: %s", e)
 
+try:
+    import exa_client as exacli
+    import exa_mendalam as exa
+except Exception as e:  # fitur Cari Jurnal Mendalam opsional
+    exacli = None
+    exa = None
+    logging.getLogger("kpweb").warning("exa tidak bisa diimport: %s", e)
+
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s: %(message)s", level=logging.INFO
 )
@@ -2035,6 +2043,10 @@ def topup_pending():
     if not ref_id:
         return jsonify({"pending": None})
     p = (ppay.pending_all() or {}).get(ref_id) or {}
+    if p.get("jenis") == "laporan":
+        # Invoice Kredit Laporan punya endpoint status sendiri; jangan
+        # tampilkan sebagai top-up Jatah AI.
+        return jsonify({"pending": None})
     return jsonify({"pending": {
         "ref_id": ref_id,
         "uses": p.get("uses"),
@@ -2061,6 +2073,10 @@ def topup_status(ref_id):
     p = (ppay.pending_all() or {}).get(ref_id)
     if not p or str(p.get("chat_id")) != str(g.uid):
         return _err("invoice tidak ditemukan", 404)
+    if p.get("jenis") == "laporan":
+        # Invoice Kredit Laporan TIDAK boleh mengkredit Jatah AI; status
+        # resminya di /api/mendalam/beli/status/<ref_id>.
+        return _err("invoice tidak ditemukan", 404)
     now = time.time()
     with _STATUS_THROTTLE_LOCK:
         last = _STATUS_THROTTLE.get(ref_id, 0)
@@ -2076,12 +2092,579 @@ def topup_status(ref_id):
                             "pesan": "pembayaran sudah diproses di tab lain"})
         uses = int(p.get("uses") or ppay.TOPUP_USES)
         new_bal = sai.ai_topup(g.uid, uses)
+        if exa:
+            # Penanda lifetime top up untuk benefit limit Mendalam
+            # (Sul 2026-11-10: pernah top up >= Rp5.000 -> limit mode
+            # ringan permanen 5x/hari). Tepat sekali per invoice lewat
+            # klaim atomik di atas.
+            try:
+                exa.kredit_catat_topup(
+                    g.uid, int(p.get("amount")
+                               or uses * ppay.TOPUP_PRICE_PER_USE))
+            except Exception as e:  # noqa: BLE001
+                log.warning("catat lifetime topup gagal: %s", e)
         ppay.pending_drop(ref_id)
         with _STATUS_THROTTLE_LOCK:
             _STATUS_THROTTLE.pop(ref_id, None)
         return jsonify({"ok": True, "paid": True,
                         "uses": uses, "saldo": new_bal})
     return jsonify({"ok": True, "paid": False})
+
+
+# ------------------------------------------------- Cari Jurnal Mendalam
+# Fitur Exa (dibangun 2026-11-10 di salinan kerja, menyalin demo final
+# demo-cari-jurnal-mendalam). Aturan Sul: member-only; 3 mode ringan
+# berbagi SATU kuota gabungan 3x/hari (reset 00.00 WITA); Laporan Riset
+# di luar kuota, memakai kredit laporan (Rp5.000 = 2 kredit, 1 kredit
+# per laporan selesai). Penegakan semua di modul exa_mendalam (server),
+# tampilan hanya mengikuti. Pola job meniru /api/ai/job.
+_MDL_POOL_RINGAN = ThreadPoolExecutor(max_workers=2,
+                                      thread_name_prefix="mdlringan")
+_MDL_POOL_LAPORAN = ThreadPoolExecutor(max_workers=1,
+                                       thread_name_prefix="mdllaporan")
+_MDL_JOBS = {}
+_MDL_LOCK = threading.Lock()
+_MDL_AKTIF_PER_USER = 2
+_MDL_GLOBAL_MAX = 10
+
+_MDL_KATEGORI = {"paper": "research-paper", "berita": "news",
+                 "perusahaan": "company", "kode": "github",
+                 "umum": None, "semua": None}
+
+
+def _mdl_saringan(body):
+    """Normalisasi saringan frontend -> dict stabil (kunci cache + Exa)."""
+    f = body.get("saringan") or {}
+    if not isinstance(f, dict):
+        f = {}
+    fokus = str(f.get("fokus") or "paper").lower()
+    if fokus not in _MDL_KATEGORI:
+        fokus = "paper"
+    try:
+        jumlah = int(f.get("jumlah") or 10)
+    except (TypeError, ValueError):
+        jumlah = 10
+    jumlah = max(3, min(30, jumlah))
+    tahun = f.get("tahun") or {"mode": "semua"}
+    if not isinstance(tahun, dict):
+        tahun = {"mode": "semua"}
+    domain_raw = str(f.get("domain") or "").strip()
+    domains = [d.strip() for d in re.split(r"[,\s]+", domain_raw) if d.strip()]
+    return {"fokus": fokus, "jumlah": jumlah, "tahun": tahun,
+            "bahasa": str(f.get("bahasa") or "semua").lower(),
+            "urutan": str(f.get("urutan") or "relevan").lower(),
+            "kedalaman": str(f.get("kedalaman") or "standar").lower(),
+            "domains": domains[:5],
+            "isi_penuh": bool(f.get("isi_penuh", True))}
+
+
+def _mdl_rentang_tahun(tahun):
+    """Dict tahun saringan -> (start_year, end_year) untuk Exa."""
+    mode = str(tahun.get("mode") or "semua")
+    kini = datetime.now().year
+    if mode == "relatif":
+        try:
+            n = int(tahun.get("rentang") or 5)
+        except (TypeError, ValueError):
+            n = 5
+        return kini - max(1, n) + 1, None
+    if mode == "bebas":
+        def _th(v):
+            try:
+                return int(v) or None
+            except (TypeError, ValueError):
+                return None
+        return _th(tahun.get("dari")), _th(tahun.get("sampai"))
+    return None, None
+
+
+def _mdl_hasil_kanon(hasil, mode):
+    """Kanonisasi bentuk hasil mendalam (kontrak frontend): jumlah
+    selalu ada; cepat -> jawaban{answer, citations}; bedah ->
+    bedah{ringkasan, faktor_penyebab, dampak, rekomendasi, grounding}.
+    Idempoten, aman dipanggil ulang (termasuk entri cache lama)."""
+    if not isinstance(hasil, dict):
+        return hasil
+    hasil["jumlah"] = len(hasil.get("papers") or [])
+    if mode == "cepat" and "jawaban" not in hasil:
+        hasil["jawaban"] = {"answer": hasil.pop("answer", "") or "",
+                            "citations": hasil.get("papers") or []}
+    elif mode == "bedah" and "bedah" not in hasil:
+        sec = hasil.pop("sections", {}) or {}
+        hasil["bedah"] = {
+            "ringkasan": sec.get("ringkasan") or "",
+            "faktor_penyebab": sec.get("faktor_penyebab") or [],
+            "dampak": sec.get("dampak") or [],
+            "rekomendasi": sec.get("rekomendasi") or [],
+            "grounding": hasil.pop("grounding", {}) or {}}
+    return hasil
+
+
+def _mdl_job_json(job):
+    data = {"id": job["id"], "mode": job["mode"], "status": job["status"],
+            "tahap": job["tahap"],
+            "detik_berjalan": int(time.time() - job["dibuat"]),
+            "dari_cache": bool(job.get("dari_cache"))}
+    if job["status"] == "selesai":
+        data["hasil"] = _mdl_hasil_kanon(job["hasil"], job["mode"])
+        data["kunci"] = job.get("kunci")
+    if job["status"] == "gagal":
+        data["error"] = job["error"]
+    return data
+
+
+def _mdl_kerja_ringan(jid):
+    with _MDL_LOCK:
+        job = _MDL_JOBS.get(jid)
+        if not job:
+            return
+        job["status"] = "memproses"
+        job["tahap"] = "Mencari di Exa..."
+    uid, mode, s = job["uid"], job["mode"], job["saringan"]
+    try:
+        if mode == "cari":
+            if job["start"] == "doi":
+                body = exacli.cari_serupa(job["query"], num=s["jumlah"])
+            else:
+                awal, akhir = _mdl_rentang_tahun(s["tahun"])
+                body = exacli.cari_jurnal(
+                    job["query"], num=s["jumlah"],
+                    kategori=_MDL_KATEGORI[s["fokus"]],
+                    start_year=awal, end_year=akhir,
+                    domains=s["domains"] or None,
+                    isi_penuh=s["isi_penuh"])
+            hasil = exa.normalisasi_hasil_cari(body)
+        elif mode == "cepat":
+            q = job["query"]
+            if job["start"] == "doi":
+                q = ("Apa isi, metode, dan temuan utama paper ini, "
+                     f"dijawab ringkas bersitasi: {q}")
+            body = exacli.jawaban_cepat(q)
+            hasil = exa.normalisasi_hasil_cepat(body)
+        else:  # bedah
+            with _MDL_LOCK:
+                job["tahap"] = "Membaca isi sumber dan menyusun bedah..."
+            q = job["query"]
+            if job["start"] == "doi":
+                q = (f"Bedah paper ini secara mendalam: {q}. Susun "
+                     "ringkasan, faktor atau konsep utama, dampak, "
+                     "dan rekomendasi.")
+            num = s["jumlah"]
+            if s["kedalaman"] == "kilat":
+                num = min(num, 5)
+            body = exacli.bedah_mendalam(q, num=num)
+            hasil = exa.normalisasi_hasil_bedah(body)
+    except Exception as e:  # noqa: BLE001
+        log.warning("mendalam job %s (%s) gagal: %s", jid, mode, e)
+        if not job.get("is_admin"):
+            exa.kuota_refund(uid)
+        with _MDL_LOCK:
+            job["status"] = "gagal"
+            job["tahap"] = "Gagal"
+            job["error"] = ("Pencarian mendalam lagi gangguan, coba "
+                            "lagi sebentar ya")
+            job["selesai_ts"] = time.time()
+        return
+    biaya = exacli.biaya(body)
+    exa.belanja_catat(biaya, mode)
+    hasil["penyaring"] = {"fokus": s.get("fokus"),
+                          "domain": s.get("domain") or ""}
+    if job["start"] == "doi":
+        hasil["titik_mulai_doi"] = job["query"][:120]
+    hasil = _mdl_hasil_kanon(hasil, mode)
+    hasil["biaya"] = biaya
+    if s["urutan"] == "baru":
+        hasil["papers"].sort(key=lambda p: p.get("published") or "",
+                             reverse=True)
+        for i, p in enumerate(hasil["papers"]):
+            p["id"] = i + 1
+    exa.cache_simpan(job["kunci"], mode, job["query"], hasil, biaya)
+    exa.riwayat_tambah(uid, mode, job["query"],
+                       len(hasil.get("papers") or []), job["kunci"])
+    if job.get("user_login"):
+        try:
+            histmod.catat(uid, "jurnal", job["query"],
+                          {"sumber": "mendalam", "mode": mode,
+                           "query": job["query"]})
+        except Exception as e:  # noqa: BLE001
+            log.warning("mendalam job %s catat riwayat gagal: %s", jid, e)
+    with _MDL_LOCK:
+        job["status"] = "selesai"
+        job["tahap"] = "Selesai"
+        job["hasil"] = hasil
+        job["selesai_ts"] = time.time()
+
+
+def _mdl_kerja_laporan(jid):
+    with _MDL_LOCK:
+        job = _MDL_JOBS.get(jid)
+        if not job:
+            return
+        job["status"] = "memproses"
+        job["tahap"] = "Laporan mulai disusun di latar belakang..."
+    uid = job["uid"]
+    try:
+        instruksi = (
+            "Susun laporan riset berbahasa Indonesia tentang: "
+            f"{job['query']}. Laporan berisi latar belakang, "
+            "perbandingan sumber, temuan per subtopik, dan kesimpulan, "
+            "dengan sitasi inline ke sumber asli.")
+        run = exacli.laporan_buat(instruksi)
+        run_id = run.get("id")
+        if not run_id:
+            raise RuntimeError("agent run tidak memberi id")
+
+        def _langkah(st, detik):
+            with _MDL_LOCK:
+                j = _MDL_JOBS.get(jid)
+                if j:
+                    j["tahap"] = (f"Laporan lagi disusun "
+                                  f"({detik} detik berjalan)...")
+        final = exacli.laporan_tunggu(run_id, on_step=_langkah)
+        teks = ((final.get("output") or {}).get("text") or "").strip()
+        if not teks:
+            raise RuntimeError("laporan selesai tapi teksnya kosong")
+        biaya = exacli.biaya(final)
+    except Exception as e:  # noqa: BLE001
+        log.warning("mendalam laporan %s gagal: %s", jid, e)
+        if not job.get("is_admin"):
+            exa.kredit_lepas_cadangan(uid)
+        with _MDL_LOCK:
+            job["status"] = "gagal"
+            job["tahap"] = "Gagal"
+            job["error"] = ("Laporan risetnya gagal disusun, kreditmu "
+                            "tidak terpotong. Coba lagi ya")
+            job["selesai_ts"] = time.time()
+        return
+    if not job.get("is_admin"):
+        exa.kredit_potong_cadangan(uid)
+    lid = exa.laporan_simpan(uid, job["query"], teks, biaya)
+    exa.riwayat_tambah(uid, "laporan", job["query"], 0, "lap:" + lid)
+    with _MDL_LOCK:
+        job["status"] = "selesai"
+        job["tahap"] = "Selesai"
+        job["hasil"] = {"laporan": {"text": teks}, "laporan_id": lid,
+                        "papers": [], "jumlah": 0, "biaya": biaya}
+        job["kunci"] = "lap:" + lid
+        job["selesai_ts"] = time.time()
+
+
+@app.get("/api/mendalam/info")
+@with_rl
+def mendalam_info():
+    if not exa:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    login = bool(g.user)
+    adm = _is_web_admin()
+    return jsonify({
+        "login": login, "admin": adm,
+        "kuota_ringan_total": (exa.kuota_limit(g.uid) if login
+                               else exa.KUOTA_RINGAN_HARIAN),
+        "limit_naik": (exa.tier(g.uid) >= 1) if login else False,
+        "tier": exa.tier(g.uid) if login else 0,
+        "lifetime_topup_rp": exa.lifetime_topup(g.uid) if login else 0,
+        "kuota_sisa": (999 if adm else
+                       exa.kuota_sisa(g.uid) if login else None),
+        "kredit_saldo": exa.kredit_saldo(g.uid) if login else 0,
+        "kredit_tersedia": exa.kredit_tersedia(g.uid) if login else 0,
+        "harga_rp": exa.HARGA_KREDIT_RP,
+        "kredit_per_beli": exa.KREDIT_PER_BELI,
+        "pay_enabled": bool(ppay and ppay.pay_enabled()),
+    })
+
+
+@app.post("/api/mendalam/job")
+@with_rl
+def mendalam_job():
+    """Antrekan 1 pencarian mendalam. Penegakan kuota/kredit di sini
+    (server), bukan di frontend. Hasil cache langsung selesai tanpa
+    memotong kuota."""
+    if not exa or not exacli:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    if not g.user:
+        return jsonify({"error": "login dulu buat pakai Cari Jurnal "
+                                 "Mendalam ya", "need_login": True}), 401
+    body = request.get_json(silent=True) or {}
+    mode = str(body.get("mode") or "").strip().lower()
+    if mode not in exa.MODE_SEMUA:
+        return _err("mode harus cari, cepat, bedah, atau laporan")
+    query = str(body.get("query") or "").strip()
+    if len(query) < 3:
+        return _err("tulis dulu konteks atau topiknya ya")
+    if len(query) > 2000:
+        return _err("konteksnya kepanjangan (maksimal 2000 karakter)", 400)
+    start = str(body.get("start") or "konteks").strip().lower()
+    if start not in ("konteks", "doi"):
+        start = "konteks"
+    saringan = _mdl_saringan(body)
+    adm = _is_web_admin()
+    with _MDL_LOCK:
+        for k in [k for k, j in _MDL_JOBS.items()
+                  if j["status"] in ("selesai", "gagal")
+                  and (j.get("selesai_ts") or 0) < time.time() - 3600]:
+            _MDL_JOBS.pop(k, None)
+        aktif = sum(1 for j in _MDL_JOBS.values()
+                    if j["uid"] == g.uid
+                    and j["status"] in ("antre", "memproses"))
+        if aktif >= _MDL_AKTIF_PER_USER:
+            return _err("tunggu pencarian yang lagi jalan selesai dulu "
+                        "ya, baru mulai yang baru", 429)
+        total = sum(1 for j in _MDL_JOBS.values()
+                    if j["status"] in ("antre", "memproses"))
+        if total >= _MDL_GLOBAL_MAX:
+            return _err("antrean pencarian mendalam lagi penuh, coba "
+                        "lagi sebentar ya", 429)
+    jid = uuid.uuid4().hex[:16]
+    kunci = None
+    if mode in exa.MODE_RINGAN:
+        kunci = exa.kunci_cache(mode, query,
+                                {"s": saringan, "start": start})
+        hit = exa.cache_ambil(kunci)
+        if hit:
+            with _MDL_LOCK:
+                _MDL_JOBS[jid] = {
+                    "id": jid, "uid": g.uid, "mode": mode, "query": query,
+                    "start": start, "saringan": saringan, "kunci": kunci,
+                    "is_admin": adm, "user_login": True,
+                    "status": "selesai", "tahap": "Selesai (dari cache)",
+                    "dibuat": time.time(), "selesai_ts": time.time(),
+                    "hasil": hit["hasil"], "error": None,
+                    "dari_cache": True}
+                job = _MDL_JOBS[jid]
+            exa.riwayat_tambah(g.uid, mode, query,
+                               len(hit["hasil"].get("papers") or []), kunci)
+            return jsonify(_mdl_job_json(job))
+        # Plafon belanja global ditegakkan untuk semua (termasuk admin).
+        if not exa.belanja_boleh(exa.estimasi_biaya(mode,
+                                                    saringan["jumlah"])):
+            return jsonify({"error": "plafon_belanja",
+                            "pesan": "Pencarian mendalam lagi ditahan "
+                                     "sementara karena plafon biaya "
+                                     "harian tercapai. Coba lagi besok "
+                                     "ya"}), 429
+        if not adm and not exa.kuota_konsumsi(g.uid):
+            return jsonify({"error": "kuota_habis",
+                            "pesan": "Kuota Cari Jurnal Mendalam hari "
+                                     f"ini sudah habis "
+                                     f"({exa.kuota_limit(g.uid)}x "
+                                     "sehari). Besok pulih lagi pukul "
+                                     "00.00 WITA"}), 429
+    else:  # laporan: kredit dicadangkan dulu, terpotong saat selesai
+        if not adm and not exa.kredit_cadangkan(g.uid):
+            return jsonify({"error": "kredit_habis",
+                            "pesan": "Kredit laporanmu habis. Beli "
+                                     "Kredit Laporan Rp5.000 (dapat 2 "
+                                     "kredit) buat jalan lagi ya"}), 402
+    with _MDL_LOCK:
+        _MDL_JOBS[jid] = {
+            "id": jid, "uid": g.uid, "mode": mode, "query": query,
+            "start": start, "saringan": saringan, "kunci": kunci,
+            "is_admin": adm, "user_login": True,
+            "status": "antre", "tahap": "Menunggu giliran",
+            "dibuat": time.time(), "selesai_ts": None,
+            "hasil": None, "error": None, "dari_cache": False}
+        job = _MDL_JOBS[jid]
+    if mode == "laporan":
+        _MDL_POOL_LAPORAN.submit(_mdl_kerja_laporan, jid)
+    else:
+        _MDL_POOL_RINGAN.submit(_mdl_kerja_ringan, jid)
+    return jsonify(_mdl_job_json(job))
+
+
+@app.get("/api/mendalam/job-status")
+@with_rl
+def mendalam_job_status():
+    jid = (request.args.get("id") or "").strip()
+    with _MDL_LOCK:
+        job = _MDL_JOBS.get(jid)
+        if not job or job["uid"] != g.uid:
+            return _err("job tidak ketemu", 404)
+        return jsonify(_mdl_job_json(job))
+
+
+@app.get("/api/mendalam/riwayat")
+@with_rl
+def mendalam_riwayat():
+    if not exa:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    if not g.user:
+        return jsonify({"error": "login dulu ya",
+                        "need_login": True}), 401
+    return jsonify({"riwayat": exa.riwayat_daftar(g.uid),
+                    "kredit_riwayat": exa.kredit_riwayat(g.uid)})
+
+
+@app.get("/api/mendalam/hasil")
+@with_rl
+def mendalam_hasil():
+    """Muat ulang hasil lama dari riwayat: cache (mode ringan) atau
+    laporan tersimpan. Tidak memotong kuota."""
+    if not exa:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    if not g.user:
+        return jsonify({"error": "login dulu ya",
+                        "need_login": True}), 401
+    kunci = (request.args.get("kunci") or "").strip()
+    if kunci.startswith("lap:"):
+        e = exa.laporan_ambil(g.uid, kunci[4:])
+        if not e:
+            return _err("laporan tidak ketemu", 404)
+        return jsonify({"mode": "laporan",
+                        "hasil": {"laporan": {"text": e["teks"]},
+                                  "papers": [], "jumlah": 0},
+                        "query": e["query"], "ts": e["ts"]})
+    hit = exa.cache_ambil(kunci)
+    if not hit:
+        return _err("hasil ini sudah lewat masa cache 7 hari, jalankan "
+                    "pencarian baru ya", 410)
+    return jsonify({"mode": hit["mode"],
+                    "hasil": _mdl_hasil_kanon(hit["hasil"], hit["mode"]),
+                    "query": hit["query"], "ts": hit["ts"],
+                    "dari_cache": True})
+
+
+@app.post("/api/mendalam/tanya-lanjut")
+@with_rl
+@with_heavy
+def mendalam_tanya_lanjut():
+    """Pertanyaan lanjutan atas satu hasil: dijawab Exa /answer dalam
+    konteks sumber yang sudah ditemukan. TIDAK memotong kuota mendalam
+    (meniru demo), tetapi tetap tunduk plafon belanja global."""
+    if not exa or not exacli:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    if not g.user:
+        return jsonify({"error": "login dulu ya",
+                        "need_login": True}), 401
+    body = request.get_json(silent=True) or {}
+    tanya = str(body.get("tanya") or "").strip()
+    konteks = str(body.get("konteks") or "").strip()
+    if len(tanya) < 3:
+        return _err("tulis dulu pertanyaannya ya")
+    if not exa.belanja_boleh(0.005):
+        return jsonify({"error": "plafon_belanja",
+                        "pesan": "Tanya lanjut lagi ditahan sementara "
+                                 "karena plafon biaya harian "
+                                 "tercapai"}), 429
+    q = tanya if not konteks else f"{tanya}\nKonteks topik: {konteks}"
+    try:
+        hasil_body = exacli.jawaban_cepat(q[:1500])
+    except Exception as e:  # noqa: BLE001
+        log.warning("mendalam tanya lanjut gagal: %s", e)
+        return _err("lagi gangguan, coba lagi sebentar ya", 502)
+    exa.belanja_catat(exacli.biaya(hasil_body), "cepat")
+    hasil = exa.normalisasi_hasil_cepat(hasil_body)
+    return jsonify({"answer": hasil["answer"], "papers": hasil["papers"]})
+
+
+@app.post("/api/mendalam/beli/create")
+@with_rl
+def mendalam_beli_create():
+    """Buat invoice QRIS Kredit Laporan: Rp5.000 = 2 kredit.
+
+    Mengikuti pola /api/topup/create persis (WijayaPay via premium_pay,
+    pending store yang sama) dengan penanda jenis="laporan" supaya
+    statusnya hanya bisa mengkredit kredit laporan, bukan Jatah AI.
+    """
+    if not exa:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    if not ppay or not ppay.pay_enabled():
+        return _err("pembayaran belum aktif", 503)
+    if not g.user:
+        return jsonify({"error": "login dulu biar kreditmu aman",
+                        "need_login": True}), 401
+    if ppay.pending_for_user(g.uid):
+        return _err("kamu sudah punya kode bayar aktif", 409)
+    if ppay.creates_hari_ini(g.uid) >= ppay._INVOICE_HARIAN_MAX:
+        return _err("kamu sudah mencapai batas pembuatan kode bayar "
+                    "hari ini, coba lagi besok ya", 429)
+    harga = exa.HARGA_KREDIT_RP
+    ppay.catat_create(g.uid)
+    inv = _run(ppay.create_invoice(
+        harga, "KhairyPustaka Kredit Laporan Riset x2", g.uid, "web"))
+    if not inv:
+        return _err("gagal membuat kode bayar", 502)
+    ref_id, qr_image_field, qris_string, final = inv
+    ppay.pending_add(ref_id, g.uid, "web", amount=harga)
+    ppay.pending_set(ref_id, jenis="laporan",
+                     kredit=exa.KREDIT_PER_BELI)
+    png = _run(ppay.qr_png_from_api(qr_image_field, qris_string))
+    import base64 as _b64
+    qr_b64 = _b64.b64encode(png).decode() if png else None
+    if qr_b64:
+        try:
+            ppay.pending_set(ref_id, qr_b64=qr_b64)
+        except Exception as e:
+            log.warning("simpan qr pending laporan gagal: %s", e)
+    return jsonify({"ok": True, "ref_id": ref_id, "qr_b64": qr_b64,
+                    "total": final, "harga": harga,
+                    "kredit": exa.KREDIT_PER_BELI})
+
+
+@app.get("/api/mendalam/beli/status/<ref_id>")
+@with_rl
+def mendalam_beli_status(ref_id):
+    if not exa or not ppay:
+        return _err("pembayaran belum aktif", 503)
+    p = (ppay.pending_all() or {}).get(ref_id)
+    if not p or str(p.get("chat_id")) != str(g.uid) \
+            or p.get("jenis") != "laporan":
+        return _err("invoice tidak ditemukan", 404)
+    now = time.time()
+    with _STATUS_THROTTLE_LOCK:
+        last = _STATUS_THROTTLE.get(ref_id, 0)
+        if now - last < _STATUS_THROTTLE_SECS:
+            return jsonify({"ok": True, "paid": False})
+        _STATUS_THROTTLE[ref_id] = now
+    data = _run(ppay.check_invoice(ref_id)) or {}
+    status = str(data.get("status", "")).lower()
+    if status in ("paid", "success", "settlement", "completed"):
+        if not ppay.pending_claim(ref_id):
+            return jsonify({"ok": True, "paid": False,
+                            "pesan": "pembayaran sudah diproses di "
+                                     "tab lain"})
+        n = int(p.get("kredit") or exa.KREDIT_PER_BELI)
+        saldo = exa.kredit_tambah(g.uid, n,
+                                  "Beli Kredit Laporan Rp5.000")
+        # Top up Rp5.000 ini sekaligus memenuhi syarat benefit limit
+        # permanen 5x/hari (penanda lifetime, sekali per invoice).
+        exa.kredit_catat_topup(g.uid,
+                               int(p.get("amount") or exa.HARGA_KREDIT_RP))
+        ppay.pending_drop(ref_id)
+        with _STATUS_THROTTLE_LOCK:
+            _STATUS_THROTTLE.pop(ref_id, None)
+        return jsonify({"ok": True, "paid": True, "kredit": n,
+                        "saldo_kredit": saldo})
+    return jsonify({"ok": True, "paid": False})
+
+
+@app.post("/api/admin/grant-laporan")
+@with_rl
+def admin_grant_laporan():
+    """Pemberian Kredit Laporan manual oleh admin (jalur cadangan bila
+    pembayaran otomatis belum tersambung / koreksi manual)."""
+    err = _need_admin()
+    if err:
+        return err
+    if not exa:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    body = request.get_json(silent=True) or {}
+    uid = (body.get("uid") or "").strip()
+    try:
+        jumlah = int(body.get("jumlah") or 0)
+    except (TypeError, ValueError):
+        jumlah = 0
+    if not uid:
+        return _err("uid kosong", 400)
+    if not 1 <= jumlah <= 1000:
+        return _err("jumlah harus 1 sampai 1000", 400)
+    u = authmod.get_user(uid)
+    if not u:
+        return jsonify({"ok": False,
+                        "error": "member tidak ditemukan"}), 404
+    saldo = exa.kredit_tambah(uid, jumlah, "Pemberian admin")
+    return jsonify({"ok": True, "saldo_kredit": saldo, "jumlah": jumlah,
+                    "username": u.get("pid") or "",
+                    "nama": u.get("nama") or ""})
 
 
 # R-1 (audit 2026-10-17): perlambat tebakan kode redeem per akun.
@@ -2510,7 +3093,9 @@ _BACKUP_STORES = ("users.json", "tokens.json", "ai_quota.json", "usage.json",
                   "guest_usage.json", "koleksi.json", "riwayat.json",
                   "referral.json", "redeem.json", "favorit.json",
                   "pantau.json", "premium_pending.json", "deadline.json",
-                  "homepages.json")
+                  "homepages.json", "exa-cache.json", "exa-kuota.json",
+                  "exa-belanja.json", "exa-kredit.json",
+                  "exa-riwayat.json", "exa-laporan.json")
 
 
 @app.get("/api/admin/backup")

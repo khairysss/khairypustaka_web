@@ -3504,10 +3504,921 @@ function tampilPopupFeedback() {
   });
 }
 
+/* ================= Cari Jurnal Mendalam (Exa) =================
+   Menyali struktur demo final demo-cari-jurnal-mendalam, dengan mesin
+   live: /api/mendalam/*. Penegakan kuota (3x/hari gabungan, 5x/hari
+   bila pernah top up >= Rp5.000) dan kredit Laporan Riset semua di
+   server; halaman ini hanya menampilkan keadaan dari /mendalam/info. */
+const MDL_MODES = {
+  cari: {nama: "Cari Jurnal", desc: "Daftar paper yang relevan dengan konteksmu, lengkap dengan cuplikan bagian yang paling berkaitan.", waktu: {kilat: "Sekitar 2 sampai 3 detik", standar: "Sekitar 3 sampai 5 detik", mendalam: "Sekitar 5 sampai 8 detik"}},
+  cepat: {nama: "Jawaban Cepat", desc: "Pertanyaanmu dijawab langsung dalam satu paragraf ringkas dan setiap klaimnya ditempeli sitasi.", waktu: {kilat: "Sekitar 3 sampai 4 detik", standar: "Sekitar 5 detik", mendalam: "Sekitar 6 sampai 8 detik"}},
+  bedah: {nama: "Bedah Mendalam", desc: "Jawaban terstruktur per subtopik, membandingkan isi beberapa sumber, dengan sitasi di tiap klaim penting.", waktu: {kilat: "Sekitar 4 sampai 8 detik", standar: "Sekitar 8 sampai 12 detik", mendalam: "Sekitar 10 sampai 15 detik"}},
+  laporan: {nama: "Laporan Riset", desc: "Laporan utuh berisi latar belakang, perbandingan sumber, temuan per subtopik, dan kesimpulan. Berjalan di latar belakang dan ada pemberitahuan saat selesai.", waktu: {kilat: "Sekitar 1 sampai 2 menit", standar: "Sekitar 1 sampai 3 menit", mendalam: "Sekitar 2 sampai 3 menit"}}
+};
+const MDL_PV_INCLUDES = {
+  cari: ["Daftar paper bernomor sitasi", "Cuplikan bagian paling relevan dari tiap paper", "Label akses tiap sumber, ketahuan sebelum diklik", "Tombol Baca, Ringkas, Buat Sitasi, Simpan, dan Bandingkan"],
+  cepat: ["Satu paragraf jawaban bersitasi", "Sitasi bisa diklik dan melompat ke sumbernya", "Daftar sumber plus label akses di bawah jawaban", "Kotak Tanya Lanjut tanpa memotong kuota mendalam"],
+  bedah: ["Jawaban terstruktur per subtopik", "Perbandingan isi beberapa sumber", "Sitasi di tiap klaim penting", "Daftar sumber plus label akses di bawah jawaban"],
+  laporan: ["Laporan utuh 4 blok: latar belakang, perbandingan sumber, temuan per subtopik, kesimpulan", "Berjalan di latar belakang, ada pemberitahuan saat selesai", "Tersimpan di riwayat member", "Daftar sumber plus label akses"]
+};
+const MDL_CONTOH_KONTEKS = {
+  kesmas: "Saya mahasiswa kesehatan masyarakat sedang menyusun tinjauan pustaka tentang pencegahan risiko kardiovaskular pada dewasa muda. Saya membutuhkan jurnal tentang hubungan pengetahuan, sikap, dan tindakan pencegahan penyakit jantung, terutama studi di Indonesia dalam 5 tahun terakhir.",
+  bisnis: "Saya mahasiswa manajemen sedang menyusun skripsi tentang pengaruh pemasaran digital terhadap penjualan UMKM kuliner. Saya membutuhkan jurnal tentang strategi media sosial, kepercayaan konsumen, dan keputusan pembelian, dalam 5 tahun terakhir.",
+  informatika: "Saya mahasiswa informatika sedang menyusun tugas akhir tentang klasifikasi risiko penyakit dengan machine learning. Saya membutuhkan paper tentang algoritma klasifikasi, evaluasi model, dan contoh kode atau repositori GitHub yang relevan."
+};
+const MDL_TEMPLAT = {
+  "Latar Belakang": "Saya sedang menyusun latar belakang skripsi tentang pencegahan risiko kardiovaskular pada dewasa muda. Carikan jurnal yang menunjukkan besarnya masalah, faktor risiko utama, dan celah penelitian yang masih terbuka.",
+  "Tinjauan Pustaka": "Saya sedang menyusun tinjauan pustaka tentang hubungan pengetahuan, sikap, dan tindakan pencegahan penyakit kardiovaskular. Carikan jurnal yang bisa dibandingkan temuan dan metodenya satu sama lain.",
+  "Metode": "Saya sedang menyusun bab metode penelitian kuantitatif tentang pencegahan risiko kardiovaskular. Carikan jurnal dengan desain potong lintang, survei, atau intervensi yang bisa jadi rujukan metode dan instrumen.",
+  "Pembahasan": "Saya sedang menyusun pembahasan skripsi tentang pencegahan risiko kardiovaskular pada dewasa muda. Carikan jurnal yang temuannya bisa mendukung atau menantang hasil penelitian saya, lengkap dengan penjelasan mekanismenya.",
+  "Research Gap": "Saya sedang mencari research gap tentang pencegahan risiko kardiovaskular pada dewasa muda. Carikan jurnal terbaru dan tunjukkan sisi yang belum banyak diteliti, misalnya populasi, wilayah, atau metode yang jarang dipakai."
+};
+const MDL_AKSES = {
+  full: {label: "Teks Penuh Terbuka", desc: "Seluruh isi bisa dibaca langsung tanpa langganan."},
+  abstract: {label: "Abstrak Saja", desc: "Hanya abstrak yang terbuka. Teks penuh di balik langganan penerbit."},
+  partial: {label: "Pratinjau Terbatas", desc: "Sebagian halaman bisa dibaca, sisanya terkunci."},
+  metadata: {label: "Metadata Saja", desc: "Hanya judul, penulis, dan info terbit yang terbuka. Isi tidak tersedia terbuka."}
+};
+/* Data contoh HANYA untuk panel preview (persis pola demo: gambaran
+   bentuk hasil sebelum memilih mode, bukan hasil pencarian asli). */
+const MDL_CONTOH_PAPERS = [
+  {id: 1, type: "Jurnal", year: "2024", access: "full", access_label: "Teks Penuh Terbuka", access_note: "Sistem kami berhasil membaca isi sumber ini secara substantial (4.000 karakter terambil).", title: "Pengetahuan, Sikap, dan Tindakan Pencegahan Risiko Kardiovaskular pada Dewasa Muda", author: "Sari, Wulandari, & Pratama", domain: "ejournal.undip.ac.id", doi: "10.14710/jpki.9.1.2024.41-52", snippet: "Pengetahuan yang baik berhubungan dengan tindakan pencegahan yang lebih konsisten pada dewasa muda.", text: "Penelitian potong lintang pada 214 responden dewasa muda menunjukkan pengetahuan berhubungan signifikan dengan tindakan pencegahan risiko kardiovaskular. Sikap berperan sebagai penghubung antara pengetahuan dan tindakan. Responden dengan pengetahuan baik memiliki peluang tindakan pencegahan yang lebih konsisten dibanding responden berpengetahuan rendah.", url: "#"},
+  {id: 2, type: "Jurnal", year: "2023", access: "full", access_label: "Teks Penuh Terbuka", access_note: "Sistem kami berhasil membaca isi sumber ini secara substantial (3.850 karakter terambil).", title: "Cardiovascular Risk Prevention Behaviors Among Young Adults: A Cross-Sectional Study", author: "Nguyen, Lee, & Carter", domain: "pmc.ncbi.nlm.nih.gov", doi: "10.3390/ijerph20021543", snippet: "Preventive behaviors were strongly associated with health literacy and family support.", text: "This cross-sectional study of 386 young adults found that preventive behaviors were strongly associated with health literacy, family support, and perceived susceptibility. Participants who received structured health education reported significantly better dietary and physical activity patterns.", url: "#"},
+  {id: 3, type: "Jurnal", year: "2023", access: "abstract", access_label: "Abstrak Saja", access_note: "Yang berhasil terambil hanya seukuran abstrak (1.150 karakter). Teks penuhnya kemungkinan di balik langganan penerbit.", title: "Perilaku CERDIK sebagai Upaya Pencegahan Penyakit Jantung pada Usia Produktif", author: "Rahmawati & Hidayat", domain: "doi.org", doi: "10.3961/jpmph.23.118", snippet: "Program CERDIK berhubungan dengan perbaikan perilaku hidup sehat pada usia produktif.", text: "Abstrak: Penelitian ini menilai hubungan perilaku CERDIK (cek kesehatan berkala, enyahkan asap rokok, rajin aktivitas fisik, diet sehat, istirahat cukup, kelola stres) dengan pencegahan penyakit jantung pada usia produktif. Hasil menunjukkan hubungan yang bermakna pada sebagian besar komponen perilaku.", url: "#"}
+];
+let MDL = null;
+
+function mdlBaruState() {
+  return {info: null, mode: "bedah", start: "konteks",
+    saringan: {fokus: "paper", tahunMode: "semua", rentang: 5, dari: 2018, sampai: 2026, bahasa: "semua", jumlah: 10, urutan: "relevan", kedalaman: "standar", domain: "", isi_penuh: true},
+    jobId: null, hasil: null, hasilMode: null, kunci: null, queryAktif: "",
+    banding: {}, simpan: {}, saringAkses: "semua", saringTahun: "semua", previewMode: null};
+}
+
+function mdlSaringanKirim() {
+  const s = MDL.saringan;
+  let tahun = {mode: "semua"};
+  if (s.tahunMode === "relatif") tahun = {mode: "relatif", rentang: s.rentang};
+  else if (s.tahunMode === "bebas") tahun = {mode: "bebas", dari: s.dari, sampai: s.sampai};
+  return {fokus: s.fokus, jumlah: s.jumlah, tahun: tahun, bahasa: s.bahasa,
+    urutan: s.urutan, kedalaman: s.kedalaman, domain: s.domain, isi_penuh: s.isi_penuh};
+}
+
+function mdlQueryForm() {
+  if (MDL.start === "doi") return ($("#mdlDoi").value || "").trim();
+  return ($("#mdlKonteks").value || "").trim();
+}
+
+function mdlSetStage(n) {
+  [1, 2, 3].forEach(i => {
+    const p = $("#mdlStage" + i);
+    if (p) p.classList.toggle("hidden", i !== n);
+    const pill = $("#mdlPill" + i);
+    if (pill) {
+      pill.classList.toggle("on", i === n);
+      pill.classList.toggle("done", i < n);
+      if (i < n) pill.textContent = "✓ " + pill.dataset.label;
+      else pill.textContent = pill.dataset.label;
+    }
+  });
+  window.scrollTo({top: 0, behavior: "smooth"});
+}
+
+function mdlChipInfo() {
+  const i = MDL.info || {};
+  const total = i.kuota_ringan_total != null ? i.kuota_ringan_total : 3;
+  if (i.admin) return `<span class="mdl-chip amber">Mode admin: kuota dan kredit tidak dipotong</span>` +
+    `<span class="mdl-chip">Kredit laporan akun ini: <b>${i.kredit_laporan || 0}</b></span>` +
+    `<span class="mdl-chip">Hasil pencarian disimpan di cache <b>7 hari</b></span>`;
+  let tierNote;
+  if (i.tier >= 2) tierNote = "Kamu di Tier 2 berkat total top up Rp10.000 atau lebih. Limit harianmu sudah yang tertinggi.";
+  else if (i.tier >= 1) tierNote = "Limitmu naik permanen berkat top up (Tier 1). Total top up sampai Rp10.000 menaikkannya lagi jadi 10x sehari.";
+  else tierNote = "Top up Kredit Laporan sekali saja (Rp5.000) menaikkan limit harianmu permanen jadi 5x sehari, dan total Rp10.000 menaikkannya jadi 10x sehari.";
+  return `<span class="mdl-chip">Kuota mode ringan hari ini tersisa <b>${i.kuota_sisa != null ? i.kuota_sisa : 0} kali</b> (limit harianmu <b>${total}x</b>, gabungan Cari Jurnal, Jawaban Cepat, dan Bedah Mendalam)</span>` +
+    `<span class="mdl-chip">Kredit laporan: <b>${i.kredit_laporan || 0}</b></span>` +
+    `<span class="mdl-chip">Hasil pencarian disimpan di cache <b>7 hari</b></span>` +
+    `<div class="mdl-chip amber" style="width:100%">${esc(tierNote)}</div>`;
+}
+
+function pageMendalam() {
+  if (!AUTH.login) {
+    view().innerHTML = `<div class="page-head"><h1>${tic("spark")} Cari Jurnal Mendalam</h1></div>
+      <div class="card glass center">
+        <p class="muted">Fitur ini khusus member. Masuk dulu untuk memakai Cari Jurnal Mendalam: pencarian jurnal berbasis Exa dengan label akses tiap sumber, jawaban bersitasi, bedah terstruktur, dan Laporan Riset.</p>
+        <button class="btn btn-primary" id="mdlLogin">Masuk / Daftar</button>
+      </div>`;
+    $("#mdlLogin").onclick = () => openAuth();
+    return;
+  }
+  MDL = mdlBaruState();
+  const F = MDL.saringan;
+  const pill = (grup, val, label) => `<button type="button" class="mdl-pill ${F[grup] === val ? "on" : ""}" data-mgrup="${grup}" data-mval="${esc(String(val))}">${esc(label)}</button>`;
+  view().innerHTML = `
+  <div class="mdl-wrap">
+    <div class="back-row"><button class="btn-back" onclick="goBack()">${tic("back")} Kembali</button></div>
+    <div class="mdl-stages">
+      <span class="mdl-stage on" id="mdlPill1" data-label="1. Formulir">1. Formulir</span>
+      <span class="mdl-stage" id="mdlPill2" data-label="2. Proses">2. Proses</span>
+      <span class="mdl-stage" id="mdlPill3" data-label="3. Hasil">3. Hasil</span>
+    </div>
+
+    <div class="mdl-panel" id="mdlStage1">
+      <div class="mdl-head"><h1>Cari Jurnal Mendalam</h1><span class="mdl-badge">Fitur Member</span></div>
+      <p class="muted" style="margin-top:6px">Ceritakan kebutuhan risetmu. Mesin pencari khusus riset akan mencarikan papernya, membaca isinya, lalu menyusun jawaban bersitasi. Tiap sumber diberi label akses, jadi kamu tahu mana yang bisa langsung dibaca penuh dan mana yang hanya abstrak, sebelum mengklik apa pun.</p>
+      <div class="mdl-chips" id="mdlInfoChips"><span class="mdl-chip">Memuat kuota dan kredit akunmu…</span></div>
+
+      <div class="mdl-example-bar">
+        <div><b>Baru pertama kali?</b><div class="muted" style="font-size:13px">Isi semua field dengan contoh lengkap dalam sekali klik, lalu tinggal jalankan.</div></div>
+        <button class="mdl-btn primary" id="mdlIsiContoh">Isi Contoh Lengkap</button>
+      </div>
+
+      <div class="mdl-section-h">Cara Mulai</div>
+      <div class="mdl-tabs">
+        <button type="button" class="mdl-tab on" data-mtab="konteks">Ceritakan Konteks</button>
+        <button type="button" class="mdl-tab" data-mtab="doi">Tempel Link atau DOI</button>
+        <button type="button" class="mdl-tab" data-mtab="templat">Templat Siap Pakai</button>
+      </div>
+      <div id="mdlStartKonteks">
+        <label style="font-weight:700;font-size:14px">Ceritakan kebutuhan risetmu</label>
+        <textarea id="mdlKonteks" maxlength="2000" placeholder="Contoh: Saya mahasiswa kesehatan masyarakat sedang menyusun tinjauan pustaka tentang pencegahan risiko kardiovaskular pada dewasa muda. Saya membutuhkan jurnal tentang pengetahuan, sikap, dan tindakan pencegahan penyakit jantung di Indonesia dalam 5 tahun terakhir."></textarea>
+        <div class="mdl-char-note" id="mdlCharNote">Jelaskan topik, kebutuhan bab, dan kriteria jurnalmu. Minimal sekitar 30 karakter supaya hasilnya tajam.</div>
+        <div class="mdl-mini-chips">
+          <button type="button" class="mdl-mini" data-mcontoh="kesmas">Contoh: kesehatan masyarakat</button>
+          <button type="button" class="mdl-mini" data-mcontoh="bisnis">Contoh: manajemen dan bisnis</button>
+          <button type="button" class="mdl-mini" data-mcontoh="informatika">Contoh: informatika</button>
+        </div>
+      </div>
+      <div id="mdlStartDoi" style="display:none">
+        <label style="font-weight:700;font-size:14px">Mulai dari satu paper yang sudah kamu punya</label>
+        <input type="text" id="mdlDoi" placeholder="Tempel DOI (10.xxxx/...) atau link artikel jurnal di sini">
+        <div class="mdl-char-note">Sistem akan memakai paper itu sebagai titik mulai, lalu mencarikan paper lain yang serupa dan berkaitan.</div>
+        <div class="mdl-mini-chips">
+          <button type="button" class="mdl-mini" data-mdoi="10.14710/jpki.9.1.2024.41-52">Contoh DOI: 10.14710/jpki.9.1.2024.41-52</button>
+          <button type="button" class="mdl-mini" data-mdoi="https://doi.org/10.3961/jpmph.23.118">Contoh link DOI</button>
+        </div>
+      </div>
+      <div id="mdlStartTemplat" style="display:none">
+        <p class="muted" style="font-size:13.5px;margin:0 0 8px">Pilih kebutuhan babmu. Templatnya terisi otomatis ke kotak konteks dan bisa kamu sunting lagi sebelum jalan.</p>
+        <div style="display:flex;gap:7px;flex-wrap:wrap">${Object.keys(MDL_TEMPLAT).map(k => `<button type="button" class="mdl-pick" data-mtemplat="${esc(k)}">${esc(k)}</button>`).join("")}</div>
+      </div>
+
+      <div class="mdl-section-h" style="margin-top:22px">Mode Kerja</div>
+      <div class="mdl-section-hint">Pilih cara mesin mengolah hasil pencarianmu. Makin berat modenya, makin dalam hasilnya dan makin lama prosesnya.</div>
+      <div class="mdl-mode-grid" id="mdlModeGrid">
+        ${Object.keys(MDL_MODES).map(m => `
+        <div class="mdl-mode-cell">
+          <button type="button" class="mdl-mode ${MDL.mode === m ? "on" : ""}" data-mmode="${m}">
+            <span class="check">✓</span>
+            <span class="mname">${MDL_MODES[m].nama}${m === "laporan" ? ' <span class="mdl-badge2" style="background:rgba(251,191,36,.15);color:#fde68a;border-color:rgba(251,191,36,.4)">Berbayar</span>' : ""}</span>
+            <span class="mdesc" style="display:block">${MDL_MODES[m].desc}</span>
+            <span class="mtime" data-mtime="${m}" style="display:block">${MDL_MODES[m].waktu[F.kedalaman]}</span>
+          </button>
+          <button type="button" class="mdl-preview-btn" data-mpreview="${m}">Lihat Contoh Hasil</button>
+        </div>`).join("")}
+      </div>
+      <div class="mdl-chip" style="margin-top:10px">Yang berbayar hanya Laporan Riset (1 kredit per laporan selesai). Tiga mode lain memakai kuota harian gabungan.</div>
+      <div id="mdlPreviewHost"></div>
+
+      <details class="mdl-details" id="mdlDetailSaring">
+        <summary id="mdlSaringRingkasan">Saringan Lanjutan</summary>
+        <div class="mdl-fgrid">
+          <div><div class="mdl-flabel">Fokus Sumber</div><div class="mdl-pills">
+            ${pill("fokus", "semua", "Semua sumber")}${pill("fokus", "paper", "Hanya paper ilmiah")}${pill("fokus", "umum", "Paper plus situs umum")}${pill("fokus", "berita", "Paper plus berita")}${pill("fokus", "perusahaan", "Paper plus data perusahaan")}${pill("fokus", "kode", "Paper plus kode dan GitHub")}
+          </div></div>
+          <div><div class="mdl-flabel">Rentang Tahun</div><div class="mdl-pills">
+            ${pill("tahunMode", "semua", "Semua tahun")}${pill("tahunMode", "relatif", "Relatif")}${pill("tahunMode", "bebas", "Rentang bebas")}
+          </div>
+            <div class="mdl-pills" id="mdlRentangPills" style="margin-top:6px;${F.tahunMode !== "relatif" ? "display:none" : ""}">
+              ${[3, 5, 10].map(n => `<button type="button" class="mdl-pill ${F.rentang === n ? "on" : ""}" data-mrentang="${n}">${n} tahun terakhir</button>`).join("")}
+            </div>
+            <div id="mdlTahunBebas" style="display:${F.tahunMode === "bebas" ? "flex" : "none"};gap:7px;margin-top:6px;align-items:center">
+              <input type="number" id="mdlThnDari" value="${F.dari}" min="1900" max="2100" style="max-width:110px"> <span class="muted">sampai</span>
+              <input type="number" id="mdlThnSampai" value="${F.sampai}" min="1900" max="2100" style="max-width:110px">
+            </div>
+          </div>
+          <div><div class="mdl-flabel">Bahasa Sumber</div><div class="mdl-pills">
+            ${pill("bahasa", "semua", "Semua bahasa")}${pill("bahasa", "id", "Indonesia")}${pill("bahasa", "en", "Inggris")}
+          </div></div>
+          <div><div class="mdl-flabel">Jumlah Hasil</div><div class="mdl-pills">
+            ${[3, 5, 10, 20, 30].map(n => pill("jumlah", n, "Maks " + n + " hasil")).join("")}
+          </div></div>
+          <div><div class="mdl-flabel">Urutan Hasil</div><div class="mdl-pills">
+            ${pill("urutan", "relevan", "Paling relevan")}${pill("urutan", "baru", "Paling baru")}
+          </div></div>
+          <div><div class="mdl-flabel">Kedalaman Proses</div><div class="mdl-pills">
+            ${pill("kedalaman", "kilat", "Kilat")}${pill("kedalaman", "standar", "Standar")}${pill("kedalaman", "mendalam", "Mendalam")}
+          </div></div>
+          <div><div class="mdl-flabel">Batas Domain (opsional)</div>
+            <input type="text" id="mdlDomain" placeholder="mis. kemkes.go.id" value="${esc(F.domain)}">
+            <div class="mdl-mini-chips">
+              <button type="button" class="mdl-mini" data-mdomain="kemkes.go.id">kemkes.go.id</button>
+              <button type="button" class="mdl-mini" data-mdomain="github.com">github.com</button>
+              <button type="button" class="mdl-mini" data-mdomain="telkom.co.id">telkom.co.id</button>
+            </div>
+          </div>
+          <div><div class="mdl-flabel">Ambil Isi Penuh</div>
+            <label class="mdl-switch"><input type="checkbox" id="mdlIsiPenuh" ${F.isi_penuh ? "checked" : ""}> Ambil isi penuh tiap sumber (lebih lambat, label akses lebih akurat)</label>
+          </div>
+        </div>
+      </details>
+
+      <div id="mdlBeliHost"></div>
+      <div id="mdlFormError"></div>
+      <div class="mdl-estimate" id="mdlEstimate"></div>
+      <button class="mdl-run" id="mdlRun">Jalankan Pencarian Mendalam</button>
+    </div>
+
+    <div class="mdl-panel hidden" id="mdlStage2" style="margin-top:16px">
+      <h2>Memproses pencarianmu…</h2>
+      <p class="muted" id="mdlTahapTeks" style="font-size:14px">Menyiapkan pencarian.</p>
+      <ul class="mdl-steps">
+        <li data-step="1">Menyusun kata kunci dari konteks</li>
+        <li data-step="2">Mencari di Exa</li>
+        <li data-step="3">Membaca isi sumber</li>
+        <li data-step="4">Menyusun jawaban</li>
+      </ul>
+      <p class="muted" id="mdlProcNote" style="font-size:13px"></p>
+    </div>
+
+    <div class="hidden" id="mdlStage3" style="margin-top:16px">
+      <div id="mdlHasilHost"></div>
+      <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:16px">
+        <button class="mdl-btn" id="mdlUbah">Ubah Pencarian (kembali ke formulir, isian tetap)</button>
+        <button class="mdl-btn primary" id="mdlBaru">Pencarian Baru</button>
+      </div>
+    </div>
+
+    <div class="mdl-history" id="mdlRiwayatHost"><h2 style="font-size:16px">Riwayat Pencarian Mendalam</h2><div class="muted" style="font-size:13.5px">Memuat riwayat…</div></div>
+
+    <div style="margin-top:26px">
+      <h2>Kemampuan Exa</h2>
+      <p class="muted" style="font-size:13.5px">Mesin di balik fitur ini dibangun khusus untuk riset, jadi cara kerjanya beda dari pencarian biasa.</p>
+      <div class="mdl-cap-grid">
+        ${[["PENCARIAN NEURAL", "Neural Search", "Memahami maksud pertanyaanmu, bukan sekadar mencocokkan kata, jadi paper yang nyambung secara makna ikut ketemu."], ["KATEGORI SUMBER", "Kategori Paper Ilmiah", "Pencarian bisa dikunci ke kategori paper riset, berita, data perusahaan, sampai repositori kode."], ["ISI PENUH", "Contents / Isi Penuh", "Sistem mengambil dan membaca isi sumber, bukan cuma judul dan abstraknya."], ["PENCARIAN MENDALAM", "Deep Search", "Pertanyaan dipecah menjadi beberapa subpertanyaan terarah, lalu hasilnya dibandingkan."], ["JAWABAN BERSITASI", "Answer Bersitasi", "Pertanyaan dijawab langsung dalam satu paragraf dan setiap klaimnya ditempeli sitasi."], ["SKEMA TERSTRUKTUR", "Output Terstruktur", "Bedah Mendalam memakai skema keluaran resmi: ringkasan, faktor penyebab, dampak, rekomendasi."], ["AGEN RISET", "Agent / Laporan Riset", "Agen riset otonom yang merencanakan, mencari berlapis, membaca, lalu menulis laporan utuh."], ["PAPER SERUPA", "Find Similar", "Dari satu paper atau DOI, sistem mencarikan paper lain yang serupa."], ["SARING DOMAIN", "Saring Domain dan Tanggal", "Hasil bisa dikunci ke domain tertentu seperti jurnal kampus atau situs resmi, dan ke rentang tahun."], ["DASAR SITASI", "Grounding Sitasi", "Klaim di jawaban Bedah Mendalam ditempeli bukti dari sumbernya lewat grounding per bidang."]].map(c => `<div class="mdl-cap"><span class="mdl-cap-tag">${c[0]}</span><b>${c[1]}</b>${c[2]}</div>`).join("")}
+      </div>
+    </div>
+
+    <div style="margin-top:26px">
+      <h2>Yang Diperlukan</h2>
+      <div class="mdl-need-grid">
+        <div class="mdl-need"><b>Akun member KhairyPustaka</b>Fitur ini khusus member. Tamu diarahkan masuk atau daftar dulu, gratis.</div>
+        <div class="mdl-need"><b>Kuota harian untuk mode ringan</b>Cari Jurnal, Jawaban Cepat, dan Bedah Mendalam berbagi satu kuota gabungan per hari, pulih pukul 00.00 WITA. Hasil yang tersimpan di cache tidak memotong kuota.</div>
+        <div class="mdl-need"><b>Kredit khusus untuk Laporan Riset</b>Laporan Riset memakai kredit laporan: Rp5.000 dapat 2 kredit dan 1 kredit terpotong per laporan yang selesai. Kredit tidak kedaluwarsa.</div>
+      </div>
+    </div>
+
+    <div style="margin-top:26px">
+      <h2>Di Balik Layar</h2>
+      <div class="mdl-cap-grid" style="grid-template-columns:1fr 1fr">
+        ${[["URUTAN PROSES", "Pencarian otomatis berantai", "Konteksmu disusun menjadi kata kunci, dicari ke Exa, isi sumber dibaca, lalu jawaban disusun. Semua berjalan otomatis."], ["BIAYA MESIN", "Biaya mesin dijaga", "Ada plafon belanja harian untuk mode ringan dan hasil pencarian disimpan di cache 7 hari, jadi pertanyaan yang sama tidak dicari dua kali."], ["KENAPA PERLU WAKTU", "Hasil dicari saat itu juga", "Hasil tidak diambil dari stok lama. Laporan Riset paling lama karena agennya mencari berlapis dan menulis laporan utuh."], ["PENYIMPANAN", "Hasilmu tersimpan di akunmu", "Laporan selesai dan riwayat pencarian tersimpan di akunmu, bisa dibuka lagi kapan pun."]].map(c => `<div class="mdl-cap"><span class="mdl-cap-tag">${c[0]}</span><b>${c[1]}</b>${c[2]}</div>`).join("")}
+      </div>
+    </div>
+  </div>`;
+  mdlWireForm();
+  mdlMuatInfo();
+  mdlMuatRiwayat();
+}
+
+function mdlTab(nama) {
+  MDL.start = nama;
+  $$(".mdl-tab").forEach(t => t.classList.toggle("on", t.dataset.mtab === nama));
+  $("#mdlStartKonteks").style.display = nama === "konteks" ? "" : "none";
+  $("#mdlStartDoi").style.display = nama === "doi" ? "" : "none";
+  $("#mdlStartTemplat").style.display = nama === "templat" ? "" : "none";
+  mdlUpdateEstimate();
+}
+
+function mdlFokusLabel(k) {
+  return {semua: "Semua sumber", paper: "Hanya paper ilmiah", umum: "Paper plus situs umum", berita: "Paper plus berita", perusahaan: "Paper plus data perusahaan", kode: "Paper plus kode dan GitHub"}[k] || k;
+}
+
+function mdlRingkasanSaringan() {
+  const F = MDL.saringan;
+  let tahun = "Semua tahun";
+  if (F.tahunMode === "relatif") tahun = F.rentang + " tahun terakhir";
+  else if (F.tahunMode === "bebas") tahun = F.dari + " sampai " + F.sampai;
+  const bahasa = {semua: "Semua bahasa", id: "Indonesia", en: "Inggris"}[F.bahasa];
+  const sum = $("#mdlSaringRingkasan");
+  if (sum) sum.textContent = "Saringan Lanjutan · " + mdlFokusLabel(F.fokus) + " · " + tahun + " · " + bahasa + " · Maks " + F.jumlah + " hasil";
+}
+
+function mdlRefreshPills() {
+  const F = MDL.saringan;
+  $$(".mdl-pill[data-mgrup]").forEach(p => {
+    const g = p.dataset.mgrup;
+    let on = String(F[g]) === p.dataset.mval;
+    p.classList.toggle("on", on);
+  });
+  $$("[data-mrentang]").forEach(p => p.classList.toggle("on", F.rentang === +p.dataset.mrentang));
+  const rp = $("#mdlRentangPills"); if (rp) rp.style.display = F.tahunMode === "relatif" ? "" : "none";
+  const tb = $("#mdlTahunBebas"); if (tb) tb.style.display = F.tahunMode === "bebas" ? "flex" : "none";
+  $$("[data-mtime]").forEach(el => { el.textContent = MDL_MODES[el.dataset.mtime].waktu[F.kedalaman]; });
+  mdlRingkasanSaringan();
+}
+
+function mdlCukup() {
+  const i = MDL.info || {};
+  if (i.admin) return true;
+  if (MDL.mode === "laporan") return (i.kredit_tersedia || 0) >= 1;
+  return (i.kuota_sisa || 0) >= 1;
+}
+
+function mdlUpdateEstimate() {
+  const host = $("#mdlEstimate"); if (!host) return;
+  const i = MDL.info || {};
+  const mode = MDL_MODES[MDL.mode];
+  let potong, sisa;
+  if (MDL.mode === "laporan") {
+    potong = "1 kredit laporan";
+    sisa = i.admin ? "mode admin, kredit tidak dipotong" : ("sisa kredit setelah jalan: " + Math.max(0, (i.kredit_tersedia || 0) - 1));
+  } else {
+    potong = "1 kuota mode ringan";
+    sisa = i.admin ? "mode admin, kuota tidak dipotong" : ("sisa kuota setelah jalan: " + Math.max(0, (i.kuota_sisa || 0) - 1) + " dari " + (i.kuota_ringan_total || 3));
+  }
+  host.innerHTML = `<span>Perkiraan waktu: <b>${mode.waktu[MDL.saringan.kedalaman]}</b></span><span>·</span><span>Potongan: <b>${potong}</b></span><span>·</span><span>${sisa}</span>` +
+    (mdlCukup() ? "" : `<span class="mdl-chip amber">${MDL.mode === "laporan" ? "Kredit laporanmu habis. Beli kredit dulu lewat kartu Beli Kredit Laporan di atas." : "Kuota mode ringan hari ini habis. Hasil dari cache tetap bisa dibuka dari riwayat."}</span>`);
+  const run = $("#mdlRun"); if (run) run.disabled = !mdlCukup();
+}
+
+async function mdlMuatInfo() {
+  const r = await apiJSON("/api/mendalam/info");
+  if (r.ok) {
+    MDL.info = r.data;
+    const host = $("#mdlInfoChips"); if (host) host.innerHTML = mdlChipInfo();
+    mdlRenderBeli();
+    mdlUpdateEstimate();
+  }
+}
+
+function mdlRenderBeli() {
+  const host = $("#mdlBeliHost"); if (!host) return;
+  const i = MDL.info || {};
+  if (!i.pay_enabled) {
+    host.innerHTML = MDL.mode === "laporan" || (i.kredit_tersedia || 0) < 1
+      ? `<div class="mdl-buy"><b>Beli Kredit Laporan</b><div class="muted" style="font-size:13.5px;margin-top:4px">Pembayaran online untuk kredit laporan belum aktif di situs saat ini. Kredit bisa diberikan manual oleh admin. Kamu punya <b>${i.kredit_tersedia || 0} kredit</b> sekarang.</div></div>` : "";
+    return;
+  }
+  host.innerHTML = `
+  <div class="mdl-buy">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+      <div><b style="font-size:15.5px">Beli Kredit Laporan</b>
+      <div class="muted" style="font-size:13.5px;margin-top:3px">Rp5.000 dapat <b>2 kredit laporan</b> (1 kredit = 1 Laporan Riset yang selesai). Kredit tidak kedaluwarsa. Total top up-mu juga menaikkan limit harian secara permanen: Tier 1 di total Rp5.000 (Exa ringan 5x sehari, kuota AI 20x sehari) dan Tier 2 di total Rp10.000 (Exa ringan 10x sehari, kuota AI 25x sehari).</div></div>
+      <span class="mdl-chip">Kreditmu sekarang: <b>${i.kredit_tersedia || 0}</b></span>
+    </div>
+    <div id="mdlBeliArea" style="margin-top:12px"><button class="mdl-btn primary" id="mdlBeliBtn">Beli 2 Kredit (Rp5.000, QRIS)</button></div>
+  </div>`;
+  $("#mdlBeliBtn").onclick = mdlBeliMulai;
+}
+
+async function mdlBeliMulai() {
+  const area = $("#mdlBeliArea");
+  area.innerHTML = `<span class="muted">Menyiapkan pembayaran…</span>`;
+  const r = await apiPOST("/api/mendalam/beli/create", {});
+  if (!r.ok) {
+    area.innerHTML = `<span class="muted">${esc((r.data && (r.data.pesan || r.data.error)) || "Pembayaran belum bisa disiapkan.")}</span> <button class="mdl-btn" onclick="mdlRenderBeli()">Coba Lagi</button>`;
+    return;
+  }
+  const d = r.data;
+  const rp = n => "Rp" + Number(n || 0).toLocaleString("id-ID");
+  area.innerHTML = `
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">
+      ${d.qr_b64 ? `<img class="topup-qr" alt="Kode QR pembayaran" src="data:image/png;base64,${d.qr_b64}">` : ""}
+      <div style="flex:1;min-width:220px">
+        <div style="font-weight:800;font-size:15px">Pindai QRIS ini untuk membayar ${rp(d.amount)}</div>
+        <div class="muted" style="font-size:13px;margin:4px 0 10px">Bisa dari aplikasi bank atau e-wallet apa pun (GoPay, OVO, DANA, ShopeePay, m-banking). Kredit masuk otomatis begitu pembayaran terdeteksi, biasanya dalam hitungan detik. Kode berlaku sekitar 1 jam.</div>
+        <div class="mdl-chip" id="mdlBeliStatus">Menunggu pembayaran…</div>
+        <div style="margin-top:10px"><button class="mdl-btn" onclick="mdlRenderBeli()">Batalkan</button></div>
+      </div>
+    </div>`;
+  let tries = 0;
+  const iv = setInterval(async () => {
+    tries++;
+    const st = $("#mdlBeliStatus");
+    if (!st || tries > 120) { clearInterval(iv); return; }
+    const s = await apiJSON("/api/mendalam/beli/status/" + encodeURIComponent(d.ref_id));
+    if (s.ok && s.data.paid) {
+      clearInterval(iv);
+      toast("Pembayaran diterima. Kredit laporanmu sekarang " + s.data.saldo_kredit + ".");
+      await mdlMuatInfo();
+    } else if (s.ok && s.data.state === "expired") {
+      clearInterval(iv);
+      st.textContent = "Kode pembayaran kedaluwarsa. Buat yang baru ya.";
+    } else if (s.ok && s.data.state === "failed") {
+      clearInterval(iv);
+      st.textContent = "Pembayaran gagal atau dibatalkan. Silakan coba lagi.";
+    }
+  }, 4000);
+  regTimer(iv);
+}
+
+function mdlJawabContoh(mode) {
+  const p1 = MDL_CONTOH_PAPERS[0], p3 = MDL_CONTOH_PAPERS[2];
+  if (mode === "cari") return `<p style="margin:0 0 8px"><b>Ringkasan Hasil Pencarian</b></p><p style="margin:0">Ditemukan 3 paper yang paling berkaitan. Paper [${p1.id}] dari ${esc(p1.domain)} (${p1.year}) menemukan pengetahuan berhubungan signifikan dengan tindakan pencegahan pada dewasa muda. Paper [${p3.id}] membahas program CERDIK pada usia produktif tetapi aksesnya hanya abstrak. Rincian tiap paper ada di daftar sumber di bawah.</p>`;
+  if (mode === "cepat") return `<p style="margin:0">Pengetahuan, sikap, dan tindakan pencegahan saling berkaitan pada dewasa muda: pengetahuan yang baik berhubungan dengan tindakan pencegahan yang lebih konsisten <span style="color:var(--mteal);font-weight:700">[1]</span>, dan program perilaku hidup sehat seperti CERDIK berhubungan dengan perbaikan perilaku pencegahan pada usia produktif <span style="color:var(--mteal);font-weight:700">[3]</span>. Bukti terkuat berasal dari studi potong lintang di Indonesia dan studi literasi kesehatan pada dewasa muda.</p>`;
+  if (mode === "bedah") return `<p style="margin:0 0 6px"><b>Ringkasan.</b> Bukti yang terkumpul menunjukkan pencegahan risiko kardiovaskular pada dewasa muda ditopang tiga lapis: pengetahuan, sikap, dan dukungan perilaku.</p><p style="margin:0 0 4px"><b>Faktor dan Penyebab:</b> pengetahuan rendah, literasi kesehatan terbatas, dan persepsi risiko yang lemah.</p><p style="margin:0 0 4px"><b>Dampak:</b> perilaku pencegahan yang tidak konsisten dan risiko yang baru terdeteksi saat sudah lanjut.</p><p style="margin:0"><b>Rekomendasi:</b> edukasi terstruktur, penguatan sikap lewat konseling singkat, dan program perilaku hidup sehat di kampus dan tempat kerja.</p>`;
+  return `<p style="margin:0 0 6px"><b>Laporan Riset: Pencegahan Risiko Kardiovaskular pada Dewasa Muda</b></p><p style="margin:0 0 6px"><b>Latar belakang.</b> Penyakit kardiovaskular mulai mengincar usia produktif, sementara perilaku pencegahannya belum konsisten.</p><p style="margin:0 0 6px"><b>Perbandingan sumber.</b> Studi Indonesia menekankan pengetahuan dan sikap, studi internasional menambah literasi kesehatan dan dukungan keluarga.</p><p style="margin:0 0 6px"><b>Temuan per subtopik.</b> Pengetahuan, sikap, program CERDIK, dan literasi kesehatan dibahas satu per satu dengan sitasi.</p><p style="margin:0"><b>Kesimpulan.</b> Intervensi paling menjanjikan menggabungkan edukasi, penguatan sikap, dan dukungan lingkungan.</p>`;
+}
+
+function mdlTogglePreview(mode) {
+  const host = $("#mdlPreviewHost"); if (!host) return;
+  if (MDL.previewMode === mode) { host.innerHTML = ""; MDL.previewMode = null; return; }
+  MDL.previewMode = mode;
+  const info = MDL_MODES[mode];
+  const inc = MDL_PV_INCLUDES[mode].map(x => `<li>${esc(x)}</li>`).join("");
+  const papers = (mode === "cari" ? MDL_CONTOH_PAPERS : [MDL_CONTOH_PAPERS[0], MDL_CONTOH_PAPERS[2]])
+    .map(p => mdlPaperHTML(p, true)).join("");
+  const potong = mode === "laporan" ? "Potongan: 1 kredit laporan" : "Potongan: 1 kuota mode ringan";
+  host.innerHTML = `
+  <div class="mdl-preview">
+    <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+      <b style="font-size:15.5px">Contoh Hasil: ${info.nama}</b>
+      <span class="mdl-chip">${info.waktu[MDL.saringan.kedalaman]} · ${potong}</span>
+    </div>
+    <div class="mdl-flabel" style="margin-top:12px">Yang ditampilkan mode ini:</div>
+    <ul class="mdl-pv-inc">${inc}</ul>
+    <div class="mdl-answer" style="margin-top:0">${mdlJawabContoh(mode)}</div>
+    <div class="mdl-flabel" style="margin-top:14px">Sumber pada contoh ini</div>
+    ${papers}
+    <p class="muted" style="font-size:12.5px;margin-top:12px">Ini contoh tampilan memakai data contoh, bukan hasil pencarian asli. Melihat contoh tidak memotong kuota atau kredit apa pun.</p>
+    <div style="display:flex;gap:9px;flex-wrap:wrap;margin-top:10px">
+      <button class="mdl-btn" id="mdlPvTutup">Tutup Contoh</button>
+      <button class="mdl-btn primary" id="mdlPvPakai">Pakai Mode Ini</button>
+    </div>
+  </div>`;
+  $("#mdlPvTutup").onclick = () => { host.innerHTML = ""; MDL.previewMode = null; };
+  $("#mdlPvPakai").onclick = () => { mdlPilihMode(mode); host.innerHTML = ""; MDL.previewMode = null; };
+  mdlWirePapers(host);
+}
+
+function mdlPilihMode(mode) {
+  MDL.mode = mode;
+  $$(".mdl-mode").forEach(b => b.classList.toggle("on", b.dataset.mmode === mode));
+  mdlRenderBeli();
+  mdlUpdateEstimate();
+}
+
+function mdlWireForm() {
+  $$(".mdl-tab").forEach(t => t.onclick = () => mdlTab(t.dataset.mtab));
+  $$("[data-mcontoh]").forEach(b => b.onclick = () => {
+    $("#mdlKonteks").value = MDL_CONTOH_KONTEKS[b.dataset.mcontoh];
+    mdlCekKonteks(); mdlUpdateEstimate();
+  });
+  $$("[data-mdoi]").forEach(b => b.onclick = () => { $("#mdlDoi").value = b.dataset.mdoi; mdlUpdateEstimate(); });
+  $$("[data-mtemplat]").forEach(b => b.onclick = () => {
+    mdlTab("konteks");
+    $("#mdlKonteks").value = MDL_TEMPLAT[b.dataset.mtemplat];
+    mdlCekKonteks(); mdlUpdateEstimate();
+  });
+  $$(".mdl-mode").forEach(b => b.onclick = () => mdlPilihMode(b.dataset.mmode));
+  $$("[data-mpreview]").forEach(b => b.onclick = () => mdlTogglePreview(b.dataset.mpreview));
+  $$(".mdl-pill[data-mgrup]").forEach(p => p.onclick = () => {
+    const g = p.dataset.mgrup;
+    let v = p.dataset.mval;
+    if (g === "jumlah") v = +v;
+    MDL.saringan[g] = v;
+    mdlRefreshPills(); mdlUpdateEstimate();
+  });
+  $$("[data-mrentang]").forEach(p => p.onclick = () => { MDL.saringan.rentang = +p.dataset.mrentang; mdlRefreshPills(); mdlUpdateEstimate(); });
+  $$("[data-mdomain]").forEach(b => b.onclick = () => { $("#mdlDomain").value = b.dataset.mdomain; MDL.saringan.domain = b.dataset.mdomain; mdlUpdateEstimate(); });
+  $("#mdlDomain").oninput = e => { MDL.saringan.domain = e.target.value.trim(); mdlUpdateEstimate(); };
+  $("#mdlIsiPenuh").onchange = e => { MDL.saringan.isi_penuh = e.target.checked; mdlUpdateEstimate(); };
+  $("#mdlThnDari").onchange = e => { MDL.saringan.dari = +e.target.value || 1900; mdlRingkasanSaringan(); };
+  $("#mdlThnSampai").onchange = e => { MDL.saringan.sampai = +e.target.value || 2100; mdlRingkasanSaringan(); };
+  $("#mdlKonteks").oninput = () => { mdlCekKonteks(); };
+  $("#mdlDoi").oninput = () => mdlUpdateEstimate();
+  $("#mdlIsiContoh").onclick = () => {
+    mdlTab("konteks");
+    $("#mdlKonteks").value = MDL_CONTOH_KONTEKS.kesmas;
+    mdlPilihMode("bedah");
+    MDL.saringan.fokus = "paper"; MDL.saringan.tahunMode = "relatif"; MDL.saringan.rentang = 5;
+    MDL.saringan.jumlah = 5; MDL.saringan.urutan = "relevan"; MDL.saringan.kedalaman = "standar";
+    MDL.saringan.domain = ""; $("#mdlDomain").value = "";
+    MDL.saringan.isi_penuh = true; $("#mdlIsiPenuh").checked = true;
+    const d = $("#mdlDetailSaring"); if (d) d.open = true;
+    mdlRefreshPills(); mdlCekKonteks(); mdlUpdateEstimate();
+    toast("Contoh lengkap terisi. Tinggal klik Jalankan Pencarian Mendalam.");
+  };
+  $("#mdlRun").onclick = mdlJalankan;
+  $("#mdlUbah").onclick = () => mdlSetStage(1);
+  $("#mdlBaru").onclick = () => { location.hash = "#/mendalam"; pageMendalam(); };
+  mdlRefreshPills();
+  mdlUpdateEstimate();
+}
+
+function mdlCekKonteks() {
+  const v = ($("#mdlKonteks").value || "");
+  const note = $("#mdlCharNote"); if (!note) return;
+  if (v.trim().length > 0 && v.trim().length < 30) {
+    note.innerHTML = `<span style="color:var(--mrose)">Konteksmu baru ${v.trim().length} karakter. Tambahkan sedikit lagi, minimal sekitar 30 karakter, supaya hasil pencariannya tajam.</span>`;
+  } else {
+    note.textContent = "Jelaskan topik, kebutuhan bab, dan kriteria jurnalmu. Minimal sekitar 30 karakter supaya hasilnya tajam.";
+  }
+}
+
+async function mdlMuatRiwayat() {
+  const host = $("#mdlRiwayatHost"); if (!host) return;
+  const r = await apiJSON("/api/mendalam/riwayat");
+  if (!r.ok || !r.data.riwayat || !r.data.riwayat.length) {
+    host.innerHTML = `<h2 style="font-size:16px">Riwayat Pencarian Mendalam</h2><div class="muted" style="font-size:13.5px">Belum ada pencarian mendalam. Hasil pencarianmu nanti tersimpan di sini dan bisa dibuka lagi tanpa mencari ulang.</div>`;
+    return;
+  }
+  host.innerHTML = `<h2 style="font-size:16px">Riwayat Pencarian Mendalam</h2>` + r.data.riwayat.map(it => `
+    <button type="button" class="mdl-hist-item" data-mhist="${esc(it.kunci)}">
+      <span class="mdl-hist-top"><span>${esc(it.mode_nama)}</span><span>${esc(it.waktu_label || "")}</span></span>
+      <span class="mdl-hist-q" style="display:block">${esc(it.query)}</span>
+      <span class="mdl-hist-meta">${it.jumlah} sumber ditemukan. Klik untuk memuat lagi.</span>
+    </button>`).join("");
+  $$("[data-mhist]").forEach(b => b.onclick = () => mdlBukaHasil(b.dataset.mhist));
+}
+
+async function mdlBukaHasil(kunci) {
+  const r = await apiJSON("/api/mendalam/hasil?kunci=" + encodeURIComponent(kunci));
+  if (!r.ok) {
+    toast("Hasil tersimpan ini sudah lewat masa cache 7 hari. Jalankan pencarian yang sama lagi ya.");
+    return;
+  }
+  MDL.hasil = r.data.hasil; MDL.hasilMode = r.data.mode; MDL.kunci = kunci;
+  if (r.data.dari_cache && MDL.hasil) MDL.hasil.dari_cache = true;
+  MDL.queryAktif = r.data.query || "";
+  MDL.banding = {}; MDL.simpan = {}; MDL.saringAkses = "semua"; MDL.saringTahun = "semua";
+  mdlRenderHasil();
+  mdlSetStage(3);
+}
+
+function mdlPaperTeksBaca(p) {
+  const t = (p.text || "").trim();
+  if (p.access === "full") return t || p.snippet || "";
+  if (p.access === "abstract") return (t || p.snippet || "") + "\n\nCatatan: yang terbuka dari sumber ini hanya abstraknya. Teks penuhnya kemungkinan di balik langganan penerbit, jadi wajar bila isi di sini terasa ringkas.";
+  if (p.access === "partial") return (t || p.snippet || "") + "\n\nCatatan: hanya sebagian isi yang berhasil dibaca. Sisanya kemungkinan terkunci di situs penerbitnya.";
+  return "";
+}
+
+function mdlLabelBaca(p) {
+  if (p.access === "full") return MDL.saringan && MDL.saringan.isi_penuh ? "Baca Isi Penuh" : "Baca Abstrak";
+  if (p.access === "abstract") return "Baca Abstrak";
+  if (p.access === "partial") return "Lihat Pratinjau";
+  return "Lihat Metadata";
+}
+
+function mdlPaperHTML(p, contoh) {
+  const acc = MDL_AKSES[p.access] ? MDL_AKSES[p.access].label : p.access_label;
+  return `
+  <article class="mdl-paper" id="mdlPaper${p.id}">
+    <div class="mdl-badges">
+      <span class="mdl-badge2">${esc(p.type || "Jurnal")}</span>
+      <span class="mdl-badge2">${esc(p.year || "Tahun tidak terbaca")}</span>
+      <span class="mdl-badge2 acc-${esc(p.access)}">${esc(acc)}</span>
+      <span class="mdl-pnum">[${p.id}]</span>
+    </div>
+    <div class="mdl-ptitle">${contoh ? esc(p.title) : `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.title)}</a>`}</div>
+    <div class="mdl-pmeta">${esc(p.author || "")}</div>
+    <div class="mdl-access-line"><b>Akses: ${esc(acc)}.</b> ${esc(p.access_note || "")}</div>
+    ${p.snippet ? `<div class="mdl-highlight"><span class="hl-lab">BAGIAN PALING RELEVAN</span><br>${esc(p.snippet)}</div>` : ""}
+    <div class="mdl-pmeta" style="margin-top:9px">Sumber: ${esc(p.domain || "")} · DOI: ${p.doi ? esc(p.doi) : "tidak ada (sumber nonjurnal)"}</div>
+    <div class="mdl-pactions">
+      ${contoh ? "" : `<a class="mdl-pact" href="${esc(p.url)}" target="_blank" rel="noopener">Buka Sumber Asli</a>`}
+      <button type="button" class="mdl-pact" data-mact="baca" data-mid="${p.id}">${mdlLabelBaca(p)}</button>
+      <button type="button" class="mdl-pact" data-mact="ringkas" data-mid="${p.id}">Ringkas</button>
+      <button type="button" class="mdl-pact" data-mact="sitasi" data-mid="${p.id}">Buat Sitasi</button>
+      <button type="button" class="mdl-pact ${MDL && MDL.simpan[p.id] ? "on" : ""}" data-mact="simpan" data-mid="${p.id}">${MDL && MDL.simpan[p.id] ? "Tersimpan ✓" : "Simpan"}</button>
+      <button type="button" class="mdl-pact ${MDL && MDL.banding[p.id] ? "on" : ""}" data-mact="banding" data-mid="${p.id}">${MDL && MDL.banding[p.id] ? "Dibandingkan ✓" : "Tandai Bandingkan"}</button>
+    </div>
+    <div data-mexp="${p.id}"></div>
+  </article>`;
+}
+
+function mdlSitasi(p, gaya) {
+  const auth = (p.author || "Anonim").replace(/&/g, "and");
+  const parts = auth.split(/,\s*| and /).map(s => s.trim()).filter(Boolean);
+  const last = parts[0] || "Anonim", first = parts[1] || "";
+  const ini = first ? first.split(/\s+/).map(w => w[0] + ".").join(" ") : "";
+  const yr = p.year || "n.d.", ttl = p.title || "", doi = p.doi || "", url = p.url || "";
+  const doiUrl = doi ? "https://doi.org/" + doi : url;
+  switch (gaya) {
+    case "apa": return `${last}, ${ini} (${yr}). ${ttl}. ${doiUrl}`;
+    case "mla": return `${last}, ${first}. "${ttl}." ${yr}. ${doiUrl}`;
+    case "chicago": return `${last}, ${first}. ${yr}. "${ttl}." ${doiUrl}`;
+    case "ieee": return `${ini} ${last}, "${ttl}," ${yr}. [Online]. Tersedia: ${doiUrl}`;
+    case "vancouver": return `${last} ${ini}. ${ttl}. ${yr}. Tersedia dari: ${doiUrl}`;
+    default: return `${last}, ${ini} (${yr}) '${ttl}', tersedia di: ${doiUrl} (diakses dari sumber asli).`;
+  }
+}
+
+function mdlWirePapers(root) {
+  (root || document).querySelectorAll("[data-mact]").forEach(btn => {
+    btn.onclick = () => {
+      const id = +btn.dataset.mid, act = btn.dataset.mact;
+      const papers = MDL && MDL.hasil ? MDL.hasil.papers : MDL_CONTOH_PAPERS;
+      const p = papers.find(x => x.id === id) || MDL_CONTOH_PAPERS.find(x => x.id === id);
+      if (!p) return;
+      const exp = btn.closest(".mdl-paper").querySelector("[data-mexp]");
+      if (act === "simpan") {
+        MDL.simpan[id] = !MDL.simpan[id];
+        btn.classList.toggle("on", !!MDL.simpan[id]);
+        btn.textContent = MDL.simpan[id] ? "Tersimpan ✓" : "Simpan";
+        const c = $("#mdlSimpanCount");
+        if (c) c.textContent = "Paper tersimpan: " + Object.keys(MDL.simpan).filter(k => MDL.simpan[k]).length;
+        return;
+      }
+      if (act === "banding") {
+        MDL.banding[id] = !MDL.banding[id];
+        btn.classList.toggle("on", !!MDL.banding[id]);
+        btn.textContent = MDL.banding[id] ? "Dibandingkan ✓" : "Tandai Bandingkan";
+        if (MDL.hasil) mdlRenderBanding();
+        return;
+      }
+      if (exp.dataset.open === act) { exp.innerHTML = ""; exp.dataset.open = ""; return; }
+      exp.dataset.open = act;
+      if (act === "baca") {
+        if (p.access === "metadata") {
+          exp.innerHTML = `<div class="mdl-expand">Isi paper ini tidak tersedia terbuka. Yang bisa dipastikan dari sumbernya hanya judul, penulis, dan info terbit berikut ini.\n\nJudul: ${esc(p.title)}\nPenulis: ${esc(p.author || "")}\nTahun: ${esc(p.year || "")}\nSumber: ${esc(p.domain || "")}${p.doi ? "\nDOI: " + esc(p.doi) : ""}</div><div class="mdl-note-amber">Untuk membaca isinya, buka sumber aslinya dan manfaatkan akses perpustakaan kampusmu bila ada.</div>`;
+        } else {
+          exp.innerHTML = `<div class="mdl-expand">${esc(mdlPaperTeksBaca(p))}</div>`;
+        }
+      } else if (act === "ringkas") {
+        exp.innerHTML = `<div class="mdl-expand"><b>Ringkasan singkat.</b> ${esc(p.snippet || p.text || "Cuplikan relevan tidak tersedia dari sumber ini.")}</div>`;
+      } else if (act === "sitasi") {
+        exp.innerHTML = `<div class="mdl-expand"><div class="mdl-pills" style="margin-bottom:9px">${[["apa", "APA 7"], ["mla", "MLA"], ["chicago", "Chicago"], ["ieee", "IEEE"], ["vancouver", "Vancouver"], ["harvard", "Harvard"]].map(g => `<button type="button" class="mdl-pill" data-mgaya="${g[0]}">${g[1]}</button>`).join("")}</div><div data-msitasi style="white-space:normal">${esc(mdlSitasi(p, "apa"))}</div><button type="button" class="mdl-pact" style="margin-top:9px" data-msalin>Salin Sitasi</button></div>`;
+        exp.querySelectorAll("[data-mgaya]").forEach(g => g.onclick = () => {
+          exp.querySelector("[data-msitasi]").textContent = mdlSitasi(p, g.dataset.mgaya);
+          exp.querySelectorAll("[data-mgaya]").forEach(x => x.classList.toggle("on", x === g));
+        });
+        const onG = exp.querySelector('[data-mgaya="apa"]'); if (onG) onG.classList.add("on");
+        exp.querySelector("[data-msalin]").onclick = () => copyText(exp.querySelector("[data-msitasi]").textContent);
+      }
+    };
+  });
+}
+
+function mdlLangkahSet(n, tahapTeks) {
+  $$("#mdlStage2 [data-step]").forEach(li => {
+    const s = +li.dataset.step;
+    li.classList.toggle("done", s < n);
+    li.classList.toggle("doing", s === n);
+  });
+  if (tahapTeks) { const t = $("#mdlTahapTeks"); if (t) t.textContent = tahapTeks; }
+}
+
+async function mdlJalankan() {
+  const q = mdlQueryForm();
+  $("#mdlFormError").innerHTML = "";
+  if (MDL.start === "konteks" && q.length < 30) {
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Ceritakan kebutuhanmu sedikit lebih lengkap dulu (baru ${q.length} karakter, minimal sekitar 30) supaya hasil pencariannya tajam.</div>`;
+    return;
+  }
+  if (MDL.start === "doi" && !(q.includes("10.") || q.includes("http"))) {
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Yang kamu tempel belum terlihat seperti DOI atau link artikel. DOI biasanya diawali 10. dan link diawali http.</div>`;
+    return;
+  }
+  if (!q) { toast("Isi dulu konteks pencarianmu ya."); return; }
+  const btn = $("#mdlRun"); setLoading(btn, true, "Menyiapkan…");
+  const r = await apiPOST("/api/mendalam/job", {mode: MDL.mode, query: q, start: MDL.start, saringan: mdlSaringanKirim()});
+  setLoading(btn, false);
+  if (!r.ok) {
+    const e = r.data || {};
+    if (e.error === "perlu_login") { openAuth("Fitur ini khusus member. Masuk dulu ya."); return; }
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">${esc(e.pesan || "Pencarian belum bisa dijalankan. Coba lagi sebentar lagi.")}</div>`;
+    mdlMuatInfo();
+    return;
+  }
+  const d = r.data;
+  MDL.queryAktif = q;
+  if (d.status === "selesai") {
+    MDL.hasil = d.hasil; MDL.hasilMode = d.mode; MDL.kunci = d.kunci_cache;
+    if (d.dari_cache && MDL.hasil) MDL.hasil.dari_cache = true;
+    MDL.banding = {}; MDL.simpan = {}; MDL.saringAkses = "semua"; MDL.saringTahun = "semua";
+    toast("Hasil yang sama ditemukan di cache (tersimpan 7 hari), jadi kuotamu tidak terpotong.");
+    mdlRenderHasil(); mdlSetStage(3); mdlMuatInfo(); mdlMuatRiwayat();
+    return;
+  }
+  MDL.jobId = d.job_id;
+  mdlSetStage(2);
+  mdlLangkahSet(1, "Menyusun kata kunci dari konteksmu…");
+  $("#mdlProcNote").textContent = MDL.mode === "laporan"
+    ? "Perkiraan waktu Laporan Riset: " + MDL_MODES.laporan.waktu[MDL.saringan.kedalaman] + ". Laporan berjalan di latar belakang di server. Hasil dan laporannya masuk ke Riwayat Pencarian Mendalam di halaman ini begitu selesai, dan kredit terpotong hanya bila laporan selesai."
+    : "Perkiraan waktu mode ini: " + MDL_MODES[MDL.mode].waktu[MDL.saringan.kedalaman] + ". Jangan tutup halaman ini dulu.";
+  mdlPollJob();
+}
+
+function mdlPollJob() {
+  const iv = setInterval(async () => {
+    if (!MDL || !MDL.jobId) { clearInterval(iv); return; }
+    const r = await apiJSON("/api/mendalam/job-status?id=" + encodeURIComponent(MDL.jobId));
+    if (!r.ok) { clearInterval(iv); toast("Status proses tidak terbaca. Cek lagi dari riwayat sebentar lagi."); mdlSetStage(1); return; }
+    const d = r.data;
+    mdlLangkahSet(d.langkah || 1, d.tahap || "");
+    if (d.status === "selesai") {
+      clearInterval(iv);
+      MDL.hasil = d.hasil; MDL.hasilMode = d.mode; MDL.kunci = d.kunci_cache; MDL.jobId = null;
+      if (d.dari_cache && MDL.hasil) MDL.hasil.dari_cache = true;
+      MDL.banding = {}; MDL.simpan = {}; MDL.saringAkses = "semua"; MDL.saringTahun = "semua";
+      mdlRenderHasil(); mdlSetStage(3); mdlMuatInfo(); mdlMuatRiwayat();
+    } else if (d.status === "gagal") {
+      clearInterval(iv); MDL.jobId = null;
+      mdlSetStage(1);
+      $("#mdlFormError").innerHTML = `<div class="mdl-form-error">${esc(d.error || "Pencarian gagal.")} Kuota atau kreditmu tidak jadi terpotong.</div>`;
+      mdlMuatInfo(); mdlMuatRiwayat();
+    }
+  }, MDL && MDL.mode === "laporan" ? 5000 : 2500);
+  regTimer(iv);
+}
+
+function mdlPapersTampil() {
+  if (!MDL.hasil) return [];
+  return MDL.hasil.papers.filter(p => {
+    if (MDL.saringAkses !== "semua" && p.access !== MDL.saringAkses) return false;
+    if (MDL.saringTahun === "2024" && !(+p.year >= 2024)) return false;
+    if (MDL.saringTahun === "2023" && !(+p.year >= 2023)) return false;
+    if (MDL.saringTahun === "2022" && !(+p.year >= 2022)) return false;
+    return true;
+  });
+}
+
+function mdlJawabanHTML() {
+  const h = MDL.hasil, mode = MDL.hasilMode;
+  if (!h) return "";
+  if (mode === "laporan") {
+    const teks = (h.laporan && h.laporan.text) || "";
+    return `<div class="mdl-answer"><div class="mode-note">MODE: LAPORAN RISET</div><h3>Laporan Riset Selesai</h3><div style="white-space:pre-wrap;font-size:14.5px">${mdRapi ? mdRapi(teks) : esc(teks)}</div><div class="mdl-followup">${mdlTanyaHTML()}</div></div>`;
+  }
+  if (mode === "cepat") {
+    const a = h.jawaban || {};
+    let teks = esc(a.answer || "");
+    teks = teks.replace(/\[(\d+)\]/g, (m, n) => `<button type="button" class="mdl-pact" style="padding:1px 8px" data-mcite="${n}">[${n}]</button>`);
+    return `<div class="mdl-answer"><div class="mode-note">MODE: JAWABAN CEPAT</div><h3>Jawaban Langsung</h3><p style="margin:0">${teks}</p><div class="mdl-followup">${mdlTanyaHTML()}</div></div>`;
+  }
+  if (mode === "bedah") {
+    const b = h.bedah || {};
+    const ground = (bidang) => {
+      const g = ((b.grounding || {})[bidang]) || [];
+      if (!g.length) return "";
+      return `<div class="mdl-ground">Dasar klaim: ${g.map(x => `<a href="${esc(x.url || "#")}" target="_blank" rel="noopener">${esc((x.domain || "sumber"))}</a>`).join(", ")}</div>`;
+    };
+    const list = (arr) => `<ul>${(arr || []).map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+    return `<div class="mdl-answer"><div class="mode-note">MODE: BEDAH MENDALAM</div><h3>Bedah Mendalam</h3>
+      <p style="margin:0 0 4px">${esc(b.ringkasan || "")}</p>${ground("ringkasan")}
+      <h4 style="margin:10px 0 4px">Faktor dan Penyebab</h4>${list(b.faktor_penyebab)}${ground("faktor_penyebab")}
+      <h4 style="margin:10px 0 4px">Dampak</h4>${list(b.dampak)}${ground("dampak")}
+      <h4 style="margin:10px 0 4px">Rekomendasi</h4>${list(b.rekomendasi)}${ground("rekomendasi")}
+      <div class="mdl-followup">${mdlTanyaHTML()}</div></div>`;
+  }
+  const top = (h.papers || []).slice(0, 3);
+  return `<div class="mdl-answer"><div class="mode-note">MODE: CARI JURNAL</div><h3>Ringkasan Hasil Pencarian</h3>
+    <p style="margin:0">Ditemukan ${h.jumlah || 0} sumber yang paling berkaitan dengan konteksmu. ${top.map(p => `Paper [${p.id}] (${esc(p.domain || "")}, ${esc(p.year || "")}) membahas ${esc((p.snippet || p.title || "").slice(0, 140))}`).join(". ")}${top.length ? "." : ""} Rincian tiap sumber, label aksesnya, dan cuplikan paling relevannya ada di daftar sumber di bawah.</p>
+    <div class="mdl-followup">${mdlTanyaHTML()}</div></div>`;
+}
+
+function mdlTanyaHTML() {
+  return `<div class="mdl-flabel">Tanya Lanjut (tidak memotong kuota mendalam)</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><input type="text" id="mdlTanyaInput" placeholder="Tanya apa pun soal hasil ini…" style="flex:1;min-width:200px"><button class="mdl-btn primary" id="mdlTanyaBtn">Tanya</button></div>
+    <div id="mdlTanyaThread"></div>`;
+}
+
+function mdlRenderHasil() {
+  const host = $("#mdlHasilHost"); if (!host || !MDL.hasil) return;
+  const h = MDL.hasil, mode = MDL.hasilMode;
+  const meta = [`Mode: <b>${MDL_MODES[mode].nama}</b>`, `${h.jumlah || 0} sumber`];
+  if (h.dari_cache) meta.push("dari cache 7 hari");
+  if (h.penyaring) {
+    if (h.penyaring.fokus) meta.push("Fokus: " + mdlFokusLabel(h.penyaring.fokus));
+    if (h.penyaring.domain) meta.push("Domain: " + esc(h.penyaring.domain));
+  }
+  if (h.titik_mulai_doi) meta.push("Titik mulai: " + esc(h.titik_mulai_doi));
+  const counts = {full: 0, abstract: 0, partial: 0, metadata: 0};
+  (h.papers || []).forEach(p => { if (counts[p.access] != null) counts[p.access]++; });
+  const tampil = mdlPapersTampil();
+  const kosong = (h.papers || []).length === 0;
+  host.innerHTML = `
+    <div class="mdl-chips">${meta.map(m => `<span class="mdl-chip">${m}</span>`).join("")}<span class="mdl-chip" id="mdlSimpanCount">Paper tersimpan: 0</span></div>
+    ${mdlJawabanHTML()}
+    ${kosong ? "" : `
+    <div class="mdl-actionbar">
+      <div class="row"><span class="lab">Tampilkan menurut akses</span>
+        ${[["semua", "Semua akses"], ["full", "Teks Penuh saja"], ["abstract", "Abstrak Saja"], ["partial", "Pratinjau Terbatas"], ["metadata", "Metadata Saja"]].map(a => `<button type="button" class="mdl-pill ${MDL.saringAkses === a[0] ? "on" : ""}" data-mfakses="${a[0]}">${a[1]}</button>`).join("")}
+      </div>
+      <div class="row"><span class="lab">Saring ulang menurut tahun terbit</span>
+        ${[["semua", "Semua tahun"], ["2024", "2024 ke atas"], ["2023", "2023 ke atas"], ["2022", "2022 ke atas"]].map(a => `<button type="button" class="mdl-pill ${MDL.saringTahun === a[0] ? "on" : ""}" data-mftahun="${a[0]}">${a[1]}</button>`).join("")}
+        <span class="muted" style="font-size:12.5px">ini menyaring daftar yang sudah ada, tidak mencari ulang</span>
+      </div>
+      <div class="row"><span class="lab">Preset cepat</span>
+        <button type="button" class="mdl-pick" id="mdlPersempit">Persempit Hasil</button>
+        <button type="button" class="mdl-pick" id="mdlPerluas">Perluas Hasil</button>
+        <span class="muted" style="font-size:12.5px">Persempit = terbit 2022 ke atas dan teks penuh saja</span>
+      </div>
+      <div class="row"><span class="lab">Ekspor</span>
+        <button type="button" class="mdl-pick" id="mdlEkspor">Ekspor Daftar Referensi</button>
+        <span class="muted" style="font-size:12.5px">Mengunduh berkas teks berisi sitasi APA 7 tiap paper yang sedang tampil, lengkap dengan keterangan aksesnya.</span>
+      </div>
+    </div>
+    <div class="mdl-legend">
+      <b>Transparansi Akses</b> <span class="muted" style="font-size:13px">Label ini dihitung dari isi yang benar benar berhasil diambil sistem kami dari tiap sumber, bukan janji dari penerbitnya.</span>
+      <div class="mdl-legend-grid">
+        ${Object.keys(MDL_AKSES).map(k => `<div class="mdl-legend-item"><span class="mdl-badge2 acc-${k}">${MDL_AKSES[k].label}</span> ${MDL_AKSES[k].desc}</div>`).join("")}
+      </div>
+      <div class="mdl-counts">
+        <span class="mdl-count">Total: ${h.jumlah || 0}</span>
+        ${Object.keys(MDL_AKSES).filter(k => counts[k] > 0).map(k => `<span class="mdl-count">${MDL_AKSES[k].label}: ${counts[k]}</span>`).join("")}
+      </div>
+    </div>`}
+    <div id="mdlPapersHost">
+      ${kosong ? "" : tampil.map(p => mdlPaperHTML(p, false)).join("")}
+    </div>
+    ${!kosong && tampil.length === 0 ? `<div class="mdl-empty"><b>Tidak ada sumber yang cocok dengan saringan tampilan ini.</b><p style="margin:6px 0 0;font-size:13.5px">Longgarkan saringannya lewat tombol Perluas Hasil di atas. Saringan tampilan tidak mengubah hasil pencarian aslinya.</p></div>` : ""}
+    <div id="mdlBandingHost"></div>
+    ${kosong ? `
+    <div class="mdl-empty">
+      <b>Pencarianmu selesai, tetapi tidak ada jurnal yang cocok ditemukan.</b>
+      <p style="margin:6px 0 4px;font-size:13.5px">Beberapa penyebab yang paling sering terjadi:</p>
+      <ul style="margin:4px 0 8px;padding-left:18px">
+        <li>Jurnalnya belum terindeks di sumber terbuka yang dipakai sistem ini.</li>
+        <li>Jurnalnya hanya tersimpan di basis data berbayar tertutup seperti Scopus atau Web of Science.</li>
+        <li>Kata kunci di konteksmu belum cocok dengan judul atau abstrak yang tersimpan.</li>
+        <li>Artikelnya terlalu baru sehingga belum terindeks.</li>
+        <li>Layanan pencarian sedang mencapai batas sesaat.</li>
+      </ul>
+      <p style="margin:0 0 6px;font-size:13.5px">Coba persempit atau ganti sudut katanya, misalnya:</p>
+      <div class="mdl-mini-chips">${["pencegahan penyakit kardiovaskular", "pengetahuan sikap tindakan kesehatan", "faktor risiko penyakit jantung", "perilaku hidup sehat usia produktif"].map(s => `<button type="button" class="mdl-mini" data-msaran="${esc(s)}">${esc(s)}</button>`).join("")}</div>
+    </div>` : ""}
+  `;
+  mdlWirePapers(host);
+  host.querySelectorAll("[data-mcite]").forEach(b => b.onclick = () => {
+    const el = document.getElementById("mdlPaper" + b.dataset.mcite);
+    if (el) { el.scrollIntoView({behavior: "smooth", block: "center"}); el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1600); }
+  });
+  host.querySelectorAll("[data-mfakses]").forEach(b => b.onclick = () => { MDL.saringAkses = b.dataset.mfakses; mdlRenderHasil(); });
+  host.querySelectorAll("[data-mftahun]").forEach(b => b.onclick = () => { MDL.saringTahun = b.dataset.mftahun; mdlRenderHasil(); });
+  host.querySelectorAll("[data-msaran]").forEach(b => b.onclick = () => {
+    mdlTab("konteks");
+    const k = $("#mdlKonteks"); if (k) k.value = "Saya sedang mencari jurnal tentang " + b.dataset.msaran + " untuk kebutuhan skripsi dan tinjauan pustaka. Utamakan studi di Indonesia dalam 5 tahun terakhir.";
+    mdlSetStage(1);
+  });
+  const per = $("#mdlPersempit"); if (per) per.onclick = () => { MDL.saringAkses = "full"; MDL.saringTahun = "2022"; mdlRenderHasil(); };
+  const plu = $("#mdlPerluas"); if (plu) plu.onclick = () => { MDL.saringAkses = "semua"; MDL.saringTahun = "semua"; mdlRenderHasil(); };
+  const eks = $("#mdlEkspor"); if (eks) eks.onclick = mdlEkspor;
+  const tb = $("#mdlTanyaBtn"); if (tb) tb.onclick = mdlTanyaKirim;
+  const ti = $("#mdlTanyaInput"); if (ti) ti.onkeydown = e => { if (e.key === "Enter") mdlTanyaKirim(); };
+  mdlRenderBanding();
+}
+
+function mdlRenderBanding() {
+  const host = $("#mdlBandingHost"); if (!host || !MDL.hasil) return;
+  const ids = Object.keys(MDL.banding).filter(k => MDL.banding[k]).map(Number);
+  if (ids.length === 1) {
+    host.innerHTML = `<div class="mdl-note-amber">Satu paper lagi perlu ditandai supaya tabel perbandingannya muncul. Tandai minimal 2 paper.</div>`;
+    return;
+  }
+  if (ids.length < 2) { host.innerHTML = ""; return; }
+  const ps = MDL.hasil.papers.filter(p => ids.includes(p.id));
+  const baris = (label, fn) => `<tr><td class="rowhead">${label}</td>${ps.map(p => `<td>${fn(p)}</td>`).join("")}</tr>`;
+  host.innerHTML = `<div class="mdl-compare"><h3 style="margin:14px 0 8px">Perbandingan Paper</h3>
+    <table><thead><tr><th>Aspek</th>${ps.map(p => `<th>[${p.id}] ${esc(p.title)}</th>`).join("")}</tr></thead>
+    <tbody>
+      ${baris("Tahun", p => esc(p.year || "-"))}
+      ${baris("Akses", p => esc((MDL_AKSES[p.access] || {}).label || p.access) + ". " + esc(p.access_note || ""))}
+      ${baris("Metode", () => "Tidak terbaca dari sumber")}
+      ${baris("Temuan utama", p => esc(p.snippet || "Tidak terbaca dari sumber"))}
+    </tbody></table>
+    <p class="muted" style="font-size:12.5px">Metode tidak selalu tertulis di cuplikan yang terambil, jadi baris itu diisi apa adanya bila memang tidak terbaca.</p></div>`;
+  mdlWirePapers(host);
+}
+
+function mdlEkspor() {
+  const list = mdlPapersTampil();
+  if (!list.length) { toast("Tidak ada paper yang sedang tampil untuk diekspor."); return; }
+  const lines = list.map(p => {
+    const gaya = mdlSitasi(p, "apa");
+    return `[${p.id}] ${gaya}\n    [Akses: ${(MDL_AKSES[p.access] || {}).label || p.access_label} — ${p.access_note || ""}]`;
+  });
+  const blob = new Blob(["Daftar Referensi — Cari Jurnal Mendalam KhairyPustaka\nKonteks: " + (MDL.queryAktif || "") + "\n\n" + lines.join("\n\n") + "\n"], {type: "text/plain;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "daftar-referensi-mendalam.txt"; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast("Daftar referensi terunduh (" + list.length + " paper).");
+}
+
+async function mdlTanyaKirim() {
+  const inp = $("#mdlTanyaInput");
+  const tanya = (inp.value || "").trim();
+  if (!tanya) return;
+  const btn = $("#mdlTanyaBtn"); setLoading(btn, true, "Menjawab…");
+  const r = await apiPOST("/api/mendalam/tanya-lanjut", {tanya: tanya, konteks: MDL.queryAktif || ""});
+  setLoading(btn, false);
+  const thread = $("#mdlTanyaThread"); if (!thread) return;
+  if (!r.ok) {
+    thread.insertAdjacentHTML("beforeend", `<div class="mdl-fu-item"><span class="q">Kamu:</span> ${esc(tanya)}<br><span style="color:var(--mrose)">${esc((r.data && r.data.pesan) || "Tanya lanjut belum bisa dijawab sekarang.")}</span></div>`);
+    return;
+  }
+  inp.value = "";
+  const d = r.data;
+  const src = (d.citations || []).slice(0, 5).map((c, ix) => `<div class="mdl-ground">[${ix + 1}] <a href="${esc(c.url || "#")}" target="_blank" rel="noopener">${esc(c.title || c.url || "sumber")}</a></div>`).join("");
+  thread.insertAdjacentHTML("beforeend", `<div class="mdl-fu-item"><span class="q">Kamu:</span> ${esc(tanya)}<br><span>${esc(d.answer || "")}</span>${src}</div>`);
+}
+
 /* ---------- Router ---------- */
 const ROUTES = {
   "/beranda": pageBeranda,
   "/cari": pageCari,
+  "/mendalam": pageMendalam,
   "/carifile": pageCarifile,
   "/sitasi": pageSitasi,
   "/masuk": pageMasuk,

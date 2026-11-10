@@ -17,6 +17,11 @@ import dbstore  # Postgres (DATABASE_URL) atau file lokal, lihat dbstore.py
 log = logging.getLogger("skripsi_ai")
 
 FREE_AI_PER_DAY = 15        # login: jatah AI gratis harian (revisi Sul 2026-10-28: dari 10x)
+FREE_AI_PER_DAY_NAIK = 20   # login + tier benefit 1 (lifetime >= Rp5.000)
+FREE_AI_PER_DAY_TIER2 = 25  # login + tier benefit 2 (lifetime >= Rp10.000)
+# (benefit top up bertingkat Sul 2026-11-10 21:18 + 21:19: penanda
+# lifetime_topup yang sama dengan tier Mendalam menaikkan kuota AI
+# utama 15 -> 20 (tier 1) -> 25 (tier 2) per hari, permanen)
 FREE_AI_PER_DAY_TAMU = 5    # tamu web (uid "web_*"): lebih ketat
 GUEST_IP_AI_DAILY_CAP = 25  # hitung ganda: plafon gabungan per alamat IP
 # untuk SEMUA tamu dari IP itu (lintas identitas browser). Longgar supaya
@@ -35,10 +40,22 @@ _LOCK = threading.Lock()  # jaga read-modify-write kuota lintas thread
 
 
 def limit_ai_harian(uid):
-    """Limit jatah AI gratis harian: tamu 5x, login 15x."""
+    """Limit jatah AI gratis harian: tamu 5x, login 15x; member tier
+    benefit 1 (akumulasi top up >= Rp5.000) 20x dan tier 2
+    (>= Rp10.000) 25x (Sul 2026-11-10 21:19; penanda lifetime_topup
+    hidup di exa_mendalam, dicatat dari jalur klaim pembayaran)."""
     try:
         if str(uid or "").startswith("web_"):
             return FREE_AI_PER_DAY_TAMU
+    except Exception:
+        pass
+    try:
+        import exa_mendalam as _exa
+        t = _exa.tier(uid)
+        if t >= 2:
+            return FREE_AI_PER_DAY_TIER2
+        if t >= 1:
+            return FREE_AI_PER_DAY_NAIK
     except Exception:
         pass
     return FREE_AI_PER_DAY
