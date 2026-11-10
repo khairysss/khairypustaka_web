@@ -112,10 +112,14 @@ class _KeyRateLimited(Exception):
 
 
 # ------------------------------------------------------------ status model
-# Catatan keberhasilan/kegagalan panggilan per model, DI MEMORI saja,
-# untuk tab Sistem panel admin (2026-11-08). Hilang saat server mulai
-# ulang dan memang ditampilkan apa adanya ("belum ada data"). Fail-safe:
-# pencatatan tidak pernah mengganggu panggilan AI.
+# Catatan keberhasilan/kegagalan panggilan per model untuk tab Sistem
+# panel admin. Dua lapis (perbaikan 2026-11-10): dict memori di bawah
+# untuk status seketika proses berjalan, dan pencatatan PERSISTEN per
+# hari + total lewat modul model_stats (kp_kv data/model-stats.json)
+# supaya angka tidak kembali nol tiap server mulai ulang. Panel
+# membaca total persisten; memori hanya cadangan bila basis data
+# tidak terbaca. Fail-safe: pencatatan tidak pernah mengganggu
+# panggilan AI.
 _MODEL_STATS = {}
 _MODEL_STATS_LOCK = threading.Lock()
 
@@ -139,14 +143,57 @@ def catat_status_model(model_id, ok, lambat=False):
                 s["terakhir_gagal"] = now
             if lambat:
                 s["terakhir_lama"] = now
+        try:
+            import model_stats as _ms
+            threading.Thread(target=_ms.catat,
+                             args=(mid, bool(ok), bool(lambat)),
+                             daemon=True).start()
+        except Exception:
+            pass
     except Exception:
         pass
 
 
 def status_model():
-    """Ringkasan status per model registry untuk panel admin."""
+    """Ringkasan status per model registry untuk panel admin.
+
+    Angka berhasil/gagal diambil dari pencatatan persisten
+    (model_stats) supaya tetap utuh melewati mulai ulang server;
+    cap waktu memakai nilai terbaru dari persisten dan memori.
+    Bila pencatatan persisten kosong atau tidak terbaca, jatuh ke
+    hitungan memori proses berjalan seperti perilaku lama.
+    """
     with _MODEL_STATS_LOCK:
         snap = {k: dict(v) for k, v in _MODEL_STATS.items()}
+    pers_total, pers_terakhir = {}, {}
+    try:
+        import model_stats as _ms
+        _rk = _ms.ringkasan()
+        if isinstance(_rk, dict):
+            pers_total = _rk.get("total") or {}
+            pers_terakhir = _rk.get("terakhir") or {}
+    except Exception:
+        pers_total, pers_terakhir = {}, {}
+    gabung = {}
+    for mid in set(list(snap.keys()) + list(pers_total.keys())):
+        m = snap.get(mid) or {}
+        p = pers_total.get(mid) or {}
+        t = pers_terakhir.get(mid) or {}
+        if pers_total:
+            ok_n = int(p.get("ok") or 0)
+            g_n = int(p.get("gagal") or 0)
+        else:
+            ok_n = int(m.get("ok") or 0)
+            g_n = int(m.get("gagal") or 0)
+        gabung[mid] = {
+            "ok": ok_n, "gagal": g_n,
+            "terakhir_ok": max(float(m.get("terakhir_ok") or 0),
+                               float(t.get("ok") or 0)),
+            "terakhir_gagal": max(float(m.get("terakhir_gagal") or 0),
+                                  float(t.get("gagal") or 0)),
+            "terakhir_lama": max(float(m.get("terakhir_lama") or 0),
+                                 float(t.get("lama") or 0))}
+    snap = gabung
     # Kategori galat Gemini terakhir (diagnosis 2026-11-08): statistik
     # di atas hanya menghitung ok/gagal, jadi penyebab kegagalan Gemini
     # tidak pernah terlihat di panel. Ambil dari tanya secara lazy

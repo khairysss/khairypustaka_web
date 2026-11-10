@@ -1550,6 +1550,18 @@ _SITASI_JOBS = {}
 _SITASI_LOCK = threading.Lock()
 
 
+def _catat_job(antrean, ok):
+    """Catat penyelesaian job ke statistik persisten tab Sistem
+    (modul job_stats, perbaikan 2026-11-10). Dijalankan di utas latar
+    dan fail-safe: tidak pernah mengganggu job yang baru selesai."""
+    try:
+        import job_stats as _js
+        threading.Thread(target=_js.catat, args=(antrean, bool(ok)),
+                         daemon=True).start()
+    except Exception:
+        pass
+
+
 def _ai_bersih():
     """Buang job selesai/gagal berumur > 1 jam (dipanggil sambil lock)."""
     batas = time.time() - 3600
@@ -1626,6 +1638,7 @@ def _ai_kerja(jid):
             job["tahap"] = "Gagal"
             job["error"] = "AI-nya lagi gangguan, coba lagi bentar ya"
             _ai_job_refund(job)
+            _catat_job("ai", False)
             return
         job["status"] = "selesai"
         job["tahap"] = "Selesai"
@@ -1634,6 +1647,7 @@ def _ai_kerja(jid):
         job["dialihkan"] = bool(info.get("dialihkan"))
         job["model_pilihan"] = _MODEL_LABEL[job["pilihan"]]
         job["sisa"] = _ai_job_sisa(job)
+    _catat_job("ai", True)
     try:
         sai.track_tool("ai", job["uid"])
         if job.get("user_login"):
@@ -1738,6 +1752,7 @@ def _sitasi_kerja(jid):
             job["tahap"] = "Gagal"
             job["error"] = e.pesan
             job["selesai_ts"] = time.time()
+        _catat_job("sitasi", False)
         return
     except Exception as e:  # noqa: BLE001
         log.warning("sitasi job %s gagal: %s", jid, e)
@@ -1746,6 +1761,7 @@ def _sitasi_kerja(jid):
             job["tahap"] = "Gagal"
             job["error"] = "sitasi dari PDF gagal, coba lagi nanti"
             job["selesai_ts"] = time.time()
+        _catat_job("sitasi", False)
         return
     with _SITASI_LOCK:
         job["status"] = "selesai"
@@ -1753,6 +1769,7 @@ def _sitasi_kerja(jid):
         job["work"] = to_web_work(work)
         job["sumber"] = sumber
         job["selesai_ts"] = time.time()
+    _catat_job("sitasi", True)
     try:
         track_penggunaan("sitasi-pdf")
     except Exception as e:  # noqa: BLE001
@@ -2618,8 +2635,12 @@ def admin_hapus_user():
 @with_rl
 def admin_sistem():
     """Tab Sistem panel admin (2026-11-08): kesehatan internal, status
-    model AI dari catatan panggilan sejak server menyala, dan antrean
-    pekerjaan di memori. Pemakaian Render dibaca dari metrik API Render
+    model AI dari catatan panggilan persisten (modul model_stats,
+    perbaikan 2026-11-10; sebelumnya hanya sejak server menyala), dan
+    antrean pekerjaan: yang jalan dan antre dibaca langsung dari
+    memori saat endpoint dipanggil, yang selesai dan gagal dari
+    pencatatan persisten (modul job_stats, perbaikan 2026-11-10).
+    Pemakaian Render dibaca dari metrik API Render
     bila kunci API terpasang di env (modul render_metrics), pemakaian
     Cerebras dari pencatatan persisten situs sendiri (modul
     cerebras_usage) karena API Cerebras tidak menyediakan saldo.
@@ -2646,6 +2667,28 @@ def admin_sistem():
         j["total"] = j["jalan"] + j["antre"] + j["gagal"] + j["selesai"]
         return j
 
+    pers_job = {}
+    try:
+        import job_stats as _js
+        pers_job = _js.ringkasan() or {}
+    except Exception as e:
+        log.warning("admin_sistem: ringkasan job persisten gagal: %s", e)
+        pers_job = {}
+
+    def gabung(jobs, kunci):
+        j = ringkas(jobs)
+        total_p = (pers_job.get("total") or {}).get(kunci)
+        if isinstance(total_p, dict):
+            j["gagal"] = int(total_p.get("gagal") or 0)
+            j["selesai"] = int(total_p.get("selesai") or 0)
+            hari_p = (pers_job.get("hari_ini") or {}).get(kunci) or {}
+            j["gagal_hari_ini"] = int(hari_p.get("gagal") or 0)
+            j["selesai_hari_ini"] = int(hari_p.get("selesai") or 0)
+            j["terakhir"] = (pers_job.get("terakhir") or {}).get(kunci)
+            j["total"] = (j["jalan"] + j["antre"] + j["gagal"]
+                          + j["selesai"])
+        return j
+
     try:
         import ai_providers as _aip
         model = _aip.status_model()
@@ -2659,9 +2702,10 @@ def admin_sistem():
                    else "file lokal",
                    "waktu": int(time.time())},
         "model": model,
-        "antrean": {"ai": ringkas(list(_AI_JOBS.values())),
-                    "sitasi": ringkas(list(_SITASI_JOBS.values())),
-                    "convert": ringkas(list(_CONVERT_JOBS.values()))},
+        "antrean": {"ai": gabung(list(_AI_JOBS.values()), "ai"),
+                    "sitasi": gabung(list(_SITASI_JOBS.values()), "sitasi"),
+                    "convert": gabung(list(_CONVERT_JOBS.values()),
+                                      "convert")},
         "render": _blok_render(),
         "cerebras": _blok_cerebras(),
         "openrouter": _blok_openrouter(),
@@ -3818,12 +3862,14 @@ def _convert_kerja(jid):
             job["hasil_mime"] = mime
             job["hasil_ukuran"] = len(hasil)
             job["selesai_ts"] = time.time()
+        _catat_job("convert", True)
     except (convert_mod.ConvertError, ilovepdf.ILoveError) as e:
         with _CONVERT_LOCK:
             job["status"] = "gagal"
             job["tahap"] = "Gagal"
             job["error"] = str(e)
             job["selesai_ts"] = time.time()
+        _catat_job("convert", False)
     except Exception as e:
         log.warning("convert gagal tak terduga %s: %s", jid, e)
         with _CONVERT_LOCK:
@@ -3831,6 +3877,7 @@ def _convert_kerja(jid):
             job["tahap"] = "Gagal"
             job["error"] = "terjadi kendala teknis, coba lagi nanti ya"
             job["selesai_ts"] = time.time()
+        _catat_job("convert", False)
     finally:
         with _CONVERT_LOCK:
             _convert_bersih()

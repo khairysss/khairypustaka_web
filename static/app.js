@@ -3717,10 +3717,18 @@ async function admMuatSistem() {
     const d = r.data || {}, s = d.server || {}, an = d.antrean || {};
     function barisAntre(nama, j) {
       j = j || {};
-      return '<div class="list-row"><div class="lr-main"><b>' + esc(nama) + "</b>" +
+      let t = '<div class="list-row"><div class="lr-main"><b>' + esc(nama) + "</b>" +
         '<div class="muted tiny">Jalan ' + (j.jalan || 0) + " · Antre " + (j.antre || 0) +
-        " · Gagal " + (j.gagal || 0) + " · Selesai " + (j.selesai || 0) + "</div></div>" +
-        admPill(String(j.total || 0) + " pekerjaan", (j.gagal || 0) > 0 ? "warn" : "grey") + "</div>";
+        " · Gagal " + (j.gagal || 0) + " · Selesai " + (j.selesai || 0) + "</div>";
+      if (j.terakhir) {
+        t += '<div class="muted tiny">Hari ini selesai ' + (j.selesai_hari_ini || 0) +
+          " · gagal " + (j.gagal_hari_ini || 0) + " · aktivitas terakhir " +
+          esc(fmtWita(j.terakhir)) + "</div>";
+      }
+      t += "</div>" +
+        admPill(String((j.jalan || 0) + (j.antre || 0)) + " pekerjaan aktif",
+          (j.gagal_hari_ini || 0) > 0 ? "warn" : "grey") + "</div>";
+      return t;
     }
     function fmtAngka(x) {
       try { return Number(x || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 }); }
@@ -3803,7 +3811,7 @@ async function admMuatSistem() {
         mo.status === "lambat" ? "Lambat" : "Belum ada data";
       return '<div class="list-row"><div class="lr-main"><b>' + esc(mo.label) + "</b>" +
         '<div class="muted tiny">' + esc(mo.provider) + " · berhasil " + (mo.ok || 0) +
-        "x · gagal " + (mo.gagal || 0) + "x sejak server menyala</div></div>" +
+        "x · gagal " + (mo.gagal || 0) + "x · tercatat permanen</div></div>" +
         admPill(label, kelas) + "</div>";
     }).join("");
     box.innerHTML =
@@ -3836,7 +3844,7 @@ async function admMuatSistem() {
       "<div>" + orDetail + "</div></div>" +
       orPill + "</div>" +
       "<h4>Antrean Pekerjaan</h4>" +
-      '<p class="muted tiny">Isi antrean di memori server, hilang bila server mulai ulang.</p>' +
+      '<p class="muted tiny">Yang jalan dan antre adalah kondisi saat panel dibuka; selesai dan gagal tercatat permanen di basis data.</p>' +
       barisAntre("AI Studio dan Tanya AI", an.ai) +
       barisAntre("Sitasi dari PDF", an.sitasi) +
       barisAntre("Convert File", an.convert) +
