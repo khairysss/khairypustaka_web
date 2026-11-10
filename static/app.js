@@ -3742,7 +3742,7 @@ function pageMendalam() {
       <div id="mdlPreviewHost"></div>
 
       <details class="mdl-details" id="mdlDetailSaring">
-        <summary id="mdlSaringRingkasan">Saringan Lanjutan</summary>
+        <summary id="mdlSaringRingkasan"><span class="mdl-sum-label">Saringan Lanjutan</span><span class="mdl-sum-chips" id="mdlSaringChips"></span><span class="mdl-sum-chev" aria-hidden="true">▾</span></summary>
         <div class="mdl-fgrid">
           <div><div class="mdl-flabel">Fokus Sumber</div><div class="mdl-pills">
             ${pill("fokus", "semua", "Semua sumber")}${pill("fokus", "paper", "Hanya paper ilmiah")}${pill("fokus", "umum", "Paper plus situs umum")}${pill("fokus", "berita", "Paper plus berita")}${pill("fokus", "perusahaan", "Paper plus data perusahaan")}${pill("fokus", "kode", "Paper plus kode dan GitHub")}
@@ -3860,8 +3860,14 @@ function mdlRingkasanSaringan() {
   if (F.tahunMode === "relatif") tahun = F.rentang + " tahun terakhir";
   else if (F.tahunMode === "bebas") tahun = F.dari + " sampai " + F.sampai;
   const bahasa = {semua: "Semua bahasa", id: "Indonesia", en: "Inggris"}[F.bahasa];
-  const sum = $("#mdlSaringRingkasan");
-  if (sum) sum.textContent = "Saringan Lanjutan · " + mdlFokusLabel(F.fokus) + " · " + tahun + " · " + bahasa + " · Maks " + F.jumlah + " hasil";
+  const chips = $("#mdlSaringChips");
+  if (chips) {
+    chips.innerHTML = [mdlFokusLabel(F.fokus), tahun, bahasa, "Maks " + F.jumlah + " hasil"]
+      .map(t => '<span class="mdl-sum-chip">' + esc(t) + "</span>").join("");
+  } else {
+    const sum = $("#mdlSaringRingkasan");
+    if (sum) sum.textContent = "Saringan Lanjutan · " + mdlFokusLabel(F.fokus) + " · " + tahun + " · " + bahasa + " · Maks " + F.jumlah + " hasil";
+  }
 }
 
 function mdlRefreshPills() {
