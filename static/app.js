@@ -1041,7 +1041,7 @@ function showcaseHTML() {
 function pageBeranda() {
   const KATS = [
     ["populer", tic("star")+" Populer", [
-      ["#/statistik", "chart", "Statistik", "Panduan pilih uji statistik"],
+      ["#/mendalam", "spark", "Cari Jurnal Mendalam", "Cari, bedah, sampai laporan riset utuh", "premium"],
       ["#/cari", "search", "Cari Jurnal", "OpenAlex, Crossref, Sinta, Garuda"],
       ["#/sitasi", "quote", "Buat Sitasi", "Sitasi 6 gaya otomatis"],
       ["#/ai", "spark", "AI Studio", "14 generator naskah tugas & skripsi"],
@@ -1114,8 +1114,10 @@ function pageBeranda() {
   function kartuHTML(feats) {
     return feats.map((f, i) => {
       const tool = toolDariHref(f[0]);
-      return '<a class="feat" style="animation-delay:' + (i * 55) + 'ms" href="' + f[0] + '"' +
+      const prem = f[4] === "premium";
+      return '<a class="feat' + (prem ? " premium" : "") + '" style="animation-delay:' + (i * 55) + 'ms" href="' + f[0] + '"' +
         (tool ? ' data-tool="' + tool + '"' : "") + '>' +
+        (prem ? '<span class="feat-badge">PREMIUM</span>' : "") +
         '<span class="ico">' + tic(f[1]) + "</span><b>" + f[2] + "</b><small>" + f[3] + "</small></a>";
     }).join("");
   }
@@ -3841,7 +3843,7 @@ function mdlUpdateEstimate() {
 }
 
 async function mdlMuatInfo() {
-  const r = await apiJSON("/api/mendalam/info");
+  const r = await apiJSON("/mendalam/info");
   if (r.ok) {
     MDL.info = r.data;
     const host = $("#mdlInfoChips"); if (host) host.innerHTML = mdlChipInfo();
@@ -3873,7 +3875,7 @@ function mdlRenderBeli() {
 async function mdlBeliMulai() {
   const area = $("#mdlBeliArea");
   area.innerHTML = `<span class="muted">Menyiapkan pembayaran…</span>`;
-  const r = await apiPOST("/api/mendalam/beli/create", {});
+  const r = await apiPOST("/mendalam/beli/create", {});
   if (!r.ok) {
     area.innerHTML = `<span class="muted">${esc((r.data && (r.data.pesan || r.data.error)) || "Pembayaran belum bisa disiapkan.")}</span> <button class="mdl-btn" onclick="mdlRenderBeli()">Coba Lagi</button>`;
     return;
@@ -3895,7 +3897,7 @@ async function mdlBeliMulai() {
     tries++;
     const st = $("#mdlBeliStatus");
     if (!st || tries > 120) { clearInterval(iv); return; }
-    const s = await apiJSON("/api/mendalam/beli/status/" + encodeURIComponent(d.ref_id));
+    const s = await apiJSON("/mendalam/beli/status/" + encodeURIComponent(d.ref_id));
     if (s.ok && s.data.paid) {
       clearInterval(iv);
       toast("Pembayaran diterima. Kredit laporanmu sekarang " + s.data.saldo_kredit + ".");
@@ -4017,7 +4019,7 @@ function mdlCekKonteks() {
 
 async function mdlMuatRiwayat() {
   const host = $("#mdlRiwayatHost"); if (!host) return;
-  const r = await apiJSON("/api/mendalam/riwayat");
+  const r = await apiJSON("/mendalam/riwayat");
   if (!r.ok || !r.data.riwayat || !r.data.riwayat.length) {
     host.innerHTML = `<h2 style="font-size:16px">Riwayat Pencarian Mendalam</h2><div class="muted" style="font-size:13.5px">Belum ada pencarian mendalam. Hasil pencarianmu nanti tersimpan di sini dan bisa dibuka lagi tanpa mencari ulang.</div>`;
     return;
@@ -4032,7 +4034,7 @@ async function mdlMuatRiwayat() {
 }
 
 async function mdlBukaHasil(kunci) {
-  const r = await apiJSON("/api/mendalam/hasil?kunci=" + encodeURIComponent(kunci));
+  const r = await apiJSON("/mendalam/hasil?kunci=" + encodeURIComponent(kunci));
   if (!r.ok) {
     toast("Hasil tersimpan ini sudah lewat masa cache 7 hari. Jalankan pencarian yang sama lagi ya.");
     return;
@@ -4172,7 +4174,7 @@ async function mdlJalankan() {
   }
   if (!q) { toast("Isi dulu konteks pencarianmu ya."); return; }
   const btn = $("#mdlRun"); setLoading(btn, true, "Menyiapkan…");
-  const r = await apiPOST("/api/mendalam/job", {mode: MDL.mode, query: q, start: MDL.start, saringan: mdlSaringanKirim()});
+  const r = await apiPOST("/mendalam/job", {mode: MDL.mode, query: q, start: MDL.start, saringan: mdlSaringanKirim()});
   setLoading(btn, false);
   if (!r.ok) {
     const e = r.data || {};
@@ -4203,7 +4205,7 @@ async function mdlJalankan() {
 function mdlPollJob() {
   const iv = setInterval(async () => {
     if (!MDL || !MDL.jobId) { clearInterval(iv); return; }
-    const r = await apiJSON("/api/mendalam/job-status?id=" + encodeURIComponent(MDL.jobId));
+    const r = await apiJSON("/mendalam/job-status?id=" + encodeURIComponent(MDL.jobId));
     if (!r.ok) { clearInterval(iv); toast("Status proses tidak terbaca. Cek lagi dari riwayat sebentar lagi."); mdlSetStage(1); return; }
     const d = r.data;
     mdlLangkahSet(d.langkah || 1, d.tahap || "");
@@ -4401,7 +4403,7 @@ async function mdlTanyaKirim() {
   const tanya = (inp.value || "").trim();
   if (!tanya) return;
   const btn = $("#mdlTanyaBtn"); setLoading(btn, true, "Menjawab…");
-  const r = await apiPOST("/api/mendalam/tanya-lanjut", {tanya: tanya, konteks: MDL.queryAktif || ""});
+  const r = await apiPOST("/mendalam/tanya-lanjut", {tanya: tanya, konteks: MDL.queryAktif || ""});
   setLoading(btn, false);
   const thread = $("#mdlTanyaThread"); if (!thread) return;
   if (!r.ok) {

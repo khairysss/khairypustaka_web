@@ -672,6 +672,42 @@ body{
   border:1px solid rgba(45,212,216,.30);
   color:#a5f3f5;
 }
+/* Kartu premium (Cari Jurnal Mendalam di Populer): aksen emas + lencana */
+.feat.premium{
+  border-color:rgba(245,200,107,.45);
+  background:linear-gradient(160deg, rgba(245,200,107,.10), rgba(45,212,216,.06) 55%, rgba(13,36,56,.55));
+  box-shadow:0 18px 44px rgba(0,0,0,.45), 0 0 24px rgba(245,200,107,.10);
+}
+.feat.premium::before{
+  background:linear-gradient(90deg, transparent, rgba(245,200,107,.8), transparent);
+  opacity:1;
+}
+.feat.premium:hover{
+  border-color:rgba(245,200,107,.8);
+  box-shadow:0 22px 48px rgba(0,0,0,.4), 0 0 0 1px rgba(245,200,107,.28),
+    0 14px 38px rgba(245,200,107,.18), inset 0 1px 0 rgba(255,255,255,.14);
+}
+.feat.premium .ico{
+  background:linear-gradient(145deg, rgba(245,200,107,.32), rgba(45,212,216,.18));
+  border-color:rgba(245,200,107,.55);
+  color:#ffe9b0;
+}
+.feat-badge{
+  position:absolute;top:10px;right:10px;z-index:2;
+  font-size:.6rem;font-weight:800;letter-spacing:.12em;
+  color:#231a05;background:linear-gradient(120deg,#ffd97a,#f0b84e);
+  padding:3px 8px;border-radius:999px;
+  box-shadow:0 4px 14px rgba(240,184,78,.35);
+}
+@media (prefers-reduced-motion: no-preference){
+  .feat.premium::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(115deg, transparent 30%, rgba(255,233,176,.10) 48%, transparent 62%);
+    background-size:250% 100%;
+    animation:featSheen 3.6s ease-in-out infinite;
+  }
+  @keyframes featSheen{0%{background-position:120% 0}55%{background-position:-40% 0}100%{background-position:-40% 0}}
+}
 /* Chip filter kaca */
 .filter-chip{
   background:linear-gradient(180deg, rgba(16,44,68,.62), rgba(13,36,56,.55));
