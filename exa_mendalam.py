@@ -329,6 +329,26 @@ def kuota_refund(uid):
             _simpan(_PATH_KUOTA, d)
 
 
+def kuota_reset_harian(uid):
+    """Nolkan pemakaian mode ringan HARI INI milik uid ini.
+
+    Aturan Sul 2026-11-10 23:53: begitu klaim top up kredit laporan
+    lunas terdeteksi, sisa kuota langsung jadi plafon tier penuh,
+    BUKAN plafon dikurangi pemakaian yang sudah lewat. Pemanggil
+    (jalur klaim atomik di app.py) menjamin tepat sekali per invoice;
+    fungsi ini sendiri idempoten (menolkan hitungan yang sudah 0
+    tidak mengubah apa pun)."""
+    with _LOCK:
+        d = _muat(_PATH_KUOTA)
+        entri = d.setdefault(uid, {})
+        hari = _hari_ini()
+        for k in [k for k in entri if k != hari]:
+            entri.pop(k, None)
+        entri[hari] = 0
+        d[uid] = entri
+        _simpan(_PATH_KUOTA, d)
+
+
 # ---------------------------------------------------------------- belanja
 def _cap_harian():
     try:

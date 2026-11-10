@@ -2643,6 +2643,18 @@ def mendalam_beli_status(ref_id):
         # permanen 5x/hari (penanda lifetime, sekali per invoice).
         exa.kredit_catat_topup(g.uid,
                                int(p.get("amount") or exa.HARGA_KREDIT_RP))
+        # Aturan Sul 2026-11-10 23:53: top up lunas juga me-reset
+        # pemakaian HARI INI saat itu juga, jadi sisa kuota langsung
+        # plafon tier penuh (mode ringan DAN jatah AI), tanpa menunggu
+        # reset 00.00 WITA. Baris ini berada di dalam cabang klaim
+        # atomik pending_claim di atas, jadi berjalan tepat sekali
+        # per invoice; kegagalannya tidak boleh menggagalkan kredit
+        # yang sudah sah terkredit.
+        try:
+            exa.kuota_reset_harian(g.uid)
+            sai.ai_reset_harian(g.uid)
+        except Exception as e:  # noqa: BLE001
+            log.warning("reset kuota pasca top up gagal: %s", e)
         ppay.pending_drop(ref_id)
         with _STATUS_THROTTLE_LOCK:
             _STATUS_THROTTLE.pop(ref_id, None)

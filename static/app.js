@@ -4031,7 +4031,7 @@ async function mdlMuatRiwayat() {
     <button type="button" class="mdl-hist-item" data-mhist="${esc(it.kunci)}">
       <span class="mdl-hist-top"><span>${esc(it.mode_nama || (MDL_MODES[it.mode] || {}).nama || "")}</span><span>${esc(it.waktu_label || "")}</span></span>
       <span class="mdl-hist-q" style="display:block">${esc(it.query)}</span>
-      <span class="mdl-hist-meta">${it.jumlah} sumber ditemukan. Klik untuk memuat lagi.</span>
+      <span class="mdl-hist-meta">${it.jumlah_sumber != null ? it.jumlah_sumber : (it.jumlah != null ? it.jumlah : 0)} sumber ditemukan. Klik untuk memuat lagi.</span>
     </button>`).join("");
   $$("[data-mhist]").forEach(b => b.onclick = () => mdlBukaHasil(b.dataset.mhist));
 }

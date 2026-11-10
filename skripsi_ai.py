@@ -206,6 +206,23 @@ def ai_quota_left(chat_id):
     return max(0, limit_ai_harian(chat_id) - used)
 
 
+def ai_reset_harian(chat_id):
+    """Nolkan hitungan jatah AI gratis HARI INI milik uid ini.
+
+    Aturan Sul 2026-11-10 23:53: begitu klaim top up kredit laporan
+    lunas terdeteksi, sisa jatah langsung kembali ke plafon tier
+    penuh, tanpa menunggu reset tengah malam. Hanya entri hitungan
+    harian uid ini yang disentuh; saldo top-up (pool pulsa di
+    ai_try_consume) TIDAK diubah. Pemanggil (jalur klaim atomik di
+    app.py) menjamin tepat sekali per invoice; fungsi ini sendiri
+    idempoten."""
+    with _LOCK:
+        d = _load()
+        users = d.setdefault("users", {})
+        users[str(chat_id)] = {"date": _today(), "count": 0}
+        _save(d)
+
+
 def ai_try_consume(chat_id):
     """Reservasi 1 jatah AI secara ATOMIK.
 
