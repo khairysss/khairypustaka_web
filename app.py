@@ -2234,6 +2234,24 @@ def _mdl_hasil_kanon(hasil, mode):
         # paper yang bisa dirujuk.
         bersih = [p for p in hasil["papers"]
                   if not exa.judul_sampah(p.get("title"))]
+        # Duplikat judul yang sama dari cermin berbeda juga dibuang
+        # di kanonisasi (audit live v77 T5/T6), dan penulis serta
+        # cuplikan entri lama dibersihkan ulang dengan aturan
+        # terkini supaya cache lama tidak menampilkan nama ganda
+        # atau markdown mentah.
+        unik, judul_terlihat = [], set()
+        for p in bersih:
+            kunci_judul = exa._judul_kunci(p.get("title"))
+            if kunci_judul and kunci_judul in judul_terlihat:
+                continue
+            if kunci_judul:
+                judul_terlihat.add(kunci_judul)
+            if p.get("author"):
+                p["author"] = exa.bersihkan_penulis(p["author"])
+            if p.get("snippet"):
+                p["snippet"] = exa.bersihkan_cuplikan(p["snippet"])
+            unik.append(p)
+        bersih = unik
         if len(bersih) != len(hasil["papers"]):
             for i, p in enumerate(bersih):
                 p["id"] = i + 1
@@ -2290,6 +2308,16 @@ def _mdl_kerja_ringan(jid):
     uid, mode, s = job["uid"], job["mode"], job["saringan"]
     try:
         if mode == "cari":
+            # Isi yang SELURUHNYA hanya DOI atau URL doi.org adalah
+            # titik mulai DOI walau sakelar titik mulai di form
+            # tertinggal di "konteks" (audit live v77 T3 berjalan
+            # lewat jalur cerita dan paper sumbernya tampil sebagai
+            # hasil nomor 1). Perlakukan sebagai Paper Serupa.
+            q_bersih = (job["query"] or "").strip()
+            if job["start"] != "doi" and re.fullmatch(
+                    r"(https?://doi\.org/)?10\.\d{4,9}/[^\s\"<>]+",
+                    q_bersih):
+                job["start"] = "doi"
             if job["start"] == "doi":
                 body = exacli.cari_serupa(job["query"], num=s["jumlah"])
             else:
@@ -2623,8 +2651,18 @@ def mendalam_hasil():
     if not hit:
         return _err("hasil ini sudah lewat masa cache 7 hari, jalankan "
                     "pencarian baru ya", 410)
+    hasil_kanon = _mdl_hasil_kanon(hit["hasil"], hit["mode"])
+    if hit["mode"] in exa.MODE_RINGAN \
+            and not (hasil_kanon.get("papers") or []):
+        # Entri lama yang sesudah disaring ulang tidak menyisakan
+        # satu pun paper yang layak tampil (dulu hasil sampah DOI
+        # tidak valid) tidak boleh disajikan sebagai hasil kosong;
+        # perlakukan sebagai kedaluwarsa supaya member menjalankan
+        # pencarian baru yang bersih.
+        return _err("hasil lama ini sudah tidak layak tampil, "
+                    "jalankan pencarian baru ya", 410)
     return jsonify({"mode": hit["mode"],
-                    "hasil": _mdl_hasil_kanon(hit["hasil"], hit["mode"]),
+                    "hasil": hasil_kanon,
                     "query": hit["query"], "ts": hit["ts"],
                     "dari_cache": True})
 

@@ -203,6 +203,50 @@ def doi_terdaftar(doi):
     return None
 
 
+_JUDUL_DOI_CACHE = {}
+
+
+def judul_sumber_doi(doi):
+    """Judul resmi paper pemilik DOI ini dari register DOI
+    (API Crossref, agen registrasi DOI jurnal), '' bila gagal.
+
+    Dipakai menyaring paper sumber dari daftar paper serupanya
+    sendiri lewat kecocokan judul (audit live v77 T3: saringan DOI
+    di URL/teks lolos karena DOI tidak tercetak di awal teks
+    halaman artikel). Fail-safe total: kegagalan apa pun
+    mengembalikan '' dan pemanggil melanjutkan tanpa saringan
+    judul, tidak pernah mengarang judul."""
+    doi = (doi or "").strip()
+    if not doi:
+        return ""
+    if doi in _JUDUL_DOI_CACHE:
+        return _JUDUL_DOI_CACHE[doi]
+    judul = ""
+    # Jalur utama Crossref: API resminya mengembalikan judul di
+    # message.title. Negosiasi konten doi.org tidak dipakai sebagai
+    # jalur utama karena doi.org MENYALURKAN (redirect) permintaan
+    # CSL ke penyedia metadata, dan pengalihan memang ditolak di
+    # modul ini (uji lokal v78: doi.org memberi string kosong).
+    url = "https://api.crossref.org/works/" + quote(doi, safe="")
+    req = urllib.request.Request(
+        url, headers={"Accept": "application/json",
+                      "User-Agent": "KhairyPustaka/1.0 "
+                                    "(mailto:admin@khairys.web.id)"})
+    try:
+        with urllib.request.build_opener(_NoRedirect()).open(
+                req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        msg = data.get("message") if isinstance(data, dict) else None
+        t = (msg or {}).get("title") if isinstance(msg, dict) else None
+        if isinstance(t, list):
+            t = t[0] if t else ""
+        judul = str(t or "").strip()
+    except Exception:
+        judul = ""
+    _JUDUL_DOI_CACHE[doi] = judul
+    return judul
+
+
 def pastikan_doi_terdaftar(teks):
     """Lempar DoiTidakTerdaftar bila teks memuat DOI yang pasti
     tidak terdaftar. Teks tanpa DOI atau cek yang tidak pasti

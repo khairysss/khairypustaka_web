@@ -4116,7 +4116,8 @@ async function mdlMuatRiwayat() {
 async function mdlBukaHasil(kunci) {
   const r = await apiJSON("/mendalam/hasil?kunci=" + encodeURIComponent(kunci));
   if (!r.ok) {
-    toast("Hasil tersimpan ini sudah lewat masa cache 7 hari. Jalankan pencarian yang sama lagi ya.");
+    const pesanServer = (r.data && (r.data.pesan || r.data.error)) || "";
+    toast(pesanServer.length > 12 ? pesanServer : "Hasil tersimpan ini sudah lewat masa cache 7 hari. Jalankan pencarian yang sama lagi ya.");
     return;
   }
   MDL.hasil = r.data.hasil; MDL.hasilMode = r.data.mode; MDL.kunci = kunci;
@@ -4360,7 +4361,7 @@ function mdlJawabanHTML() {
   }
   const top = (h.papers || []).slice(0, 3);
   return `<div class="mdl-answer"><div class="mode-note">MODE: CARI JURNAL</div><h3>Ringkasan Hasil Pencarian</h3>
-    <p style="margin:0">Ditemukan ${h.jumlah || 0} sumber yang paling berkaitan dengan konteksmu. ${top.map(p => `Paper [${p.id}] (${esc(p.domain || "")}, ${esc(p.year || "")}) membahas ${esc((p.snippet || p.title || "").slice(0, 140))}`).join(". ")}${top.length ? "." : ""} Rincian tiap sumber, label aksesnya, dan cuplikan paling relevannya ada di daftar sumber di bawah.</p>
+    <p style="margin:0">Ditemukan ${h.jumlah || 0} sumber yang paling berkaitan dengan konteksmu. ${top.map(p => { const s0 = p.snippet || p.title || ""; const s1 = s0.length > 140 ? s0.slice(0, Math.max(40, s0.lastIndexOf(" ", 140))) : s0; return `Paper [${p.id}] (${esc(p.domain || "")}, ${esc(p.year || "")}) membahas ${esc(s1)}`; }).join(". ")}${top.length ? "." : ""} Rincian tiap sumber, label aksesnya, dan cuplikan paling relevannya ada di daftar sumber di bawah.</p>
     <div class="mdl-followup">${mdlTanyaHTML()}</div></div>`;
 }
 

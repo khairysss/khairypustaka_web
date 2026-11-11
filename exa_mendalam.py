@@ -274,8 +274,19 @@ _JUDUL_SAMPAH = ("human verification", "one moment, please",
                  "403 forbidden", "404 not found", "error 404",
                  "error 403", "client challenge", "just checking",
                  "security check", "verify you are human",
-                 "enable javascript", "ddos protection")
+                 "enable javascript", "ddos protection",
+                 # Halaman muka portal agregator, bukan paper (temuan
+                 # audit live v77 T3, 2026-11-11: kartu "Garuda -
+                 # Garba Rujukan Digital" tampil sebagai paper serupa
+                 # di peringkat 4 dan 10).
+                 "garba rujukan digital",
+                 # Situs unduhan bajakan yang menyamar hasil unduhan
+                 # (temuan audit live v77 T8: "nss1109004 - Exploader").
+                 "exploader")
 _RE_HEX = re.compile(r"[0-9a-f]{16,}")
+_RE_JUDUL_SITASI = re.compile(r"^\d{4}\s*\|")
+_RE_JUDUL_KODE = re.compile(r"(?:^|\s)\d{3,}_[a-z0-9_]{3,}")
+_RE_JUDUL_KURUNG_KAPITAL = re.compile(r"^\(\s*[A-Z]{5,}")
 
 
 def judul_sampah(judul):
@@ -289,6 +300,18 @@ def judul_sampah(judul):
     if j.startswith("[") and j.endswith("]"):
         return True
     if j.startswith("<"):
+        return True
+    # Judul berupa string sitasi mentah ("2021 | Jurnal X 1 (1):
+    # 13-24", temuan audit live v77 T5) bukan judul paper.
+    if _RE_JUDUL_SITASI.match(j):
+        return True
+    # Judul memuat kode berkas berunderscore ("2403_spi_fpo2",
+    # temuan audit live v77 T8).
+    if _RE_JUDUL_KODE.search(low):
+        return True
+    # Judul diawali kurung + rangkaian kapital acak ("(RRPIPEE",
+    # sisa OCR rusak, temuan audit live v77 T8).
+    if _RE_JUDUL_KURUNG_KAPITAL.match(j):
         return True
     for tok in _RE_HEX.findall(low):
         if any(c.isdigit() for c in tok) \
@@ -305,6 +328,171 @@ def _saring_hasil(hasil):
             if not judul_sampah(r.get("title"))]
 
 
+def _judul_kunci(judul):
+    """Judul ternormalisasi untuk perbandingan: huruf kecil, hanya
+    kata dan angka, satu spasi."""
+    return " ".join(re.findall(r"[a-zà-ÿ0-9]+", (judul or "").lower()))
+
+
+def judul_mirip(a, b):
+    """True bila dua judul kemungkinan besar paper yang sama:
+    tumpang tindih kata (Jaccard) >= 0,6 atau satu judul adalah
+    awalan judul lain (judul hasil sering terpotong di tengah).
+    Dipakai menyaring paper sumber dari daftar paper serupa dan
+    membuang duplikat antar sumber (temuan audit live v77 T3:
+    paper sumber tampil lagi sebagai hasil nomor 1 karena DOI nya
+    tidak tercetak di awal teks halaman artikelnya)."""
+    ka, kb = _judul_kunci(a), _judul_kunci(b)
+    if not ka or not kb:
+        return False
+    if ka == kb:
+        return True
+    sa, sb = set(ka.split()), set(kb.split())
+    if sa and sb:
+        jacc = len(sa & sb) / len(sa | sb)
+        if jacc >= 0.6:
+            return True
+    if len(ka) >= 20 and len(kb) >= 20 \
+            and (ka.startswith(kb) or kb.startswith(ka)):
+        return True
+    return False
+
+
+def _himpunan_penulis(penulis):
+    """Kumpulan token nama penulis (untuk deteksi duplikat paper
+    yang sama dari cermin berbeda)."""
+    return frozenset(re.findall(r"[a-zà-ÿ]+", (penulis or "").lower()))
+
+
+def _dedupe_hasil(hasil):
+    """Buang duplikat paper yang sama SEBELUM peringkat diberikan:
+    DOI sama, judul sama atau nyaris sama, atau himpunan penulis +
+    tahun + domain sama persis (cermin dwibahasa satu artikel,
+    temuan audit live v77 T5 kartu 5 = kartu 3 dan T6 kartu 7 =
+    kartu 3). Urutan asli dipertahankan, yang pertama menang."""
+    simpan, doi_terlihat, judul_terlihat = [], set(), []
+    penulis_terlihat = []
+    for r in hasil or []:
+        doi = _doi_dari(r.get("url") or "", (r.get("text") or "")[:2000])
+        if doi and doi in doi_terlihat:
+            continue
+        kunci = _judul_kunci(r.get("title"))
+        if kunci and any(judul_mirip(r.get("title"), j)
+                         for j in judul_terlihat):
+            continue
+        hp = _himpunan_penulis(r.get("author"))
+        tahun = (r.get("publishedDate") or "")[:4]
+        dom = _domain(r.get("url") or "")
+        duplikat = False
+        if len(hp) >= 4 and tahun and dom:
+            for hp2, th2, dom2 in penulis_terlihat:
+                if hp == hp2 and tahun == th2 and dom == dom2:
+                    duplikat = True
+                    break
+        if duplikat:
+            continue
+        simpan.append(r)
+        if doi:
+            doi_terlihat.add(doi)
+        if kunci:
+            judul_terlihat.append(r.get("title"))
+        penulis_terlihat.append((hp, tahun, dom))
+    return simpan
+
+
+_PENULIS_SAMPAH = ("windows user", "admin", "administrator",
+                   "unknown", "anonymous", "user")
+
+
+def bersihkan_penulis(penulis):
+    """Bersihkan string penulis dari sumber: pola nama yang tertulis
+    dua kali berturut turut di dalam satu nama ("Ernawati Harahap
+    Ernawati Harahap", "Supriyadi Supriyadi", temuan audit live v77
+    T2 yang lolos dari penjaga v77 karena pengulangannya per nama,
+    bukan keseluruhan string), nama yang sama berulang antar koma,
+    dan nama akun bawaan perangkat lunak penerbit. Satu token huruf
+    kecil pendek sendirian ("asri", temuan audit live v77 T5) bukan
+    nama yang bisa dipercaya, lebih jujur dikosongkan daripada
+    menampilkan penulis yang salah."""
+    p = re.sub(r"\s+", " ", (penulis or "")).strip(" ,&")
+    if not p:
+        return ""
+    if p.lower() in _PENULIS_SAMPAH:
+        return ""
+    token_semua = p.split(" ")
+    if len(token_semua) == 1 and p == p.lower() and len(p) <= 6:
+        return ""
+    bagian_baru = []
+    for bagian in p.split(","):
+        kata = bagian.strip().split(" ")
+        if kata == [""]:
+            continue
+        # Runtuhkan pengulangan periodik di dalam satu nama:
+        # unit terkecil yang mengulang persis memenuhi seluruh nama.
+        for unit in range(1, len(kata) // 2 + 1):
+            if len(kata) % unit == 0 \
+                    and kata == kata[:unit] * (len(kata) // unit):
+                kata = kata[:unit]
+                break
+        nama = " ".join(kata).strip(" ,&")
+        if nama and nama.lower() not in [b.lower()
+                                         for b in bagian_baru]:
+            bagian_baru.append(nama)
+    return ", ".join(bagian_baru)
+
+
+_RE_CUPLIKAN_JUDUL_BAGIAN = re.compile(
+    r"#{1,6}\s*(authors|abstract|keywords|keyword|references|"
+    r"daftar pustaka|introduction|pendahuluan)\b[.\s]*", re.IGNORECASE)
+_RE_CUPLIKAN_TANGGAL = re.compile(
+    r"\bpublished\s*:\s*[\d\-/]+", re.IGNORECASE)
+_RE_CUPLIKAN_NAV = re.compile(
+    r"([A-Z][\w ]{2,30} - ){2,}Home\b\w*", re.IGNORECASE)
+
+
+def bersihkan_cuplikan(teks):
+    """Bersihkan cuplikan hasil dari sampah mentah halaman sumber:
+    penanda markdown ("## Authors", "## Abstract"), tanggal terbit
+    mentah, dan rantai navigasi situs (temuan audit live v77 T2/T3:
+    ringkasan hasil membocorkan "## Authors" dan potongan navigasi
+    "Dancing - Entertainment and Arts - Performing Arts - Home").
+    Cuplikan yang bersih juga yang diringkas di kartu hasil."""
+    s = (teks or "").strip()
+    if not s:
+        return ""
+    s = _RE_CUPLIKAN_JUDUL_BAGIAN.sub("", s)
+    s = re.sub(r"#{1,6}\s*", "", s)
+    s = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", s)
+    s = re.sub(r"https?://\S+", "", s)
+    s = _RE_CUPLIKAN_TANGGAL.sub("", s)
+    s = _RE_CUPLIKAN_NAV.sub("", s)
+    s = re.sub(r"\s+", " ", s).strip(" .,-")
+    return (s + ".") if s and not s.endswith((".", "!", "?")) else s
+
+
+# Frasa dua kata yang sendirian tidak bermakna sebagai bukti
+# (potongan di tengah rangkaian yang lebih panjang). Hanya dipakai
+# sebagai jalan terakhir sesudah perpanjangan frasa gagal.
+_FRASA_TANPA_MAKNA = {"anak usia"}
+
+
+def _perpanjang_frasa(f, teks_low):
+    """Perpanjang frasa bukti dengan kata konten berikutnya di teks
+    tempat ia ditemukan, bila ada. Frasa yang terpotong tepat
+    sebelum kata penutupnya ("kemandirian belajar anak usia" di
+    judul "... Anak Usia Dini") terbaca janggal dan ditandai cacat
+    di audit live v77 T2; bentuk utuhnya di teks tujuan adalah
+    bukti yang sebenarnya."""
+    i = teks_low.find(f)
+    if i < 0:
+        return f
+    sisa = teks_low[i + len(f):].strip()
+    m = re.match(r"([a-zà-ÿ]+)", sisa)
+    if m and m.group(1) not in _STOPKATA and len(m.group(1)) >= 3:
+        return f + " " + m.group(1)
+    return f
+
+
 def alasan_relevansi(idx, total, query, r, serupa=False):
     """Kalimat alasan peringkat satu paper, dibangun HANYA dari bukti
     yang benar benar ada (perintah Sul 2026-11-11: label tanpa alasan
@@ -318,31 +506,24 @@ def alasan_relevansi(idx, total, query, r, serupa=False):
     judul_low = judul.lower()
     isi_low = (" ".join(r.get("highlights") or []) + " "
                + (r.get("text") or "")[:1500]).lower()
-    temu = {"judul": [], "isi": [], "kata": []}
+    temu = {"judul": [], "isi": []}
     if query and not serupa:
-        bigram, unigram = _frasa_kunci(query)
         terkutip = []
         for f in _frasa_cerita(query):
             if any(f in t or t in f for t in terkutip):
                 continue
             if f in judul_low:
-                temu["judul"].append(f)
-                terkutip.append(f)
+                f2 = _perpanjang_frasa(f, judul_low)
+                if f2 not in _FRASA_TANPA_MAKNA:
+                    temu["judul"].append(f2)
+                    terkutip.append(f2)
             elif f in isi_low:
-                temu["isi"].append(f)
-                terkutip.append(f)
+                f2 = _perpanjang_frasa(f, isi_low)
+                if f2 not in _FRASA_TANPA_MAKNA:
+                    temu["isi"].append(f2)
+                    terkutip.append(f2)
             if len(temu["judul"]) + len(temu["isi"]) >= 2:
                 break
-        if len(temu["judul"]) + len(temu["isi"]) < 2:
-            for w in unigram:
-                if len(w) >= 4 and (w in judul_low or w in isi_low) \
-                        and not any(w in bg.split()
-                                    for bg in temu["judul"]
-                                    + temu["isi"]):
-                    temu["kata"].append(w)
-                    if len(temu["judul"]) + len(temu["isi"]) \
-                            + len(temu["kata"]) >= 2:
-                        break
     bukti = []
     if temu["judul"]:
         bukti.append("judulnya memuat frasa persis "
@@ -350,9 +531,6 @@ def alasan_relevansi(idx, total, query, r, serupa=False):
     if temu["isi"]:
         bukti.append("cuplikan isinya membahas "
                      + _gabung_dan([f"'{b}'" for b in temu["isi"]]))
-    if temu["kata"]:
-        bukti.append("membahas "
-                     + _gabung_dan([f"'{b}'" for b in temu["kata"]]))
     klausa_peringkat = ""
     if serupa:
         if idx <= 1 and total:
@@ -426,22 +604,10 @@ def normalisasi_paper(r, idx, query="", total=0, serupa=False):
     kode, catatan = label_akses(len(text), len(hl_text))
     tgl = r.get("publishedDate") or ""
     tahun = tgl[:4] if len(tgl) >= 4 and tgl[:4].isdigit() else ""
-    cuplikan = (highlights[0] if highlights else text[:300]).strip()
+    cuplikan = bersihkan_cuplikan(
+        highlights[0] if highlights else text[:300])
     rel_label, rel_kelas = label_relevansi(idx)
-    penulis = (r.get("author") or "").strip()
-    penulis = re.sub(r"\s+", " ", penulis).strip(" ,&")
-    _w = penulis.split(" ")
-    if len(_w) >= 4 and len(_w) % 2 == 0 \
-            and _w[:len(_w) // 2] == _w[len(_w) // 2:]:
-        # Nama yang sama tertulis dua kali berturut turut oleh
-        # sumbernya (temuan audit live v76: "Ernawati Harahap
-        # Ernawati Harahap") ditampilkan sekali saja.
-        penulis = " ".join(_w[:len(_w) // 2])
-    if penulis.lower() in ("windows user", "admin", "administrator",
-                           "unknown", "anonymous", "user"):
-        # Nama akun bawaan perangkat lunak penerbit, bukan penulis
-        # (temuan verifikasi live v75: penulis tampil "Windows User").
-        penulis = ""
+    penulis = bersihkan_penulis(r.get("author") or "")
     return {
         "id": idx,
         "title": (r.get("title") or "(tanpa judul)").strip(),
@@ -466,8 +632,9 @@ def normalisasi_paper(r, idx, query="", total=0, serupa=False):
     }
 
 
-def normalisasi_hasil_cari(body, query="", serupa=False):
-    hasil = _saring_hasil(body.get("results"))
+def normalisasi_hasil_cari(body, query="", serupa=False,
+                             judul_sumber=""):
+    hasil = _dedupe_hasil(_saring_hasil(body.get("results")))
     if serupa:
         # Paper sumber tidak boleh tampil sebagai "paper serupa"
         # bagi dirinya sendiri: lewat URL doi.org, mesin menaruh
@@ -480,6 +647,22 @@ def normalisasi_hasil_cari(body, query="", serupa=False):
                      if _doi_dari(r.get("url") or "",
                                   (r.get("text") or "")[:1200])
                      != doi_sumber]
+        # Saringan kedua lewat JUDUL paper sumber (temuan audit
+        # live v77 T3: paper sumber tetap tampil di peringkat 1
+        # karena DOI nya tidak tercetak di 1.200 karakter pertama
+        # teks halaman artikelnya, jadi saringan DOI lolos). Judul
+        # sumber diambil dari register DOI (metadata resmi); gagal
+        # ambil berarti saringan ini diam saja, bukan mengarang.
+        if not judul_sumber and doi_sumber:
+            try:
+                import exa_client as _exacli
+                judul_sumber = _exacli.judul_sumber_doi(doi_sumber)
+            except Exception:
+                judul_sumber = ""
+        if judul_sumber:
+            hasil = [r for r in hasil
+                     if not judul_mirip(r.get("title") or "",
+                                        judul_sumber)]
     papers = [normalisasi_paper(r, i + 1, query=query, total=len(hasil),
                                  serupa=serupa)
               for i, r in enumerate(hasil)]
@@ -489,7 +672,7 @@ def normalisasi_hasil_cari(body, query="", serupa=False):
 def normalisasi_hasil_cepat(body, query=""):
     """POST /answer: jawaban + sitasi dinormalisasi jadi paper juga."""
     papers = []
-    sitasi = _saring_hasil(body.get("citations"))
+    sitasi = _dedupe_hasil(_saring_hasil(body.get("citations")))
     for i, c in enumerate(sitasi):
         rr = {"title": c.get("title"), "url": c.get("url"),
               "author": c.get("author"), "publishedDate":
@@ -511,10 +694,16 @@ def normalisasi_hasil_bedah(body, query=""):
     for g in (out.get("grounding") or []) if isinstance(out, dict) else []:
         f = g.get("field")
         if f:
+            # "domain" WAJIB ikut: frontend menampilkan label sumber
+            # Dasar klaim dari x.domain dan mundur ke kata "sumber"
+            # bila kosong, jadi tanpa bidang ini setiap Dasar klaim
+            # tampil "sumber, sumber, sumber, ..." (temuan audit
+            # live v77 T6).
             grounding[f] = [{"title": c.get("title") or "",
-                             "url": c.get("url") or ""}
+                             "url": c.get("url") or "",
+                             "domain": _domain(c.get("url") or "")}
                             for c in (g.get("citations") or [])]
-    hasil_cari = _saring_hasil(body.get("results"))
+    hasil_cari = _dedupe_hasil(_saring_hasil(body.get("results")))
     papers = [normalisasi_paper(r, i + 1, query=query,
                                  total=len(hasil_cari))
               for i, r in enumerate(hasil_cari)]
@@ -527,22 +716,38 @@ def normalisasi_hasil_bedah(body, query=""):
 
 
 # ------------------------------------------------------------------ cache
+# Versi skema entri cache. Naik 2 -> 3 pada 2026-11-11 (v78):
+# entri lama memuat kartu duplikat, penulis ganda, cuplikan mentah
+# berisi markdown, dan hasil Paper Serupa yang paper sumbernya ikut
+# tampil. Entri lama tidak cukup disaring ulang di tampilan riwayat
+# (temuan audit live v77 T8: riwayat lama DOI hantu tetap menyajikan
+# hasil sampah lama), jadi cache_ambil menolak entri di bawah versi
+# ini dan riwayat lama berakhir sebagai pesan kedaluwarsa.
+_VERSI_CACHE = 3
+
+
 def kunci_cache(mode, query, saringan):
     # "v" = versi skema hasil. Naik dari 1 ke 2 pada 2026-11-11
     # (v77): entri lama memuat hasil Paper Serupa dari jalur DOI
     # polos yang isinya halaman acak, plus kartu tanpa label dan
     # alasan relevansi; semua entri lama sengaja ditinggalkan.
     bahan = json.dumps({"m": mode, "q": (query or "").strip().lower(),
-                        "f": saringan or {}, "v": 2},
+                        "f": saringan or {}, "v": _VERSI_CACHE},
                        sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(bahan.encode("utf-8")).hexdigest()[:32]
 
 
 def cache_ambil(kunci):
-    """Hasil cache segar (< 7 hari) atau None."""
+    """Hasil cache segar (< 7 hari) dan versi skema terkini, atau
+    None. Penolakan versi di sini adalah satu satunya gerbang yang
+    dipakai SEMUA jalur muat ulang (job baru dan riwayat), supaya
+    hasil lama yang cacat tidak bisa tampil lagi lewat pintu mana
+    pun."""
     d = _muat(_PATH_CACHE)
     e = d.get(kunci)
     if not isinstance(e, dict):
+        return None
+    if int(e.get("v") or 1) < _VERSI_CACHE:
         return None
     if time.time() - float(e.get("ts") or 0) > CACHE_TTL:
         return None
@@ -554,7 +759,8 @@ def cache_simpan(kunci, mode, query, hasil, biaya_usd):
         with _LOCK:
             d = _muat(_PATH_CACHE)
             d[kunci] = {"ts": time.time(), "mode": mode, "query": query,
-                        "hasil": hasil, "biaya": float(biaya_usd or 0)}
+                        "hasil": hasil, "biaya": float(biaya_usd or 0),
+                        "v": _VERSI_CACHE}
             kini = time.time()
             for k in [k for k, v in d.items()
                       if kini - float(v.get("ts") or 0) > CACHE_TTL]:
