@@ -228,6 +228,30 @@ def _frasa_kunci(teks, maks_bigram=8):
     return bigram[:maks_bigram], unigram
 
 
+def _frasa_cerita(teks):
+    """Frasa bukti dari cerita member: rangkaian kata konten yang
+    bersebelahan PERSIS di teks asli, diurutkan dari yang terpanjang
+    (4 kata) ke bigram. Frasa utuh didahulukan supaya yang dikutip
+    sebagai bukti adalah frasa lengkapnya ("pola asuh orang tua"),
+    bukan potongan di tengahnya ("asuh orang") yang tidak bermakna
+    sendirian (temuan audit live v76, 2026-11-11)."""
+    mentah = re.findall(r"[a-zà-ÿ]+", (teks or "").lower())
+
+    def konten(w):
+        return w not in _STOPKATA and len(w) >= 3
+
+    frasa = []
+    for n in (4, 3, 2):
+        for i in range(len(mentah) - n + 1):
+            jendela = mentah[i:i + n]
+            if all(konten(w) for w in jendela) \
+                    and len(set(jendela)) > 1:
+                f = " ".join(jendela)
+                if f not in frasa:
+                    frasa.append(f)
+    return frasa
+
+
 def _gabung_dan(items):
     if not items:
         return ""
@@ -248,7 +272,9 @@ _JUDUL_SAMPAH = ("human verification", "one moment, please",
                  "captcha", "attention required", "access denied",
                  "please wait", "checking your browser", "tanpa judul",
                  "403 forbidden", "404 not found", "error 404",
-                 "error 403")
+                 "error 403", "client challenge", "just checking",
+                 "security check", "verify you are human",
+                 "enable javascript", "ddos protection")
 _RE_HEX = re.compile(r"[0-9a-f]{16,}")
 
 
@@ -295,11 +321,16 @@ def alasan_relevansi(idx, total, query, r, serupa=False):
     temu = {"judul": [], "isi": [], "kata": []}
     if query and not serupa:
         bigram, unigram = _frasa_kunci(query)
-        for bg in bigram:
-            if bg in judul_low:
-                temu["judul"].append(bg)
-            elif bg in isi_low:
-                temu["isi"].append(bg)
+        terkutip = []
+        for f in _frasa_cerita(query):
+            if any(f in t or t in f for t in terkutip):
+                continue
+            if f in judul_low:
+                temu["judul"].append(f)
+                terkutip.append(f)
+            elif f in isi_low:
+                temu["isi"].append(f)
+                terkutip.append(f)
             if len(temu["judul"]) + len(temu["isi"]) >= 2:
                 break
         if len(temu["judul"]) + len(temu["isi"]) < 2:
@@ -398,6 +429,14 @@ def normalisasi_paper(r, idx, query="", total=0, serupa=False):
     cuplikan = (highlights[0] if highlights else text[:300]).strip()
     rel_label, rel_kelas = label_relevansi(idx)
     penulis = (r.get("author") or "").strip()
+    penulis = re.sub(r"\s+", " ", penulis).strip(" ,&")
+    _w = penulis.split(" ")
+    if len(_w) >= 4 and len(_w) % 2 == 0 \
+            and _w[:len(_w) // 2] == _w[len(_w) // 2:]:
+        # Nama yang sama tertulis dua kali berturut turut oleh
+        # sumbernya (temuan audit live v76: "Ernawati Harahap
+        # Ernawati Harahap") ditampilkan sekali saja.
+        penulis = " ".join(_w[:len(_w) // 2])
     if penulis.lower() in ("windows user", "admin", "administrator",
                            "unknown", "anonymous", "user"):
         # Nama akun bawaan perangkat lunak penerbit, bukan penulis
@@ -429,6 +468,18 @@ def normalisasi_paper(r, idx, query="", total=0, serupa=False):
 
 def normalisasi_hasil_cari(body, query="", serupa=False):
     hasil = _saring_hasil(body.get("results"))
+    if serupa:
+        # Paper sumber tidak boleh tampil sebagai "paper serupa"
+        # bagi dirinya sendiri: lewat URL doi.org, mesin menaruh
+        # paper sumber di peringkat 1 (skor 0,9965). Saring lewat
+        # DOI di URL hasil atau di awal teksnya (halaman artikel
+        # biasanya mencetak DOI nya sendiri di bagian atas).
+        doi_sumber = _doi_dari(query or "")
+        if doi_sumber:
+            hasil = [r for r in hasil
+                     if _doi_dari(r.get("url") or "",
+                                  (r.get("text") or "")[:1200])
+                     != doi_sumber]
     papers = [normalisasi_paper(r, i + 1, query=query, total=len(hasil),
                                  serupa=serupa)
               for i, r in enumerate(hasil)]
@@ -477,8 +528,12 @@ def normalisasi_hasil_bedah(body, query=""):
 
 # ------------------------------------------------------------------ cache
 def kunci_cache(mode, query, saringan):
+    # "v" = versi skema hasil. Naik dari 1 ke 2 pada 2026-11-11
+    # (v77): entri lama memuat hasil Paper Serupa dari jalur DOI
+    # polos yang isinya halaman acak, plus kartu tanpa label dan
+    # alasan relevansi; semua entri lama sengaja ditinggalkan.
     bahan = json.dumps({"m": mode, "q": (query or "").strip().lower(),
-                        "f": saringan or {}},
+                        "f": saringan or {}, "v": 2},
                        sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(bahan.encode("utf-8")).hexdigest()[:32]
 

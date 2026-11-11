@@ -206,18 +206,41 @@ def doi_terdaftar(doi):
 def pastikan_doi_terdaftar(teks):
     """Lempar DoiTidakTerdaftar bila teks memuat DOI yang pasti
     tidak terdaftar. Teks tanpa DOI atau cek yang tidak pasti
-    dibiarkan lewat."""
+    dibiarkan lewat.
+
+    Pesan pengecualiannya adalah PENJELASAN untuk member (perintah
+    Sul 2026-11-11: sistem harus menjelaskan, bukan sekadar mengirim
+    pesan error): apa yang terjadi, kemungkinan penyebabnya, dan apa
+    yang bisa dilakukan member. Jaminan kuota tidak terpotong
+    ditambahkan oleh pemanggil sesuai jalurnya."""
     doi = doi_dari_teks(teks)
     if doi and doi_terdaftar(doi) is False:
         raise DoiTidakTerdaftar(
-            f"DOI {doi} tidak ditemukan di register DOI, jadi paper "
-            "sumbernya tidak bisa dikenali. Cek lagi penulisan DOI "
-            "nya ya, atau mulai dari cerita kebutuhanmu saja.")
+            f"DOI {doi} yang kamu tempel tidak ditemukan di register "
+            "DOI resmi, jadi paper sumbernya tidak bisa dikenali dan "
+            "pencariannya tidak dijalankan. Kemungkinan penyebabnya: "
+            "ada karakter yang salah ketik, DOI nya memang belum "
+            "terdaftar oleh penerbitnya, atau yang ditempel bukan "
+            "DOI (DOI selalu berawalan 10. lalu diikuti garis "
+            "miring). Coba cek lagi DOI nya dari halaman jurnal "
+            "resminya, atau mulai dari cerita kebutuhanmu saja, itu "
+            "juga bisa.")
 
 
 def cari_serupa(url, num=10):
-    """Find Similar: paper serupa dari satu link/DOI (titik mulai DOI)."""
+    """Find Similar: paper serupa dari satu link/DOI (titik mulai DOI).
+
+    DOI polos WAJIB diubah jadi URL doi.org dulu. Mesin tidak bisa
+    membaca string DOI mentah: terbukti 2026-11-11, DOI polos
+    10.32832/pro.v5i4.6973 mengembalikan panduan instalasi, halaman
+    login router, dan halaman tantangan bot, sedangkan URL doi.org
+    untuk DOI yang sama mengembalikan paper serupa yang benar benar
+    sejalur (paper sumber skor 0,9965, sisanya paper stres kerja
+    perawat yang memang satu topik)."""
     pastikan_doi_terdaftar(url)
+    doi = doi_dari_teks(url)
+    if doi:
+        url = "https://doi.org/" + doi
     payload = {"url": url, "numResults": int(num),
                "contents": {"text": {"maxCharacters": 4000}}}
     return _call("POST", "/findSimilar", payload, timeout=120)

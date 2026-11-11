@@ -2352,6 +2352,14 @@ def _mdl_kerja_ringan(jid):
                              reverse=True)
         for i, p in enumerate(hasil["papers"]):
             p["id"] = i + 1
+    if mode == "cari" and not job.get("is_admin") \
+            and not (hasil.get("papers") or []):
+        # Prinsip Sul 2026-11-11: kuota hanya terpotong bila hasil
+        # yang sesuai benar benar disajikan. Job ini selesai tanpa
+        # satu pun paper yang bisa ditampilkan (mis. semua hasil
+        # Paper Serupa tersaring sebagai halaman sampah), jadi
+        # kuota member dikembalikan penuh.
+        exa.kuota_refund(uid)
     exa.cache_simpan(job["kunci"], mode, job["query"], hasil, biaya)
     exa.riwayat_tambah(uid, mode, job["query"],
                        len(hasil.get("papers") or []), job["kunci"])
@@ -2481,11 +2489,18 @@ def mendalam_job():
     if start == "doi":
         # Tolak DOI yang tidak terdaftar SEBELUM cache dan kuota:
         # mesin tidak bisa mengenali paper sumbernya dan akan
-        # mengembalikan hasil acak yang tampak meyakinkan.
+        # mengembalikan hasil acak yang tampak meyakinkan. Bentuk
+        # responsnya "pesan" (bukan error mentah) karena frontend
+        # menampilkan field pesan sebagai kotak penjelasan di form;
+        # perintah Sul 2026-11-11: sistem harus MENJELASKAN ke
+        # member, bukan sekadar mengirim pesan error.
         try:
             exacli.pastikan_doi_terdaftar(query)
         except exacli.DoiTidakTerdaftar as e:
-            return _err(str(e), 400)
+            return jsonify({
+                "error": "doi_tidak_valid",
+                "pesan": (str(e) + " Kuota dan kreditmu tidak "
+                          "terpotong untuk percobaan ini.")}), 400
     saringan = _mdl_saringan(body)
     adm = _is_web_admin()
     with _MDL_LOCK:
