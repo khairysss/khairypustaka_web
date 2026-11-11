@@ -178,6 +178,18 @@ _STOPKATA = {
     # bukti kecocokan sendirian (hampir semua judul memuatnya)
     "pengaruh", "hubungan", "faktor", "dampak", "efek", "peran",
     "gambaran", "tingkat", "perbedaan", "korelasi", "determinan",
+    # Rangkaian pembuka cerita member (boilerplate, bukan topik):
+    # tanpa ini frasa seperti "sedang menyusun" bisa cocok tidak
+    # sengaja di isi paper dan menghasilkan alasan yang tidak valid
+    # (temuan verifikasi live v74, 2026-11-11).
+    "sedang", "menyusun", "menulis", "membuat", "mengerjakan",
+    "menyelesaikan", "landasan", "teori", "berbagai", "beberapa",
+    "setiap", "semua", "banyak",
+    # Kata fungsi Bahasa Inggris tambahan (temuan v74: "how students")
+    "how", "what", "which", "who", "whom", "whose", "when", "where",
+    "why", "this", "that", "these", "those", "its", "it", "their",
+    "they", "them", "our", "your", "his", "her", "also", "more",
+    "most", "other", "into", "over", "under", "about", "per", "via",
 }
 
 
@@ -204,7 +216,7 @@ def _frasa_kunci(teks, maks_bigram=8):
             unigram.append(w)
         if i + 1 < len(mentah):
             w2 = mentah[i + 1]
-            if w2 not in _STOPKATA and len(w2) >= 3:
+            if w2 not in _STOPKATA and len(w2) >= 3 and w2 != w:
                 bg = w + " " + w2
                 if bg not in bigram:
                     bigram.append(bg)
@@ -245,8 +257,9 @@ def alasan_relevansi(idx, total, query, r, serupa=False):
         if len(temu["judul"]) + len(temu["isi"]) < 2:
             for w in unigram:
                 if len(w) >= 4 and (w in judul_low or w in isi_low) \
-                        and w not in temu["judul"] \
-                        and w not in temu["isi"]:
+                        and not any(w in bg.split()
+                                    for bg in temu["judul"]
+                                    + temu["isi"]):
                     temu["kata"].append(w)
                     if len(temu["judul"]) + len(temu["isi"]) \
                             + len(temu["kata"]) >= 2:
@@ -281,6 +294,20 @@ def alasan_relevansi(idx, total, query, r, serupa=False):
     if bukti:
         return ("Dasarnya: " + _gabung_dan(bukti)
                 + ", cocok langsung dengan yang kamu ceritakan."
+                + klausa_peringkat)
+    # Judul halaman penghalang bot (temuan verifikasi live v74 pada
+    # hasil serupa dari penerbit yang memblokir pengambilan isi):
+    # judul seperti itu BUKAN topik paper, jangan diklaim sebagai
+    # topik. Alasannya mundur ke dasar peringkat saja, yang tetap
+    # benar apa adanya.
+    _sampah = ("human verification", "one moment", "just a moment",
+                "ip address", "are you a robot", "captcha",
+                "attention required", "access denied", "forbidden",
+                "please wait", "checking your browser", "tanpa judul",
+                "403", "404")
+    if any(s in judul_low for s in _sampah) or not judul.strip():
+        return ("Paper ini terpilih oleh mesin pencarian makna dari "
+                "kecocokan isinya dengan kebutuhanmu."
                 + klausa_peringkat)
     topik = _frasa_kunci(judul, maks_bigram=3)[0] \
         or _kata_konten(judul)[:3]
