@@ -2520,6 +2520,7 @@ _MDL_PDF_STAGE_TTL = 600
 
 @app.post("/api/mendalam/pdf-cek")
 @with_rl
+@with_heavy
 def mendalam_pdf_cek():
     if not exa or not exacli:
         return _err("fitur mendalam belum aktif di server ini", 503)

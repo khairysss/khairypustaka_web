@@ -617,9 +617,19 @@ def normalisasi_paper(r, idx, query="", total=0, serupa=False):
         "published": tgl,
         "year": tahun,
         "doi": _doi_dari(url, text),
-        "text": text,
+        # HEMAT BANDWIDTH + PENYIMPANAN (permintaan Sul 2026-11-11,
+        # v80): teks penuh dan highlights TIDAK dikirim utuh ke
+        # browser dan TIDAK disimpan utuh di cache. Yang tampil di
+        # kartu hanya cuplikan (snippet, dari highlights[0]/awal
+        # teks); label akses dan alasan relevansi sudah dihitung
+        # dari teks utuh SEBELUM potongan ini, dan panjang asli
+        # tetap tercatat di text_len. Hasil per pencarian menyusut
+        # dari puluhan-ribuan karakter per paper jadi maksimal
+        # ~1.600, jadi bandwidth Render dan dokumen cache di
+        # database sama sama jauh lebih ringan.
+        "text": text[:1200],
         "text_len": len(text),
-        "highlights": highlights,
+        "highlights": [highlights[0][:400]] if highlights else [],
         "snippet": cuplikan,
         "access": kode,
         "access_label": LABEL_AKSES[kode],
