@@ -194,8 +194,13 @@ _STOPKATA = {
 
 
 def _kata_konten(teks):
-    """Daftar kata pembawa topik dari teks (tanpa kata fungsi)."""
-    mentah = re.findall(r"[a-z0-9à-ÿ]+", (teks or "").lower())
+    """Daftar kata pembawa topik dari teks (tanpa kata fungsi).
+
+    Hanya token huruf: token berisi angka (kode hash, nomor berkas,
+    potongan DOI) bukan topik dan tidak boleh dikutip sebagai topik
+    (temuan verifikasi live v75: string hash 64 karakter dikutip
+    sebagai "topik utama" sebuah hasil serupa)."""
+    mentah = re.findall(r"[a-zà-ÿ]+", (teks or "").lower())
     return [w for w in mentah if w not in _STOPKATA and len(w) >= 3]
 
 
@@ -206,7 +211,7 @@ def _frasa_kunci(teks, maks_bigram=8):
     teks asli, jadi frasanya nyata ("kualitas tidur"), bukan
     gabungan acak.
     """
-    mentah = re.findall(r"[a-z0-9à-ÿ]+", (teks or "").lower())
+    mentah = re.findall(r"[a-zà-ÿ]+", (teks or "").lower())
     bigram, unigram, terlihat = [], [], set()
     for i, w in enumerate(mentah):
         if w in _STOPKATA or len(w) < 3:
@@ -229,6 +234,49 @@ def _gabung_dan(items):
     if len(items) == 1:
         return items[0]
     return ", ".join(items[:-1]) + " dan " + items[-1]
+
+
+# Judul yang BUKAN judul paper sungguhan: halaman penghalang bot,
+# placeholder mesin pencari, string hash, atau judul kosong. Hasil
+# seperti ini dibuang dari daftar hasil (lihat _saring_hasil), bukan
+# ditampilkan sebagai paper; alasan_relevansi juga menjaganya supaya
+# judul sampah tidak pernah diklaim sebagai topik (temuan verifikasi
+# live v74 dan v75, 2026-11-11: "Human Verification", "One moment,
+# please...", "[title in Japanese]", string hash 64 karakter).
+_JUDUL_SAMPAH = ("human verification", "one moment, please",
+                 "just a moment", "ip address", "are you a robot",
+                 "captcha", "attention required", "access denied",
+                 "please wait", "checking your browser", "tanpa judul",
+                 "403 forbidden", "404 not found", "error 404",
+                 "error 403")
+_RE_HEX = re.compile(r"[0-9a-f]{16,}")
+
+
+def judul_sampah(judul):
+    """True bila judul hasil bukan judul paper yang bisa dirujuk."""
+    j = (judul or "").strip()
+    if not j:
+        return True
+    low = j.lower()
+    if any(s in low for s in _JUDUL_SAMPAH):
+        return True
+    if j.startswith("[") and j.endswith("]"):
+        return True
+    if j.startswith("<"):
+        return True
+    for tok in _RE_HEX.findall(low):
+        if any(c.isdigit() for c in tok) \
+                and any(c.isalpha() for c in tok):
+            return True
+    return False
+
+
+def _saring_hasil(hasil):
+    """Buang hasil berjudul sampah SEBELUM peringkat dan label
+    diberikan, supaya label relevansi hanya menempel pada paper yang
+    benar benar bisa dirujuk member."""
+    return [r for r in (hasil or [])
+            if not judul_sampah(r.get("title"))]
 
 
 def alasan_relevansi(idx, total, query, r, serupa=False):
@@ -295,28 +343,29 @@ def alasan_relevansi(idx, total, query, r, serupa=False):
         return ("Dasarnya: " + _gabung_dan(bukti)
                 + ", cocok langsung dengan yang kamu ceritakan."
                 + klausa_peringkat)
-    # Judul halaman penghalang bot (temuan verifikasi live v74 pada
-    # hasil serupa dari penerbit yang memblokir pengambilan isi):
-    # judul seperti itu BUKAN topik paper, jangan diklaim sebagai
-    # topik. Alasannya mundur ke dasar peringkat saja, yang tetap
-    # benar apa adanya.
-    _sampah = ("human verification", "one moment", "just a moment",
-                "ip address", "are you a robot", "captcha",
-                "attention required", "access denied", "forbidden",
-                "please wait", "checking your browser", "tanpa judul",
-                "403", "404")
-    if any(s in judul_low for s in _sampah) or not judul.strip():
-        return ("Paper ini terpilih oleh mesin pencarian makna dari "
-                "kecocokan isinya dengan kebutuhanmu."
-                + klausa_peringkat)
+    # Judul sampah bukan topik paper, jangan diklaim sebagai topik.
+    # Alasannya mundur ke dasar peringkat saja, yang tetap benar apa
+    # adanya. (Hasil berjudul sampah sebenarnya sudah dibuang oleh
+    # _saring_hasil; ini penjaga kedua untuk jalur sitasi.)
+    generik = ("Paper ini terpilih oleh mesin pencarian makna dari "
+               "kemiripannya dengan paper sumbermu."
+               if serupa else
+               "Paper ini terpilih oleh mesin pencarian makna dari "
+               "kecocokan isinya dengan kebutuhanmu.")
+    if judul_sampah(judul):
+        return generik + klausa_peringkat
     topik = _frasa_kunci(judul, maks_bigram=3)[0] \
         or _kata_konten(judul)[:3]
     if topik:
+        # Hanya menyebut topik paper itu sendiri. Klaim "sejalur
+        # dengan kebutuhanmu" dibuang (temuan v75): tanpa bukti frasa
+        # yang cocok, keselarasan topik tidak bisa dinyatakan; dasar
+        # relevansinya adalah peringkat dari mesin, yang disebut di
+        # klausa peringkat.
         return ("Topik utamanya seputar "
                 + _gabung_dan([f"'{t}'" for t in topik[:3]])
-                + ", sejalur dengan kebutuhanmu." + klausa_peringkat)
-    return ("Paper ini terpilih oleh mesin pencarian makna dari "
-            "kecocokan isinya dengan kebutuhanmu." + klausa_peringkat)
+                + "." + klausa_peringkat)
+    return generik + klausa_peringkat
 
 
 _DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"<>\)\]]+")
@@ -348,12 +397,18 @@ def normalisasi_paper(r, idx, query="", total=0, serupa=False):
     tahun = tgl[:4] if len(tgl) >= 4 and tgl[:4].isdigit() else ""
     cuplikan = (highlights[0] if highlights else text[:300]).strip()
     rel_label, rel_kelas = label_relevansi(idx)
+    penulis = (r.get("author") or "").strip()
+    if penulis.lower() in ("windows user", "admin", "administrator",
+                           "unknown", "anonymous", "user"):
+        # Nama akun bawaan perangkat lunak penerbit, bukan penulis
+        # (temuan verifikasi live v75: penulis tampil "Windows User").
+        penulis = ""
     return {
         "id": idx,
         "title": (r.get("title") or "(tanpa judul)").strip(),
         "url": url,
         "domain": _domain(url),
-        "author": (r.get("author") or "").strip(),
+        "author": penulis,
         "published": tgl,
         "year": tahun,
         "doi": _doi_dari(url, text),
@@ -373,7 +428,7 @@ def normalisasi_paper(r, idx, query="", total=0, serupa=False):
 
 
 def normalisasi_hasil_cari(body, query="", serupa=False):
-    hasil = body.get("results") or []
+    hasil = _saring_hasil(body.get("results"))
     papers = [normalisasi_paper(r, i + 1, query=query, total=len(hasil),
                                  serupa=serupa)
               for i, r in enumerate(hasil)]
@@ -383,7 +438,7 @@ def normalisasi_hasil_cari(body, query="", serupa=False):
 def normalisasi_hasil_cepat(body, query=""):
     """POST /answer: jawaban + sitasi dinormalisasi jadi paper juga."""
     papers = []
-    sitasi = body.get("citations") or []
+    sitasi = _saring_hasil(body.get("citations"))
     for i, c in enumerate(sitasi):
         rr = {"title": c.get("title"), "url": c.get("url"),
               "author": c.get("author"), "publishedDate":
@@ -408,7 +463,7 @@ def normalisasi_hasil_bedah(body, query=""):
             grounding[f] = [{"title": c.get("title") or "",
                              "url": c.get("url") or ""}
                             for c in (g.get("citations") or [])]
-    hasil_cari = body.get("results") or []
+    hasil_cari = _saring_hasil(body.get("results"))
     papers = [normalisasi_paper(r, i + 1, query=query,
                                  total=len(hasil_cari))
               for i, r in enumerate(hasil_cari)]

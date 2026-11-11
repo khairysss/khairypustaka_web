@@ -2227,6 +2227,17 @@ def _mdl_hasil_kanon(hasil, mode):
     Idempoten, aman dipanggil ulang (termasuk entri cache lama)."""
     if not isinstance(hasil, dict):
         return hasil
+    if hasil.get("papers"):
+        # Buang kartu berjudul sampah juga dari entri cache lama
+        # (cache 7 hari bisa masih memuat hasil sebelum penyaring
+        # judul ada): halaman penghalang bot dan placeholder bukan
+        # paper yang bisa dirujuk.
+        bersih = [p for p in hasil["papers"]
+                  if not exa.judul_sampah(p.get("title"))]
+        if len(bersih) != len(hasil["papers"]):
+            for i, p in enumerate(bersih):
+                p["id"] = i + 1
+            hasil["papers"] = bersih
     hasil["jumlah"] = len(hasil.get("papers") or [])
     if mode == "cepat" and "jawaban" not in hasil:
         hasil["jawaban"] = {"answer": hasil.pop("answer", "") or "",
@@ -2320,8 +2331,11 @@ def _mdl_kerja_ringan(jid):
         with _MDL_LOCK:
             job["status"] = "gagal"
             job["tahap"] = "Gagal"
-            job["error"] = ("Pencarian mendalam lagi gangguan, coba "
-                            "lagi sebentar ya")
+            if isinstance(e, exacli.DoiTidakTerdaftar):
+                job["error"] = str(e)
+            else:
+                job["error"] = ("Pencarian mendalam lagi gangguan, "
+                                "coba lagi sebentar ya")
             job["selesai_ts"] = time.time()
         return
     biaya = exacli.biaya(body)
@@ -2464,6 +2478,14 @@ def mendalam_job():
     start = str(body.get("start") or "konteks").strip().lower()
     if start not in ("konteks", "doi"):
         start = "konteks"
+    if start == "doi":
+        # Tolak DOI yang tidak terdaftar SEBELUM cache dan kuota:
+        # mesin tidak bisa mengenali paper sumbernya dan akan
+        # mengembalikan hasil acak yang tampak meyakinkan.
+        try:
+            exacli.pastikan_doi_terdaftar(query)
+        except exacli.DoiTidakTerdaftar as e:
+            return _err(str(e), 400)
     saringan = _mdl_saringan(body)
     adm = _is_web_admin()
     with _MDL_LOCK:

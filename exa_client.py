@@ -27,10 +27,12 @@ Redirect pada request terautentikasi selalu ditolak.
 import json
 import logging
 import os
+import re
 import sys
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 
 log = logging.getLogger("kpweb.exa")
 
@@ -146,8 +148,76 @@ def cari_jurnal(query, num=10, kategori="research-paper",
     return _call("POST", "/search", payload, timeout=120)
 
 
+class DoiTidakTerdaftar(ExaError):
+    """DOI titik mulai tidak ada di register DOI global, jadi paper
+    sumbernya tidak bisa dikenali. Pesannya aman ditampilkan ke
+    member apa adanya."""
+
+
+_DOI_CARI = re.compile(r"10\.\d{4,9}/[^\s\"<>\)\]]+")
+
+
+def doi_dari_teks(teks):
+    """Ekstrak DOI pertama dari teks/URL, '' bila tidak ada."""
+    m = _DOI_CARI.search(teks or "")
+    return m.group(0).rstrip(".,;") if m else ""
+
+
+def doi_terdaftar(doi):
+    """Cek register DOI global (API handle doi.org).
+
+    True = terdaftar, False = pasti tidak terdaftar, None = tidak
+    bisa dipastikan (jaringan/API/handle asing) dan pemanggil wajib
+    fail-open. Tanpa cek ini, findSimilar atas DOI yang tidak ada
+    mengembalikan halaman acak berskor tinggi yang tampak meyakinkan
+    padahal sumbernya tidak pernah dikenali (temuan 2026-11-11: DOI
+    10.14710/jpki.9.1.2024.41-52 tidak terdaftar, doi.org, Crossref,
+    dan OpenAlex sama sama 404, tetapi findSimilar mengembalikan 9
+    "paper serupa" berskor 0,95)."""
+    if not doi:
+        return None
+    url = "https://doi.org/api/handles/" + quote(doi, safe="/")
+    req = urllib.request.Request(
+        url, headers={"Accept": "application/json",
+                      "User-Agent": "KhairyPustaka/1.0"})
+    raw = None
+    try:
+        with urllib.request.build_opener(_NoRedirect()).open(
+                req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        try:
+            raw = e.read().decode("utf-8", "replace")
+        except Exception:
+            return None
+    except Exception:
+        return None
+    try:
+        rc = json.loads(raw).get("responseCode")
+    except Exception:
+        return None
+    if rc == 1:
+        return True
+    if rc == 100:
+        return False
+    return None
+
+
+def pastikan_doi_terdaftar(teks):
+    """Lempar DoiTidakTerdaftar bila teks memuat DOI yang pasti
+    tidak terdaftar. Teks tanpa DOI atau cek yang tidak pasti
+    dibiarkan lewat."""
+    doi = doi_dari_teks(teks)
+    if doi and doi_terdaftar(doi) is False:
+        raise DoiTidakTerdaftar(
+            f"DOI {doi} tidak ditemukan di register DOI, jadi paper "
+            "sumbernya tidak bisa dikenali. Cek lagi penulisan DOI "
+            "nya ya, atau mulai dari cerita kebutuhanmu saja.")
+
+
 def cari_serupa(url, num=10):
     """Find Similar: paper serupa dari satu link/DOI (titik mulai DOI)."""
+    pastikan_doi_terdaftar(url)
     payload = {"url": url, "numResults": int(num),
                "contents": {"text": {"maxCharacters": 4000}}}
     return _call("POST", "/findSimilar", payload, timeout=120)
