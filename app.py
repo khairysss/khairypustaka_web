@@ -2289,14 +2289,16 @@ def _mdl_kerja_ringan(jid):
                     start_year=awal, end_year=akhir,
                     domains=s["domains"] or None,
                     isi_penuh=s["isi_penuh"])
-            hasil = exa.normalisasi_hasil_cari(body)
+            hasil = exa.normalisasi_hasil_cari(
+                body, query=job["query"],
+                serupa=(job["start"] == "doi"))
         elif mode == "cepat":
             q = job["query"]
             if job["start"] == "doi":
                 q = ("Apa isi, metode, dan temuan utama paper ini, "
                      f"dijawab ringkas bersitasi: {q}")
             body = exacli.jawaban_cepat(q)
-            hasil = exa.normalisasi_hasil_cepat(body)
+            hasil = exa.normalisasi_hasil_cepat(body, query=job["query"])
         else:  # bedah
             with _MDL_LOCK:
                 job["tahap"] = "Membaca isi sumber dan menyusun bedah..."
@@ -2309,7 +2311,7 @@ def _mdl_kerja_ringan(jid):
             if s["kedalaman"] == "kilat":
                 num = min(num, 5)
             body = exacli.bedah_mendalam(q, num=num)
-            hasil = exa.normalisasi_hasil_bedah(body)
+            hasil = exa.normalisasi_hasil_bedah(body, query=job["query"])
     except Exception as e:  # noqa: BLE001
         log.warning("mendalam job %s (%s) gagal: %s", jid, mode, e)
         if not job.get("is_admin"):
@@ -2619,7 +2621,7 @@ def mendalam_tanya_lanjut():
         log.warning("mendalam tanya lanjut gagal: %s", e)
         return _err("lagi gangguan, coba lagi sebentar ya", 502)
     exa.belanja_catat(exacli.biaya(hasil_body), "cepat")
-    hasil = exa.normalisasi_hasil_cepat(hasil_body)
+    hasil = exa.normalisasi_hasil_cepat(hasil_body, query=q)
     return jsonify({"answer": hasil["answer"], "papers": hasil["papers"]})
 
 

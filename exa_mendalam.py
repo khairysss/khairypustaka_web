@@ -154,6 +154,144 @@ def label_relevansi(idx):
     return "Relevan", "rel3"
 
 
+# Kata fungsi Bahasa Indonesia: bukan pembawa topik, dibuang saat
+# mengekstrak frasa kunci dari cerita member maupun judul paper.
+_STOPKATA = {
+    "yang", "dan", "atau", "di", "ke", "dari", "untuk", "dengan", "pada",
+    "dalam", "ini", "itu", "saya", "aku", "kami", "kita", "juga", "sebagai",
+    "oleh", "karena", "agar", "supaya", "bisa", "dapat", "akan", "telah",
+    "sudah", "tidak", "ada", "menjadi", "saat", "ketika", "lebih", "para",
+    "bahwa", "tersebut", "antara", "setelah", "sebelum", "melalui",
+    "secara", "seperti", "hingga", "sampai", "bagi", "yaitu", "yakni",
+    "maupun", "serta", "jika", "bila", "apabila", "namun", "tetapi",
+    "tapi", "lagi", "pun", "saja", "hanya", "masih", "belum", "harus",
+    "ingin", "mau", "butuh", "mencari", "meneliti", "tolong", "bantu",
+    "jurnal", "paper", "referensi", "pendukung", "skripsi", "skripsiku",
+    "penelitianku", "bab", "satu", "dua", "tiga", "nya", "apa", "siapa",
+    "kapan", "dimana", "bagaimana", "apakah", "adalah", "merupakan",
+    "terhadap",
+    # Kata fungsi Bahasa Inggris (judul paper sering berbahasa Inggris)
+    "and", "the", "of", "with", "for", "among", "between", "within",
+    "in", "on", "at", "to", "a", "an", "by", "from", "as", "is", "are",
+    "was", "were", "toward", "towards", "through", "during", "using",
+    # Kata struktur judul penelitian yang terlalu umum untuk jadi
+    # bukti kecocokan sendirian (hampir semua judul memuatnya)
+    "pengaruh", "hubungan", "faktor", "dampak", "efek", "peran",
+    "gambaran", "tingkat", "perbedaan", "korelasi", "determinan",
+}
+
+
+def _kata_konten(teks):
+    """Daftar kata pembawa topik dari teks (tanpa kata fungsi)."""
+    mentah = re.findall(r"[a-z0-9à-ÿ]+", (teks or "").lower())
+    return [w for w in mentah if w not in _STOPKATA and len(w) >= 3]
+
+
+def _frasa_kunci(teks, maks_bigram=8):
+    """(bigram, unigram) pembawa topik dari teks, urut kemunculan.
+
+    Bigram hanya dari dua kata konten yang bersebelahan persis di
+    teks asli, jadi frasanya nyata ("kualitas tidur"), bukan
+    gabungan acak.
+    """
+    mentah = re.findall(r"[a-z0-9à-ÿ]+", (teks or "").lower())
+    bigram, unigram, terlihat = [], [], set()
+    for i, w in enumerate(mentah):
+        if w in _STOPKATA or len(w) < 3:
+            continue
+        if w not in terlihat:
+            terlihat.add(w)
+            unigram.append(w)
+        if i + 1 < len(mentah):
+            w2 = mentah[i + 1]
+            if w2 not in _STOPKATA and len(w2) >= 3:
+                bg = w + " " + w2
+                if bg not in bigram:
+                    bigram.append(bg)
+    return bigram[:maks_bigram], unigram
+
+
+def _gabung_dan(items):
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    return ", ".join(items[:-1]) + " dan " + items[-1]
+
+
+def alasan_relevansi(idx, total, query, r, serupa=False):
+    """Kalimat alasan peringkat satu paper, dibangun HANYA dari bukti
+    yang benar benar ada (perintah Sul 2026-11-11: label tanpa alasan
+    adalah klaim kosong): (1) frasa dari cerita member yang benar
+    benar muncul di judul atau cuplikan isi paper ini, (2) topik
+    utama paper dari judulnya sendiri, (3) posisi peringkatnya dari
+    mesin pencari makna di antara semua hasil. Tanpa bukti frasa,
+    alasannya jujur menyebut dasar topik + peringkat, tidak
+    mengarang kecocokan."""
+    judul = (r.get("title") or "")
+    judul_low = judul.lower()
+    isi_low = (" ".join(r.get("highlights") or []) + " "
+               + (r.get("text") or "")[:1500]).lower()
+    temu = {"judul": [], "isi": [], "kata": []}
+    if query and not serupa:
+        bigram, unigram = _frasa_kunci(query)
+        for bg in bigram:
+            if bg in judul_low:
+                temu["judul"].append(bg)
+            elif bg in isi_low:
+                temu["isi"].append(bg)
+            if len(temu["judul"]) + len(temu["isi"]) >= 2:
+                break
+        if len(temu["judul"]) + len(temu["isi"]) < 2:
+            for w in unigram:
+                if len(w) >= 4 and (w in judul_low or w in isi_low) \
+                        and w not in temu["judul"] \
+                        and w not in temu["isi"]:
+                    temu["kata"].append(w)
+                    if len(temu["judul"]) + len(temu["isi"]) \
+                            + len(temu["kata"]) >= 2:
+                        break
+    bukti = []
+    if temu["judul"]:
+        bukti.append("judulnya memuat frasa persis "
+                     + _gabung_dan([f"'{b}'" for b in temu["judul"]]))
+    if temu["isi"]:
+        bukti.append("cuplikan isinya membahas "
+                     + _gabung_dan([f"'{b}'" for b in temu["isi"]]))
+    if temu["kata"]:
+        bukti.append("membahas "
+                     + _gabung_dan([f"'{b}'" for b in temu["kata"]]))
+    klausa_peringkat = ""
+    if serupa:
+        if idx <= 1 and total:
+            klausa_peringkat = (f" Ini paper yang paling mirip dengan "
+                                f"paper sumbermu di antara {total} "
+                                f"hasil serupa.")
+        elif total:
+            klausa_peringkat = (f" Peringkat {idx} dari {total} paper "
+                                f"serupa dengan paper sumbermu.")
+    elif total:
+        if idx <= 1:
+            klausa_peringkat = (f" Mesin pencarian makna "
+                                f"menempatkannya di peringkat 1 dari "
+                                f"{total} hasil.")
+        else:
+            klausa_peringkat = (f" Ia berada di peringkat {idx} dari "
+                                f"{total} hasil.")
+    if bukti:
+        return ("Dasarnya: " + _gabung_dan(bukti)
+                + ", cocok langsung dengan yang kamu ceritakan."
+                + klausa_peringkat)
+    topik = _frasa_kunci(judul, maks_bigram=3)[0] \
+        or _kata_konten(judul)[:3]
+    if topik:
+        return ("Topik utamanya seputar "
+                + _gabung_dan([f"'{t}'" for t in topik[:3]])
+                + ", sejalur dengan kebutuhanmu." + klausa_peringkat)
+    return ("Paper ini terpilih oleh mesin pencarian makna dari "
+            "kecocokan isinya dengan kebutuhanmu." + klausa_peringkat)
+
+
 _DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"<>\)\]]+")
 
 
@@ -172,7 +310,7 @@ def _domain(url):
         return ""
 
 
-def normalisasi_paper(r, idx):
+def normalisasi_paper(r, idx, query="", total=0, serupa=False):
     """Satu hasil Exa -> objek paper seragam untuk frontend."""
     url = r.get("url") or ""
     text = r.get("text") or ""
@@ -201,30 +339,36 @@ def normalisasi_paper(r, idx):
         "access_note": catatan,
         "relevansi": rel_label,
         "relevansi_kelas": rel_kelas,
+        "alasan_relevansi": alasan_relevansi(idx, total, query, r,
+                                             serupa=serupa),
         "type": "Paper" if (r.get("id") or "") else "Sumber",
     }
 
 
-def normalisasi_hasil_cari(body):
-    papers = [normalisasi_paper(r, i + 1)
-              for i, r in enumerate(body.get("results") or [])]
+def normalisasi_hasil_cari(body, query="", serupa=False):
+    hasil = body.get("results") or []
+    papers = [normalisasi_paper(r, i + 1, query=query, total=len(hasil),
+                                 serupa=serupa)
+              for i, r in enumerate(hasil)]
     return {"papers": papers}
 
 
-def normalisasi_hasil_cepat(body):
+def normalisasi_hasil_cepat(body, query=""):
     """POST /answer: jawaban + sitasi dinormalisasi jadi paper juga."""
     papers = []
-    for i, c in enumerate(body.get("citations") or []):
+    sitasi = body.get("citations") or []
+    for i, c in enumerate(sitasi):
         rr = {"title": c.get("title"), "url": c.get("url"),
               "author": c.get("author"), "publishedDate":
               c.get("publishedDate"), "text": c.get("text") or "",
               "highlights": c.get("highlights") or [],
               "id": c.get("id")}
-        papers.append(normalisasi_paper(rr, i + 1))
+        papers.append(normalisasi_paper(rr, i + 1, query=query,
+                                         total=len(sitasi)))
     return {"answer": body.get("answer") or "", "papers": papers}
 
 
-def normalisasi_hasil_bedah(body):
+def normalisasi_hasil_bedah(body, query=""):
     """Deep + schema: konten terstruktur + grounding + paper hasil."""
     out = body.get("output") or {}
     konten = out.get("content") if isinstance(out, dict) else None
@@ -237,8 +381,10 @@ def normalisasi_hasil_bedah(body):
             grounding[f] = [{"title": c.get("title") or "",
                              "url": c.get("url") or ""}
                             for c in (g.get("citations") or [])]
-    papers = [normalisasi_paper(r, i + 1)
-              for i, r in enumerate(body.get("results") or [])]
+    hasil_cari = body.get("results") or []
+    papers = [normalisasi_paper(r, i + 1, query=query,
+                                 total=len(hasil_cari))
+              for i, r in enumerate(hasil_cari)]
     return {"sections": {
                 "ringkasan": konten.get("ringkasan") or "",
                 "faktor_penyebab": konten.get("faktor_penyebab") or [],
