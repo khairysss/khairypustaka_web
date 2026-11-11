@@ -11,12 +11,18 @@ Keputusan Sul yang ditegakkan modul ini (2026-11-10):
   kredit yang sama; cadangan lepas lagi bila laporan gagal, dan hanya
   berubah jadi potongan nyata saat laporan selesai.
 - Rem biaya mode ringan: cache hasil 7 hari (hasil cache tidak memotong
-  kuota dan tidak menambah belanja) + plafon belanja global harian dan
-  bulanan yang dicatat dari costDollars ASLI tiap panggilan Exa dan
-  ditegakkan sebelum panggilan baru dibuat. Plafon bisa diatur lewat
-  environment EXA_CAP_HARIAN_USD (default 0.30) dan
-  EXA_CAP_BULANAN_USD (default 9.0). Laporan Riset prabayar lewat
-  kredit, jadi tidak masuk plafon ini.
+  kuota dan tidak menambah belanja) + plafon belanja yang dicatat dari
+  costDollars ASLI tiap panggilan dan ditegakkan sebelum panggilan
+  baru dibuat. Sejak v81 (2026-11-11) plafonnya DUA EMBER terpisah
+  dengan angka sama ($5/hari + $45/bulan per ember): ember gratis
+  untuk member yang belum pernah top up, ember berbayar untuk yang
+  pernah top up, diatur lewat EXA_CAP_EMBER_HARIAN_USD /
+  EXA_CAP_EMBER_BULANAN_USD. Laporan Riset prabayar lewat kredit,
+  jadi tidak masuk ember mana pun, tetapi biayanya tetap tercatat
+  sebagai belanja kunci aktif. Kunci API sendiri berotasi: belanja
+  dicatat per kunci dan kunci aktif berpindah melingkar bila
+  perkiraan sisanya <= $5 atau saldonya dinyatakan habis oleh API
+  (lihat seksi belanja dan rotasi kunci di bawah).
 - Label akses 4 tingkat dihitung dari teks yang BENAR-BENAR terambil
   dari Exa (bukan tebakan): lihat label_akses().
 
@@ -867,58 +873,330 @@ def kuota_reset_harian(uid):
 
 
 # ---------------------------------------------------------------- belanja
-def _cap_harian():
-    try:
-        return float(os.environ.get("EXA_CAP_HARIAN_USD") or 0.30)
-    except ValueError:
-        return 0.30
+# v81 (keputusan Sul 2026-11-11): plafon belanja mode ringan TIDAK lagi
+# satu ember global. Ada DUA ember terpisah dengan plafon yang sama:
+#   ember "gratis"   : member tier 0 (belum pernah top up)
+#   ember "berbayar" : member tier 1 dan 2 (pernah top up)
+# supaya member berbayar tidak ikut tertahan saat ember gratis habis.
+# Plafon TIAP ember $5/hari + $45/bulan, diatur lewat env BARU
+# EXA_CAP_EMBER_HARIAN_USD / EXA_CAP_EMBER_BULANAN_USD. Env lama
+# EXA_CAP_HARIAN_USD / EXA_CAP_BULANAN_USD (0.30/9.0 di server) SENGAJA
+# tidak dibaca lagi di sini supaya nilainya yang lama tidak mengecilkan
+# ember baru.
+# Bersamaan dengan itu ada ROTASI KUNCI: beberapa kunci API dipasang
+# lewat env berurutan (EXA_API_KEY, EXA_API_KEY_2, ...), satu kunci
+# aktif melayani semua panggilan, belanja dicatat per kunci, dan kunci
+# aktif berpindah melingkar bila perkiraan sisanya <= $5 (rotasi lunak)
+# atau bila API menjawab saldo habis (failover keras, lihat exa_client).
+EMBER_GRATIS = "gratis"
+EMBER_BERBAYAR = "berbayar"
+_AMBANG_ROTASI_USD = 5.0       # sisa <= angka ini -> rotasi lunak
+_FAKTOR_PERINGATAN = 0.70      # peringatan dini monitor pada 70% plafon
 
 
-def _cap_bulanan():
+def _cap_ember_harian():
     try:
-        return float(os.environ.get("EXA_CAP_BULANAN_USD") or 9.0)
+        return float(os.environ.get("EXA_CAP_EMBER_HARIAN_USD") or 5.0)
     except ValueError:
-        return 9.0
+        return 5.0
+
+
+def _cap_ember_bulanan():
+    try:
+        return float(os.environ.get("EXA_CAP_EMBER_BULANAN_USD") or 45.0)
+    except ValueError:
+        return 45.0
+
+
+def _pastikan_struktur_belanja(d):
+    """Pastikan dokumen belanja punya struktur v81 (ember + kunci).
+
+    Migrasi sekali jalan, murni dari isi dokumen lama:
+    - Ember GRATIS mewarisi penghitung hari/bulan global lama apa
+      adanya (belanja historis hampir seluruhnya pemakaian gratis dan
+      pengujian), ember BERBAYAR mulai dari 0.
+    - Belanja per kunci 1 dimulai dari TOTAL belanja historis yang
+      sudah tercatat, supaya perkiraan sisa kunci 1 tetap benar
+      (seluruh belanja sebelum v81 memang dilayani kunci 1).
+    Idempoten: dokumen yang sudah punya kedua kunci dibiarkan."""
+    if not isinstance(d.get("ember"), dict):
+        hari_lama = d.get("hari") if isinstance(d.get("hari"), dict) else {}
+        bulan_lama = (d.get("bulan")
+                      if isinstance(d.get("bulan"), dict) else {})
+        d["ember"] = {
+            EMBER_GRATIS: {"hari": dict(hari_lama),
+                           "bulan": dict(bulan_lama)},
+            EMBER_BERBAYAR: {"hari": {}, "bulan": {}},
+        }
+    for nama in (EMBER_GRATIS, EMBER_BERBAYAR):
+        e = d["ember"].setdefault(nama, {})
+        if not isinstance(e.get("hari"), dict):
+            e["hari"] = {}
+        if not isinstance(e.get("bulan"), dict):
+            e["bulan"] = {}
+    if not isinstance(d.get("kunci"), dict):
+        try:
+            total_lama = float(d.get("total") or 0)
+        except (TypeError, ValueError):
+            total_lama = 0.0
+        d["kunci"] = {"aktif": 1, "habis": [],
+                      "belanja": {"1": round(total_lama, 6)}}
+    k = d["kunci"]
+    if not isinstance(k.get("belanja"), dict):
+        k["belanja"] = {}
+    if not isinstance(k.get("habis"), list):
+        k["habis"] = []
+    try:
+        k["aktif"] = int(k.get("aktif") or 1)
+    except (TypeError, ValueError):
+        k["aktif"] = 1
+    return d
+
+
+def _muat_belanja():
+    """Dokumen belanja dengan struktur v81 terjamin (di memori saja;
+    penulis yang memegang _LOCK menyimpannya kembali)."""
+    return _pastikan_struktur_belanja(_muat(_PATH_BELANJA))
+
+
+def ember_untuk_uid(uid):
+    """Ember plafon pemilik job: tier 0 -> gratis, tier 1/2 -> berbayar
+    (penomoran tier modul ini: 0 = belum pernah top up, 1 = >= Rp5.000,
+    2 = >= Rp10.000; sama dengan tier 1 vs tier 2+3 versi Sul)."""
+    return EMBER_BERBAYAR if tier(uid) >= 1 else EMBER_GRATIS
 
 
 def belanja_ringkas():
-    d = _muat(_PATH_BELANJA)
-    return {"hari_ini": float((d.get("hari") or {}).get(_hari_ini()) or 0),
-            "bulan_ini": float((d.get("bulan") or {}).get(_bulan_ini()) or 0),
-            "cap_harian": _cap_harian(), "cap_bulanan": _cap_bulanan(),
+    d = _muat_belanja()
+
+    def _e(nama):
+        e = d["ember"][nama]
+        return {"hari_ini": float((e.get("hari") or {}).get(
+                    _hari_ini()) or 0),
+                "bulan_ini": float((e.get("bulan") or {}).get(
+                    _bulan_ini()) or 0)}
+
+    g, b = _e(EMBER_GRATIS), _e(EMBER_BERBAYAR)
+    return {"hari_ini": g["hari_ini"] + b["hari_ini"],
+            "bulan_ini": g["bulan_ini"] + b["bulan_ini"],
+            "ember": {EMBER_GRATIS: g, EMBER_BERBAYAR: b},
+            "cap_harian": _cap_ember_harian(),
+            "cap_bulanan": _cap_ember_bulanan(),
             "total": float(d.get("total") or 0)}
 
 
-def belanja_boleh(estimasi_usd):
-    """True bila estimasi panggilan baru masih di dalam plafon."""
+def belanja_boleh(estimasi_usd, ember=None):
+    """True bila estimasi panggilan baru masih di dalam plafon EMBER
+    pemanggil (bawaan: ember gratis, perilaku pemanggil lama)."""
+    nama = ember if ember in (EMBER_GRATIS, EMBER_BERBAYAR) \
+        else EMBER_GRATIS
     r = belanja_ringkas()
-    return (r["hari_ini"] + estimasi_usd <= r["cap_harian"]
-            and r["bulan_ini"] + estimasi_usd <= r["cap_bulanan"])
+    e = r["ember"][nama]
+    return (e["hari_ini"] + estimasi_usd <= r["cap_harian"]
+            and e["bulan_ini"] + estimasi_usd <= r["cap_bulanan"])
 
 
-def belanja_catat(usd, mode, hitung_cap=True):
-    """Catat biaya ASLI dari respons Exa (fail-safe). hitung_cap=False
-    untuk mode yang digerbang kredit (Laporan Riset): biayanya tetap
-    masuk total + per_mode supaya monitor jujur, tapi tidak memakan
-    ember plafon harian/bulanan yang khusus menjaga mode ringan."""
+# ------------------------------------------------------------- rotasi kunci
+def jumlah_kunci_terpasang():
+    """Jumlah kunci API dari env, berurutan: EXA_API_KEY lalu
+    EXA_API_KEY_2, EXA_API_KEY_3, ... berhenti di nomor pertama yang
+    tidak terpasang. Tambah/kurang kunci tidak perlu ubah kode."""
+    if not (os.environ.get("EXA_API_KEY") or "").strip():
+        return 0
+    n = 1
+    i = 2
+    while (os.environ.get(f"EXA_API_KEY_{i}") or "").strip():
+        n = i
+        i += 1
+    return n
+
+
+def _saldo_awal_kunci(nomor):
+    """Saldo awal (USD) satu kunci untuk perkiraan sisa. Kunci 1
+    mengikuti basis tersimpan (bawaan $50); kunci 2+ bawaan $50 dan
+    bisa diatur lewat env EXA_SALDO_KUNCI_<n>."""
+    if nomor <= 1:
+        return _saldo_basis()
+    try:
+        v = float(os.environ.get(f"EXA_SALDO_KUNCI_{nomor}") or 0)
+    except ValueError:
+        v = 0.0
+    return v if v > 0 else _SALDO_BASIS_DEFAULT
+
+
+def _sisa_kunci_dari(d, nomor):
+    """Perkiraan sisa satu kunci dari dokumen belanja: 0 bila kunci
+    ditandai habis oleh failover keras, selain itu saldo awal
+    dikurangi belanja tercatat kunci itu."""
+    k = d["kunci"]
+    habis = [int(x) for x in (k.get("habis") or [])]
+    if nomor in habis:
+        return 0.0
+    belanja = float((k.get("belanja") or {}).get(str(nomor)) or 0)
+    return _saldo_awal_kunci(nomor) - belanja
+
+
+def kunci_aktif():
+    """Nomor kunci (1-based) yang harus melayani panggilan berikutnya.
+
+    Rotasi lunak ditegakkan di sini: bila perkiraan sisa kunci aktif
+    <= $5, aktif berpindah ke kunci berikutnya secara melingkar yang
+    sisanya masih di atas ambang. Bila SEMUA kunci sisanya <= $5,
+    kunci tersimpan tetap dipakai (layanan jalan terus pada kapasitas
+    isi ulang; tidak pernah berhenti hanya karena perkiraan).
+    None bila tidak ada kunci terpasang sama sekali."""
+    n = jumlah_kunci_terpasang()
+    if n <= 0:
+        return None
+    with _LOCK:
+        mentah = _muat(_PATH_BELANJA)
+        seed_baru = not isinstance(mentah.get("kunci"), dict) \
+            or not isinstance(mentah.get("ember"), dict)
+        d = _pastikan_struktur_belanja(mentah)
+        k = d["kunci"]
+        aktif = int(k.get("aktif") or 1)
+        if aktif < 1 or aktif > n:
+            aktif = 1
+        habis = [int(x) for x in (k.get("habis") or [])]
+        if _sisa_kunci_dari(d, aktif) <= _AMBANG_ROTASI_USD \
+                or aktif in habis:
+            pilih = None
+            for langkah in range(1, n):
+                cand = (aktif - 1 + langkah) % n + 1
+                if _sisa_kunci_dari(d, cand) > _AMBANG_ROTASI_USD:
+                    pilih = cand
+                    break
+            if pilih is None and aktif in habis:
+                for langkah in range(1, n):
+                    cand = (aktif - 1 + langkah) % n + 1
+                    if cand not in habis:
+                        pilih = cand
+                        break
+            if pilih is not None:
+                aktif = pilih
+        if seed_baru or int(k.get("aktif") or 1) != aktif:
+            k["aktif"] = aktif
+            _simpan(_PATH_BELANJA, d)
+        return aktif
+
+
+def kunci_tandai_habis(nomor):
+    """Failover keras: tandai kunci ini habis (perkiraan sisanya
+    dianggap 0), majukan kunci aktif ke kunci berikutnya secara
+    melingkar, dan kembalikan nomor kunci penggantinya. None bila
+    hanya ada satu kunci (tidak ada pengganti)."""
+    n = jumlah_kunci_terpasang()
+    if n <= 0:
+        return None
+    with _LOCK:
+        d = _muat_belanja()
+        k = d["kunci"]
+        habis = [int(x) for x in (k.get("habis") or [])]
+        if nomor not in habis:
+            habis.append(nomor)
+        k["habis"] = habis
+        berikut = None
+        for langkah in range(1, n):
+            cand = (nomor - 1 + langkah) % n + 1
+            if cand not in habis:
+                berikut = cand
+                break
+        if berikut is None and n > 1:
+            berikut = nomor % n + 1  # semua habis: tetap melingkar
+        if berikut is not None:
+            k["aktif"] = berikut
+        _simpan(_PATH_BELANJA, d)
+        return berikut
+
+
+def kunci_catat_belanja(nomor, usd):
+    """Tambahkan belanja ke catatan per kunci (fail-safe)."""
+    try:
+        u = float(usd or 0)
+        if u <= 0 or not nomor:
+            return
+        with _LOCK:
+            d = _muat_belanja()
+            b = d["kunci"].setdefault("belanja", {})
+            b[str(int(nomor))] = float(b.get(str(int(nomor))) or 0) + u
+            _simpan(_PATH_BELANJA, d)
+    except Exception as e:
+        log.warning("exa kunci catat belanja gagal: %s", e)
+
+
+def _kunci_pelayan():
+    """Nomor kunci yang melayani panggilan terakhir menurut exa_client
+    (diimpor malas untuk menghindari lingkaran impor); None bila belum
+    diketahui, pemanggil memakai kunci aktif tersimpan."""
+    try:
+        import exa_client as _ec
+        n = _ec.kunci_terakhir()
+        return int(n) if n else None
+    except Exception:
+        return None
+
+
+def kunci_ringkas():
+    """Keadaan rotasi kunci untuk monitor: jumlah, nomor aktif, dan
+    per kunci saldo awal, belanja tercatat, perkiraan sisa, status
+    habis. Nilai kunci tidak pernah dibaca di sini."""
+    n = jumlah_kunci_terpasang()
+    if n <= 0:
+        return {"jumlah": 0, "aktif": None, "daftar": []}
+    aktif = kunci_aktif()
+    d = _muat_belanja()
+    k = d["kunci"]
+    habis = [int(x) for x in (k.get("habis") or [])]
+    daftar = []
+    for i in range(1, n + 1):
+        belanja = float((k.get("belanja") or {}).get(str(i)) or 0)
+        daftar.append({
+            "nomor": i, "aktif": i == aktif, "habis": i in habis,
+            "saldo_awal_usd": round(_saldo_awal_kunci(i), 4),
+            "belanja_usd": round(belanja, 4),
+            "perkiraan_sisa_usd": round(_sisa_kunci_dari(d, i), 4)})
+    return {"jumlah": n, "aktif": aktif, "daftar": daftar}
+
+
+def belanja_catat(usd, mode, ember=None, hitung_cap=True):
+    """Catat biaya ASLI dari respons mesin pencari (fail-safe).
+
+    Tiga catatan sekaligus dalam satu kunci dokumen:
+    - ember plafon pemilik panggilan (hanya mode ringan): ember=
+      "gratis"/"berbayar". hitung_cap=False (Laporan Riset, digerbang
+      kredit) TIDAK masuk ember mana pun, sesuai aturan lamanya.
+    - total + per_mode, supaya monitor tetap jujur untuk semua mode.
+    - belanja per KUNCI yang melayani panggilan ini (dari exa_client):
+      biaya Laporan pun tercatat di sini karena memang menggerus
+      saldo asli kunci aktif walau tidak digerbang ember.
+    Penghitung global lama (kunci "hari"/"bulan" di akar dokumen)
+    tidak lagi ditambah; nilainya membeku sebagai arsip pra-v81 dan
+    sudah diwariskan ke ember gratis oleh migrasi struktur."""
     try:
         u = float(usd or 0)
         if u <= 0:
             return
+        pelayan = _kunci_pelayan()
         with _LOCK:
-            d = _muat(_PATH_BELANJA)
-            hari = d.setdefault("hari", {})
-            bulan = d.setdefault("bulan", {})
-            if hitung_cap:
+            d = _muat_belanja()
+            if hitung_cap and ember in (EMBER_GRATIS, EMBER_BERBAYAR):
+                e = d["ember"][ember]
+                hari = e.setdefault("hari", {})
+                bulan = e.setdefault("bulan", {})
                 hari[_hari_ini()] = float(hari.get(_hari_ini()) or 0) + u
-                bulan[_bulan_ini()] = float(bulan.get(_bulan_ini()) or 0) + u
+                bulan[_bulan_ini()] = float(
+                    bulan.get(_bulan_ini()) or 0) + u
+                for kk in sorted(hari.keys())[:-92]:
+                    hari.pop(kk, None)
+                for kk in sorted(bulan.keys())[:-13]:
+                    bulan.pop(kk, None)
             d["total"] = float(d.get("total") or 0) + u
-            for k in sorted(hari.keys())[:-92]:
-                hari.pop(k, None)
-            for k in sorted(bulan.keys())[:-13]:
-                bulan.pop(k, None)
             per_mode = d.setdefault("per_mode", {})
             per_mode[mode] = float(per_mode.get(mode) or 0) + u
+            idx = pelayan if pelayan else int(d["kunci"].get("aktif")
+                                              or 1)
+            b = d["kunci"].setdefault("belanja", {})
+            b[str(idx)] = float(b.get(str(idx)) or 0) + u
             _simpan(_PATH_BELANJA, d)
     except Exception as e:
         log.warning("exa belanja catat gagal: %s", e)
@@ -964,11 +1242,14 @@ def _saldo_basis():
 def monitor_ringkas():
     """Ringkasan pemantauan mesin mendalam untuk tab Sistem admin:
     status kunci (boolean saja, nilainya tidak pernah dibaca di
-    sini), belanja vs plafon, hitungan job hari ini per mode, total
-    belanja sejak fitur berjalan, dan perkiraan sisa kredit akun
-    (basis tersimpan dikurangi total belanja tercatat)."""
+    sini), belanja hari ini dan bulan ini PER EMBER terhadap plafon
+    embernya, keadaan rotasi kunci (nomor aktif + perkiraan sisa per
+    kunci), peringatan dini bila belanja bulanan satu ember mencapai
+    70% plafonnya, hitungan job hari ini per mode, dan total belanja
+    sejak fitur berjalan. Field gabungan lama (belanja_hari_ini_usd
+    dst.) dipertahankan sebagai jumlah kedua ember."""
     r = belanja_ringkas()
-    d = _muat(_PATH_BELANJA)
+    d = _muat_belanja()
     job_hari = ((d.get("job") or {}).get("hari") or {}).get(
         _hari_ini()) or {}
 
@@ -977,10 +1258,34 @@ def monitor_ringkas():
         return {"selesai": int(s.get("selesai") or 0),
                 "gagal": int(s.get("gagal") or 0)}
 
-    basis = _saldo_basis()
+    def _ember(nama):
+        e = r["ember"][nama]
+        persen = (e["bulan_ini"] / r["cap_bulanan"] * 100.0
+                  if r["cap_bulanan"] else 0.0)
+        return {
+            "belanja_hari_ini_usd": round(e["hari_ini"], 4),
+            "belanja_bulan_ini_usd": round(e["bulan_ini"], 4),
+            "cap_harian_usd": r["cap_harian"],
+            "cap_bulanan_usd": r["cap_bulanan"],
+            "sisa_harian_usd": round(
+                max(0.0, r["cap_harian"] - e["hari_ini"]), 4),
+            "sisa_bulanan_usd": round(
+                max(0.0, r["cap_bulanan"] - e["bulan_ini"]), 4),
+            "persen_bulanan": round(persen, 1),
+            "peringatan": e["bulan_ini"]
+            >= _FAKTOR_PERINGATAN * r["cap_bulanan"]}
+
+    ember_mon = {nama: _ember(nama)
+                 for nama in (EMBER_GRATIS, EMBER_BERBAYAR)}
+    peringatan = [nama for nama, e in ember_mon.items() if e["peringatan"]]
+    kunci_mon = kunci_ringkas()
+    if kunci_mon["jumlah"]:
+        sisa_kolam = round(sum(x["perkiraan_sisa_usd"]
+                               for x in kunci_mon["daftar"]), 4)
+    else:
+        sisa_kolam = round(_saldo_basis() - r["total"], 4)
     return {
-        "kunci_terpasang": bool(
-            (os.environ.get("EXA_API_KEY") or "").strip()),
+        "kunci_terpasang": kunci_mon["jumlah"] > 0,
         "belanja_hari_ini_usd": round(r["hari_ini"], 4),
         "belanja_bulan_ini_usd": round(r["bulan_ini"], 4),
         "total_belanja_usd": round(r["total"], 4),
@@ -990,12 +1295,15 @@ def monitor_ringkas():
             max(0.0, r["cap_harian"] - r["hari_ini"]), 4),
         "sisa_cap_bulanan_usd": round(
             max(0.0, r["cap_bulanan"] - r["bulan_ini"]), 4),
+        "ember": ember_mon,
+        "peringatan_ember": peringatan,
+        "kunci": kunci_mon,
         "job_hari_ini": {m: _jm(m) for m in MODE_SEMUA},
         "belanja_per_mode_usd": {
             k: round(float(v or 0), 4)
             for k, v in (d.get("per_mode") or {}).items()},
-        "saldo_basis_usd": basis,
-        "perkiraan_sisa_kredit_usd": round(basis - r["total"], 4)}
+        "saldo_basis_usd": _saldo_basis(),
+        "perkiraan_sisa_kredit_usd": sisa_kolam}
 
 
 def estimasi_biaya(mode, num):

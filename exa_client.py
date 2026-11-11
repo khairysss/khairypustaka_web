@@ -18,10 +18,17 @@ Jalur /agent lama juga 404; yang benar /agent/runs.
 
 Kredensial:
 - Produksi: environment EXA_API_KEY (header x-api-key ke api.exa.ai).
-- Lingkungan Muse lokal (uji): bila EXA_API_KEY kosong, klien memakai
-  pola konektor custom.exa yang sama dengan helper resminya, yaitu
-  surrogate dynamic_credentials yang ditempel ke request; nilai kunci
-  asli tidak pernah muncul di kode, berkas, atau log modul ini.
+  Sejak v81 bisa ada kunci cadangan berurutan EXA_API_KEY_2,
+  EXA_API_KEY_3, ... Modul exa_mendalam menentukan kunci aktifnya
+  (rotasi lunak berdasar perkiraan sisa); modul ini memakai kunci itu
+  untuk tiap panggilan dan melakukan FAILOVER KERAS: bila API
+  menjawab saldo habis, kunci itu ditandai habis di exa_mendalam,
+  panggilan yang sama diulang SATU kali dengan kunci berikutnya.
+- Lingkungan Muse lokal (uji): bila tidak ada kunci env sama sekali,
+  klien memakai pola konektor custom.exa yang sama dengan helper
+  resminya, yaitu surrogate dynamic_credentials yang ditempel ke
+  request; nilai kunci asli tidak pernah muncul di kode, berkas,
+  atau log modul ini.
 Redirect pada request terautentikasi selalu ditolak.
 """
 import json
@@ -53,10 +60,54 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise ExaError("redirect ditolak pada request Exa terautentikasi")
 
 
-def _siapkan_kredensial(req):
-    """Tempel kredensial ke request: env EXA_API_KEY dulu, lalu
-    surrogate konektor custom.exa (pola helper resmi) untuk uji lokal."""
-    key = (os.environ.get("EXA_API_KEY") or "").strip()
+# Nomor kunci (1-based) yang melayani panggilan sukses terakhir.
+# Dibaca exa_mendalam.belanja_catat untuk mencatat belanja per kunci.
+KUNCI_TERAKHIR = None
+
+
+def kunci_terakhir():
+    return KUNCI_TERAKHIR
+
+
+def _kunci_env(nomor):
+    """Nilai kunci nomor tertentu dari env ('' bila tidak terpasang)."""
+    if not nomor or int(nomor) <= 1:
+        return (os.environ.get("EXA_API_KEY") or "").strip()
+    return (os.environ.get(f"EXA_API_KEY_{int(nomor)}") or "").strip()
+
+
+def _modul_mendalam():
+    """Modul exa_mendalam (penjaga rotasi kunci), diimpor malas;
+    None bila tidak tersedia supaya klien tetap jalan sendiri."""
+    try:
+        import exa_mendalam
+        return exa_mendalam
+    except Exception:
+        return None
+
+
+_POLA_SALDO_HABIS = ("insufficient", "credit", "balance", "quota",
+                     "exceeded")
+
+
+def _galat_saldo_habis(status, teks):
+    """Deteksi galat saldo habis dari respons API: HTTP 402 selalu
+    dianggap habis; galat 4xx lain hanya bila teks galatnya memuat
+    pola saldo/kredit/kuota."""
+    if status == 402:
+        return True
+    if status and 400 <= int(status) < 500:
+        t = (teks or "").lower()
+        return any(p in t for p in _POLA_SALDO_HABIS)
+    return False
+
+
+def _siapkan_kredensial(req, key=None):
+    """Tempel kredensial ke request: kunci aktif yang diberikan (atau
+    env EXA_API_KEY) dulu, lalu surrogate konektor custom.exa (pola
+    helper resmi) untuk uji lokal."""
+    key = (key or "").strip() \
+        or (os.environ.get("EXA_API_KEY") or "").strip()
     if key:
         req.add_header("x-api-key", key)
         return
@@ -75,12 +126,32 @@ def _siapkan_kredensial(req):
 
 
 def _call(method, path, payload=None, timeout=120):
+    return _call_sekali(method, path, payload, timeout,
+                        boleh_failover=True)
+
+
+def _call_sekali(method, path, payload, timeout, boleh_failover):
+    """Satu percobaan panggilan API dengan kunci aktif saat ini.
+
+    Failover keras: bila galatnya galat saldo habis DAN masih boleh,
+    kunci yang gagal ditandai habis lewat exa_mendalam, lalu panggilan
+    yang sama diulang SATU kali dengan kunci berikutnya. Pengecualian
+    hasil percobaan kedua dibiarkan naik apa adanya."""
+    global KUNCI_TERAKHIR
+    em = _modul_mendalam()
+    nomor = None
+    if em is not None:
+        try:
+            nomor = em.kunci_aktif()
+        except Exception:
+            nomor = None
+    key = _kunci_env(nomor) if nomor else ""
     url = BASE + path
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     if data is not None:
         req.add_header("Content-Type", "application/json")
-    _siapkan_kredensial(req)
+    _siapkan_kredensial(req, key)
     try:
         with urllib.request.build_opener(_NoRedirect()).open(
                 req, timeout=timeout) as resp:
@@ -97,11 +168,29 @@ def _call(method, path, payload=None, timeout=120):
             tag = str((body.get("error") or {}).get("tag")
                       if isinstance(body.get("error"), dict)
                       else body.get("error") or "")
-        raise ExaError(f"Exa HTTP {e.code} {tag}".strip(), status=e.code)
+        err = ExaError(f"Exa HTTP {e.code} {tag}".strip(), status=e.code)
+        err.saldo_habis = _galat_saldo_habis(e.code, raw)
+        if boleh_failover and nomor and err.saldo_habis \
+                and em is not None:
+            pengganti = None
+            try:
+                pengganti = em.kunci_tandai_habis(int(nomor))
+            except Exception:
+                pengganti = None
+            if pengganti and int(pengganti) != int(nomor):
+                log.warning(
+                    "failover kunci: kunci %s dinyatakan habis "
+                    "(HTTP %s), panggilan %s %s diulang dengan "
+                    "kunci %s", nomor, e.code, method, path, pengganti)
+                return _call_sekali(method, path, payload, timeout,
+                                    boleh_failover=False)
+        raise err
     except ExaError:
         raise
     except Exception as e:
         raise ExaError(f"Exa tidak terjangkau: {type(e).__name__}")
+    if nomor:
+        KUNCI_TERAKHIR = int(nomor)
     try:
         return json.loads(raw)
     except Exception:

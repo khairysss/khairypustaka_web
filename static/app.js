@@ -4871,25 +4871,48 @@ async function admMuatSistem() {
       const j = md.job_hari_ini || {};
       const jSelesai = function(m) { return (j[m] || {}).selesai || 0; };
       const lap = j.laporan || {};
+      const emb = md.ember || {};
+      const emberBaris = function(nama, label) {
+        const e = emb[nama] || {};
+        return "<div>" + label + ": hari ini <b>" +
+          fmtUsd(e.belanja_hari_ini_usd) + "</b> dari " +
+          fmtUsd(e.cap_harian_usd) + " · bulan ini <b>" +
+          fmtUsd(e.belanja_bulan_ini_usd) + "</b> dari " +
+          fmtUsd(e.cap_bulanan_usd) + " (" + (e.persen_bulanan || 0) +
+          "%)</div>";
+      };
+      const peringatan = (md.peringatan_ember || []).map(function(n) {
+        return n === "gratis" ? "ember gratis" : "ember berbayar";
+      });
+      const daftarKunci = ((md.kunci || {}).daftar || []).map(function(kk) {
+        return "<div>Kunci " + kk.nomor + (kk.aktif ? " (aktif)" : "") +
+          (kk.habis ? " · habis" : "") +
+          ": perkiraan sisa <b>" + fmtUsd(kk.perkiraan_sisa_usd) +
+          "</b> · terpakai " + fmtUsd(kk.belanja_usd) +
+          " dari " + fmtUsd(kk.saldo_awal_usd) + "</div>";
+      }).join("");
       mdDetail =
         '<div class="muted tiny">Status kunci: ' +
-          (md.kunci_terpasang ? "terpasang" : "belum terpasang") + "</div>" +
-        "<div>Belanja hari ini <b>" + fmtUsd(md.belanja_hari_ini_usd) + "</b>" +
-          " · Sisa plafon harian <b>" + fmtUsd(md.sisa_cap_harian_usd) + "</b>" +
-          " dari " + fmtUsd(md.cap_harian_usd) + "</div>" +
-        '<div class="muted tiny">Belanja bulan ini ' + fmtUsd(md.belanja_bulan_ini_usd) +
-          " · Sisa plafon bulanan " + fmtUsd(md.sisa_cap_bulanan_usd) +
-          " dari " + fmtUsd(md.cap_bulanan_usd) + "</div>" +
+          (md.kunci_terpasang ? "terpasang" : "belum terpasang") +
+          " · " + ((md.kunci || {}).jumlah || 0) + " kunci, aktif kunci " +
+          ((md.kunci || {}).aktif || "-") + "</div>" +
+        emberBaris("gratis", "Ember gratis") +
+        emberBaris("berbayar", "Ember berbayar") +
+        (peringatan.length ?
+          '<div class="muted tiny">Peringatan: belanja bulanan ' +
+          peringatan.join(" dan ") +
+          " sudah mencapai 70% plafonnya.</div>" : "") +
+        daftarKunci +
         '<div class="muted tiny">Job hari ini: Cari Jurnal Mendalam ' + jSelesai("cari") +
           " · Jawaban Cepat " + jSelesai("cepat") +
           " · Bedah Mendalam " + jSelesai("bedah") +
           " · Laporan Riset selesai " + (lap.selesai || 0) +
           ", gagal " + (lap.gagal || 0) + "</div>" +
         "<div>Total belanja <b>" + fmtUsd(md.total_belanja_usd) + "</b>" +
-          " · <b>Perkiraan sisa kredit " + fmtUsd(md.perkiraan_sisa_kredit_usd) + "</b></div>" +
-        '<div class="muted tiny">Perkiraan dihitung dari basis kredit ' +
-          fmtUsd(md.saldo_basis_usd) + " dikurangi total belanja yang " +
-          "tercatat situs sejak fitur berjalan.</div>";
+          " · <b>Perkiraan sisa kredit semua kunci " + fmtUsd(md.perkiraan_sisa_kredit_usd) + "</b></div>" +
+        '<div class="muted tiny">Perkiraan sisa dihitung dari saldo awal ' +
+          "tiap kunci dikurangi belanja yang tercatat situs pada kunci " +
+          "itu sejak fitur berjalan.</div>";
     }
     const modelRows = (d.model || []).map(function(mo) {
       const kelas = mo.status === "sehat" ? "ok" : mo.status === "error" ? "err" :

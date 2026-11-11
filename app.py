@@ -2379,7 +2379,7 @@ def _mdl_kerja_ringan(jid):
             job["selesai_ts"] = time.time()
         return
     biaya = exacli.biaya(body)
-    exa.belanja_catat(biaya, mode)
+    exa.belanja_catat(biaya, mode, ember=job.get("ember"))
     exa.job_catat(mode, True)
     hasil["penyaring"] = {"fokus": s.get("fokus"),
                           "domain": s.get("domain") or ""}
@@ -2671,6 +2671,7 @@ def mendalam_job():
                         "lagi sebentar ya", 429)
     jid = uuid.uuid4().hex[:16]
     kunci = None
+    ember_job = None
     if mode in exa.MODE_RINGAN:
         kunci = exa.kunci_cache(mode, query,
                                 {"s": saringan, "start": start})
@@ -2690,9 +2691,13 @@ def mendalam_job():
                                len(hit["hasil"].get("papers") or []), kunci)
             exa.job_catat(mode, True)
             return jsonify(_mdl_job_json(job))
-        # Plafon belanja global ditegakkan untuk semua (termasuk admin).
+        # Plafon belanja per ember ditegakkan untuk semua (termasuk
+        # admin): ember pemilik job menentukan ember mana yang dicek,
+        # ember gratis dan berbayar tidak saling menggerus (v81).
+        ember_job = exa.ember_untuk_uid(g.uid)
         if not exa.belanja_boleh(exa.estimasi_biaya(mode,
-                                                    saringan["jumlah"])):
+                                                    saringan["jumlah"]),
+                                 ember=ember_job):
             return jsonify({"error": "plafon_belanja",
                             "pesan": "Pencarian mendalam lagi ditahan "
                                      "sementara karena plafon biaya "
@@ -2715,6 +2720,7 @@ def mendalam_job():
         _MDL_JOBS[jid] = {
             "id": jid, "uid": g.uid, "mode": mode, "query": query,
             "start": start, "saringan": saringan, "kunci": kunci,
+            "ember": ember_job,
             "is_admin": adm, "user_login": True,
             "asal_pdf": bool(pdf_stage),
             "pdf_nama": (pdf_stage.get("nama") if pdf_stage else None),
@@ -2797,7 +2803,8 @@ def mendalam_hasil():
 def mendalam_tanya_lanjut():
     """Pertanyaan lanjutan atas satu hasil: dijawab Exa /answer dalam
     konteks sumber yang sudah ditemukan. TIDAK memotong kuota mendalam
-    (meniru demo), tetapi tetap tunduk plafon belanja global."""
+    (meniru demo), tetapi tetap tunduk plafon belanja ember pemiliknya
+    (v81: ember gratis/berbayar sesuai tier member)."""
     if not exa or not exacli:
         return _err("fitur mendalam belum aktif di server ini", 503)
     if not g.user:
@@ -2808,7 +2815,8 @@ def mendalam_tanya_lanjut():
     konteks = str(body.get("konteks") or "").strip()
     if len(tanya) < 3:
         return _err("tulis dulu pertanyaannya ya")
-    if not exa.belanja_boleh(0.005):
+    ember_tl = exa.ember_untuk_uid(g.uid)
+    if not exa.belanja_boleh(0.005, ember=ember_tl):
         return jsonify({"error": "plafon_belanja",
                         "pesan": "Tanya lanjut lagi ditahan sementara "
                                  "karena plafon biaya harian "
@@ -2819,7 +2827,7 @@ def mendalam_tanya_lanjut():
     except Exception as e:  # noqa: BLE001
         log.warning("mendalam tanya lanjut gagal: %s", e)
         return _err("lagi gangguan, coba lagi sebentar ya", 502)
-    exa.belanja_catat(exacli.biaya(hasil_body), "cepat")
+    exa.belanja_catat(exacli.biaya(hasil_body), "cepat", ember=ember_tl)
     hasil = exa.normalisasi_hasil_cepat(hasil_body, query=q)
     return jsonify({"answer": hasil["answer"], "papers": hasil["papers"]})
 
