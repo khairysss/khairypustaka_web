@@ -268,7 +268,9 @@ def pastikan_doi_terdaftar(teks):
             "DOI (DOI selalu berawalan 10. lalu diikuti garis "
             "miring). Coba cek lagi DOI nya dari halaman jurnal "
             "resminya, atau mulai dari cerita kebutuhanmu saja, itu "
-            "juga bisa.")
+            "juga bisa. Kalau kamu punya file PDF papernya, pakai "
+            "titik mulai Upload PDF: sistem bisa membaca DOI dan "
+            "isinya langsung dari file itu.")
 
 
 def cari_serupa(url, num=10):

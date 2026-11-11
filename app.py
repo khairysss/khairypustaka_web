@@ -2333,7 +2333,7 @@ def _mdl_kerja_ringan(jid):
                 serupa=(job["start"] == "doi"))
         elif mode == "cepat":
             q = job["query"]
-            if job["start"] == "doi":
+            if job["start"] in ("doi", "pdf"):
                 q = ("Apa isi, metode, dan temuan utama paper ini, "
                      f"dijawab ringkas bersitasi: {q}")
             body = exacli.jawaban_cepat(q)
@@ -2342,7 +2342,7 @@ def _mdl_kerja_ringan(jid):
             with _MDL_LOCK:
                 job["tahap"] = "Membaca isi sumber dan menyusun bedah..."
             q = job["query"]
-            if job["start"] == "doi":
+            if job["start"] in ("doi", "pdf"):
                 q = (f"Bedah paper ini secara mendalam: {q}. Susun "
                      "ringkasan, faktor atau konsep utama, dampak, "
                      "dan rekomendasi.")
@@ -2361,6 +2361,18 @@ def _mdl_kerja_ringan(jid):
             job["tahap"] = "Gagal"
             if isinstance(e, exacli.DoiTidakTerdaftar):
                 job["error"] = str(e)
+            elif job["start"] in ("doi", "pdf") or job.get("asal_pdf"):
+                # Titik mulai paper tunggal gagal: jangan berhenti
+                # di pesan gangguan. Arahkan ke alternatifnya
+                # (perintah Sul 2026-11-11: pesan error wajib
+                # menawarkan jalan lain, termasuk Upload PDF).
+                job["error"] = (
+                    "Paper titik mulai ini belum bisa dibaca mesin "
+                    "pencari, jadi pencariannya belum jalan. Cek "
+                    "lagi DOI atau link-nya, atau pakai titik mulai "
+                    "Upload PDF kalau kamu punya file PDF papernya, "
+                    "atau mulai dari Ceritakan Konteks. Kuotamu "
+                    "dikembalikan untuk percobaan ini.")
             else:
                 job["error"] = ("Pencarian mendalam lagi gangguan, "
                                 "coba lagi sebentar ya")
@@ -2373,6 +2385,9 @@ def _mdl_kerja_ringan(jid):
                           "domain": s.get("domain") or ""}
     if job["start"] == "doi":
         hasil["titik_mulai_doi"] = job["query"][:120]
+    if job.get("asal_pdf"):
+        hasil["titik_mulai_pdf"] = (job.get("pdf_nama")
+                                    or "file PDF")[:120]
     hasil = _mdl_hasil_kanon(hasil, mode)
     hasil["biaya"] = biaya
     if s["urutan"] == "baru":
@@ -2491,6 +2506,77 @@ def mendalam_info():
     })
 
 
+# Titik mulai Upload PDF (keputusan Sul 2026-11-11): member yang
+# DOI/link papernya tidak valid atau tidak ia ketahui bisa memakai
+# file PDF paper yang ia punya sebagai acuan Paper Serupa. Dua
+# tahap: pdf-cek mengekstrak teks di MEMORI (file TIDAK disimpan,
+# memakai pembaca PDF yang sama dengan fitur file lain), mencari
+# DOI dan judul, lalu menyimpan hasilnya sesaat (10 menit) di
+# server; pembuatan job memakai token tahap ini. pdf-cek TIDAK
+# memotong kuota, sama seperti validasi DOI.
+_MDL_PDF_STAGE = {}
+_MDL_PDF_STAGE_TTL = 600
+
+
+@app.post("/api/mendalam/pdf-cek")
+@with_rl
+def mendalam_pdf_cek():
+    if not exa or not exacli:
+        return _err("fitur mendalam belum aktif di server ini", 503)
+    if not g.user:
+        return jsonify({"error": "login dulu buat pakai Cari Jurnal "
+                                 "Mendalam ya", "need_login": True}), 401
+    fs = request.files.get("file")
+    if not fs or not fs.filename:
+        return jsonify({"error": "file_kosong",
+                        "pesan": "Pilih dulu file PDF papernya ya."}), 400
+    nama = (fs.filename or "")[:160]
+    if not nama.lower().endswith(".pdf"):
+        return jsonify({
+            "error": "bukan_pdf",
+            "pesan": "File itu bukan PDF. Titik mulai ini khusus "
+                     "file PDF paper jurnal. Kalau papernya masih "
+                     "berupa tautan atau DOI, pakai tab Tempel Link "
+                     "atau DOI; kalau cuma punya ceritanya, pakai "
+                     "Ceritakan Konteks."}), 400
+    raw = fs.read()
+    teks, errm = _teks_dari_bytes(raw, nama)
+    if errm:
+        return jsonify({
+            "error": "pdf_tidak_terbaca",
+            "pesan": (errm + " Pencarian tidak dijalankan dan "
+                      "kuotamu tidak terpotong. Coba file PDF lain, "
+                      "atau mulai dari Tempel Link atau DOI, atau "
+                      "Ceritakan Konteks.")}), 422
+    doi = ""
+    try:
+        doi = doi_in_text(teks or "") or ""
+    except Exception:
+        doi = ""
+    if not doi:
+        doi = exacli.doi_dari_teks(teks or "")
+    judul = ""
+    if doi:
+        judul = exacli.judul_sumber_doi(doi)
+    if not judul:
+        meta = _tebak_meta_pdf(teks or "")
+        if meta:
+            judul = (meta.get("title") or "").strip()
+    token = uuid.uuid4().hex[:16]
+    with _MDL_LOCK:
+        for k in [k for k, v in _MDL_PDF_STAGE.items()
+                  if time.time() - (v.get("ts") or 0)
+                  > _MDL_PDF_STAGE_TTL]:
+            _MDL_PDF_STAGE.pop(k, None)
+        _MDL_PDF_STAGE[token] = {
+            "uid": g.uid, "doi": doi, "judul": judul,
+            "teks": (teks or "")[:6000], "nama": nama,
+            "ts": time.time()}
+    return jsonify({"ok": True, "token": token, "doi": doi,
+                    "judul": judul, "nama": nama,
+                    "punya_doi": bool(doi)})
+
+
 @app.post("/api/mendalam/job")
 @with_rl
 def mendalam_job():
@@ -2507,13 +2593,48 @@ def mendalam_job():
     if mode not in exa.MODE_SEMUA:
         return _err("mode harus cari, cepat, bedah, atau laporan")
     query = str(body.get("query") or "").strip()
+    start = str(body.get("start") or "konteks").strip().lower()
+    if start not in ("konteks", "doi", "pdf"):
+        start = "konteks"
+    pdf_stage = None
+    if start == "pdf":
+        # Query titik mulai PDF bukan dari form, tapi dari tahap
+        # pdf-cek (token sekali pakai, 10 menit, milik member ini).
+        token = str(body.get("pdf_token") or "")
+        with _MDL_LOCK:
+            st = _MDL_PDF_STAGE.get(token)
+            if st and (time.time() - (st.get("ts") or 0)
+                       > _MDL_PDF_STAGE_TTL
+                       or st.get("uid") != g.uid):
+                st = None
+            if st:
+                _MDL_PDF_STAGE.pop(token, None)
+                pdf_stage = st
+        if not pdf_stage:
+            return jsonify({
+                "error": "pdf_kedaluwarsa",
+                "pesan": "Sesi unggahan PDF-nya sudah kedaluwarsa "
+                         "atau belum lengkap. Unggah ulang file "
+                         "PDF-nya ya; prosesnya cepat dan kuotamu "
+                         "belum terpotong untuk percobaan ini."}), 400
+        if pdf_stage.get("doi"):
+            # Jalur utama: DOI terbaca dari isi PDF -> persis jalur
+            # Paper Serupa DOI (validasi register tetap berlaku di
+            # blok doi di bawah).
+            query = pdf_stage["doi"]
+            start = "doi"
+        else:
+            # Tanpa DOI: judul + awal isi PDF jadi bahan pencarian
+            # makna. Judul tebakan dari _tebak_meta_pdf bisa meleset,
+            # tapi bahan pencariannya isi paper itu sendiri, dan
+            # hasilnya tetap paper lain yang sejalur topiknya.
+            query = ((pdf_stage.get("judul") or "") + " "
+                     + (pdf_stage.get("teks") or "")[:1400]).strip()
+            query = query[:1900]
     if len(query) < 3:
         return _err("tulis dulu konteks atau topiknya ya")
     if len(query) > 2000:
         return _err("konteksnya kepanjangan (maksimal 2000 karakter)", 400)
-    start = str(body.get("start") or "konteks").strip().lower()
-    if start not in ("konteks", "doi"):
-        start = "konteks"
     if start == "doi":
         # Tolak DOI yang tidak terdaftar SEBELUM cache dan kuota:
         # mesin tidak bisa mengenali paper sumbernya dan akan
@@ -2594,6 +2715,8 @@ def mendalam_job():
             "id": jid, "uid": g.uid, "mode": mode, "query": query,
             "start": start, "saringan": saringan, "kunci": kunci,
             "is_admin": adm, "user_login": True,
+            "asal_pdf": bool(pdf_stage),
+            "pdf_nama": (pdf_stage.get("nama") if pdf_stage else None),
             "status": "antre", "tahap": "Menunggu giliran",
             "dibuat": time.time(), "selesai_ts": None,
             "hasil": None, "error": None, "dari_cache": False}

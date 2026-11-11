@@ -3632,6 +3632,7 @@ function mdlSaringanKirim() {
 
 function mdlQueryForm() {
   if (MDL.start === "doi") return ($("#mdlDoi").value || "").trim();
+  if (MDL.start === "pdf") return "";
   return ($("#mdlKonteks").value || "").trim();
 }
 
@@ -3703,6 +3704,7 @@ function pageMendalam() {
       <div class="mdl-tabs">
         <button type="button" class="mdl-tab on" data-mtab="konteks">Ceritakan Konteks</button>
         <button type="button" class="mdl-tab" data-mtab="doi">Tempel Link atau DOI</button>
+        <button type="button" class="mdl-tab" data-mtab="pdf">Upload PDF</button>
         <button type="button" class="mdl-tab" data-mtab="templat">Templat Siap Pakai</button>
       </div>
       <div id="mdlStartKonteks">
@@ -3718,11 +3720,16 @@ function pageMendalam() {
       <div id="mdlStartDoi" style="display:none">
         <label style="font-weight:700;font-size:14px">Mulai dari satu paper yang sudah kamu punya</label>
         <input type="text" id="mdlDoi" placeholder="Tempel DOI (10.xxxx/...) atau link artikel jurnal di sini">
-        <div class="mdl-char-note">Sistem akan memakai paper itu sebagai titik mulai, lalu mencarikan paper lain yang serupa dan berkaitan.</div>
+        <div class="mdl-char-note">Sistem akan memakai paper itu sebagai titik mulai, lalu mencarikan paper lain yang serupa dan berkaitan. DOI atau link-nya tidak ketemu? Pakai tab Upload PDF kalau kamu punya file papernya.</div>
         <div class="mdl-mini-chips">
           <button type="button" class="mdl-mini" data-mdoi="10.32832/pro.v5i4.6973">Contoh DOI: 10.32832/pro.v5i4.6973</button>
           <button type="button" class="mdl-mini" data-mdoi="https://doi.org/10.3961/jpmph.23.118">Contoh link DOI</button>
         </div>
+      </div>
+      <div id="mdlStartPdf" style="display:none">
+        <label style="font-weight:700;font-size:14px">Upload file PDF paper yang sudah kamu punya</label>
+        <input type="file" id="mdlPdfFile" accept="application/pdf,.pdf" style="margin-top:6px">
+        <div class="mdl-char-note" id="mdlPdfNote">Sistem membaca DOI, judul, dan isi awal paper langsung dari file-mu, lalu mencarikan paper lain yang serupa. File TIDAK disimpan, hanya dibaca sesaat. Maksimal 2 MB. PDF hasil pindai (scan) tanpa lapisan teks belum bisa dibaca, pakai versi teksnya ya.</div>
       </div>
       <div id="mdlStartTemplat" style="display:none">
         <p class="muted" style="font-size:13.5px;margin:0 0 8px">Pilih kebutuhan babmu. Templatnya terisi otomatis ke kotak konteks dan bisa kamu sunting lagi sebelum jalan.</p>
@@ -3851,6 +3858,8 @@ function mdlTab(nama) {
   $$(".mdl-tab").forEach(t => t.classList.toggle("on", t.dataset.mtab === nama));
   $("#mdlStartKonteks").style.display = nama === "konteks" ? "" : "none";
   $("#mdlStartDoi").style.display = nama === "doi" ? "" : "none";
+  const pdfPanel = $("#mdlStartPdf");
+  if (pdfPanel) pdfPanel.style.display = nama === "pdf" ? "" : "none";
   $("#mdlStartTemplat").style.display = nama === "templat" ? "" : "none";
   mdlUpdateEstimate();
 }
@@ -4245,20 +4254,59 @@ function mdlLangkahSet(n, tahapTeks) {
 }
 
 async function mdlJalankan() {
-  const q = mdlQueryForm();
   $("#mdlFormError").innerHTML = "";
+  if (MDL.start === "pdf") { await mdlJalankanPdf(); return; }
+  const q = mdlQueryForm();
   if (MDL.start === "konteks" && q.length < 30) {
     $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Ceritakan kebutuhanmu sedikit lebih lengkap dulu (baru ${q.length} karakter, minimal sekitar 30) supaya hasil pencariannya tajam.</div>`;
     return;
   }
   if (MDL.start === "doi" && !(q.includes("10.") || q.includes("http"))) {
-    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Yang kamu tempel belum terlihat seperti DOI atau link artikel. DOI biasanya diawali 10. dan link diawali http.</div>`;
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Yang kamu tempel belum terlihat seperti DOI atau link artikel. DOI biasanya diawali 10. dan link diawali http. Kalau kamu punya file PDF papernya, pakai tab Upload PDF saja, sistem membacanya langsung dari file.</div>`;
     return;
   }
   if (!q) { toast("Isi dulu konteks pencarianmu ya."); return; }
   const btn = $("#mdlRun"); setLoading(btn, true, "Menyiapkan…");
   const r = await apiPOST("/mendalam/job", {mode: MDL.mode, query: q, start: MDL.start, saringan: mdlSaringanKirim()});
   setLoading(btn, false);
+  mdlTanganiResponsJob(r, q);
+}
+
+async function mdlJalankanPdf() {
+  const inp = $("#mdlPdfFile");
+  const f = inp && inp.files && inp.files[0];
+  if (!f) {
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Pilih dulu file PDF papernya ya.</div>`;
+    return;
+  }
+  if (!/\.pdf$/i.test(f.name)) {
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">File itu bukan PDF. Kalau papernya berupa link atau DOI, pakai tab Tempel Link atau DOI; kalau cuma punya ceritanya, pakai Ceritakan Konteks.</div>`;
+    return;
+  }
+  if (f.size > 2 * 1024 * 1024) {
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">Ukuran file PDF maksimal 2 MB ya. Kompres dulu file-nya, atau pakai tab Tempel Link atau DOI.</div>`;
+    return;
+  }
+  const btn = $("#mdlRun"); setLoading(btn, true, "Membaca PDF…");
+  const fd = new FormData(); fd.append("file", f);
+  const cek = await unggahForm("/api/mendalam/pdf-cek", fd);
+  if (!cek.ok || !cek.data || !cek.data.token) {
+    setLoading(btn, false);
+    const e = cek.data || {};
+    $("#mdlFormError").innerHTML = `<div class="mdl-form-error">${esc(e.pesan || e.error || "File PDF-nya belum bisa dibaca. Coba file lain, atau mulai dari Tempel Link atau DOI, atau Ceritakan Konteks.")}</div>`;
+    mdlMuatInfo();
+    return;
+  }
+  const label = cek.data.judul || cek.data.doi || cek.data.nama || "File PDF";
+  const note = $("#mdlPdfNote");
+  if (note) note.textContent = (cek.data.doi ? `DOI terbaca dari file: ${cek.data.doi}. ` : "DOI tidak terbaca di file ini, pencarian memakai judul dan isi awal paper. ") + "Sistem mencarikan paper yang serupa sekarang.";
+  setLoading(btn, true, "Menyiapkan…");
+  const r = await apiPOST("/mendalam/job", {mode: MDL.mode, query: "", start: "pdf", pdf_token: cek.data.token, saringan: mdlSaringanKirim()});
+  setLoading(btn, false);
+  mdlTanganiResponsJob(r, label);
+}
+
+function mdlTanganiResponsJob(r, q) {
   if (!r.ok) {
     const e = r.data || {};
     if (e.error === "perlu_login") { openAuth("Fitur ini khusus member. Masuk dulu ya."); return; }
@@ -4347,7 +4395,8 @@ function mdlJawabanHTML() {
   if (mode === "bedah") {
     const b = h.bedah || {};
     const ground = (bidang) => {
-      const g = ((b.grounding || {})[bidang]) || [];
+      const gMentah = ((b.grounding || {})[bidang]) || [];
+      const g = gMentah.filter((x, i) => gMentah.findIndex(y => (y.domain || "") === (x.domain || "")) === i);
       if (!g.length) return "";
       return `<div class="mdl-ground">Dasar klaim: ${g.map(x => `<a href="${esc(x.url || "#")}" target="_blank" rel="noopener">${esc((x.domain || "sumber"))}</a>`).join(", ")}</div>`;
     };
