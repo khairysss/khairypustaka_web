@@ -1252,6 +1252,9 @@ input:not([type]){ width:100%; padding:11px 12px; border-radius:12px; font-size:
 .mdl-badge2.acc-abstract{background:rgba(251,191,36,.13);color:#fde68a;border-color:rgba(251,191,36,.4)}
 .mdl-badge2.acc-partial{background:rgba(253,164,175,.13);color:#fda4af;border-color:rgba(253,164,175,.4)}
 .mdl-badge2.acc-metadata{background:rgba(196,181,253,.13);color:#c4b5fd;border-color:rgba(196,181,253,.4)}
+.mdl-badge2.rel1{background:rgba(45,212,191,.3);color:#99f6e4;border-color:rgba(45,212,191,.7)}
+.mdl-badge2.rel2{background:rgba(45,212,191,.13);color:#5eead4;border-color:rgba(45,212,191,.4)}
+.mdl-badge2.rel3{background:transparent;color:var(--mmuted);border-color:var(--mline)}
 .mdl-pnum{margin-left:auto;color:var(--mmuted2);font-weight:800;font-size:13px}
 .mdl-ptitle{font-size:16px;font-weight:800;margin:9px 0 3px}
 .mdl-ptitle a{color:var(--mtext);text-decoration:none}

@@ -139,6 +139,21 @@ def label_akses(text_len, highlights_len=0):
                         "terambil. Isi sumber tidak tersedia terbuka.")
 
 
+def label_relevansi(idx):
+    """Label relevansi berbasis PERINGKAT hasil (keputusan Sul
+    2026-11-11): tanpa angka/persen, karena respons pencarian memang
+    tidak membawa skor. Urutan hasil dari mesin adalah urutan
+    relevansi: peringkat 1 paling relevan dengan cerita/kebutuhan
+    member, makin ke bawah relevansinya menurun bertahap tapi tetap
+    relevan. Berlaku juga untuk hasil DOI/Paper Serupa; skor
+    kemiripan aslinya sengaja tidak ditampilkan sebagai angka."""
+    if idx <= 1:
+        return "Paling Relevan", "rel1"
+    if idx <= 3:
+        return "Sangat Relevan", "rel2"
+    return "Relevan", "rel3"
+
+
 _DOI_RE = re.compile(r"10\.\d{4,9}/[^\s\"<>\)\]]+")
 
 
@@ -167,6 +182,7 @@ def normalisasi_paper(r, idx):
     tgl = r.get("publishedDate") or ""
     tahun = tgl[:4] if len(tgl) >= 4 and tgl[:4].isdigit() else ""
     cuplikan = (highlights[0] if highlights else text[:300]).strip()
+    rel_label, rel_kelas = label_relevansi(idx)
     return {
         "id": idx,
         "title": (r.get("title") or "(tanpa judul)").strip(),
@@ -183,6 +199,8 @@ def normalisasi_paper(r, idx):
         "access": kode,
         "access_label": LABEL_AKSES[kode],
         "access_note": catatan,
+        "relevansi": rel_label,
+        "relevansi_kelas": rel_kelas,
         "type": "Paper" if (r.get("id") or "") else "Sumber",
     }
 
