@@ -714,6 +714,20 @@ def _catat_galat_gemini(kategori, model, http=None):
     global _GEMINI_GALAT
     _GEMINI_GALAT = {"kategori": kategori, "model": model,
                      "http": http, "waktu": int(time.time())}
+    # PERSISTEN 2026-11-12: kategori yang sama dicatat ke
+    # model_stats supaya panel admin menampilkannya walau server
+    # mulai ulang (sebelumnya hanya di memori proses dan tidak
+    # pernah dirender). Utas latar, fail-safe; penghitung ok/gagal
+    # TIDAK diubah di sini (dicatat sekali oleh ai_providers).
+    try:
+        import threading
+
+        import model_stats as _ms
+        threading.Thread(target=_ms.catat_galat,
+                         args=("gemini-flash", kategori),
+                         daemon=True).start()
+    except Exception:
+        pass
 
 
 def _teks_dari_candidates(cands):
@@ -783,9 +797,11 @@ async def gemini_generate(prompt, max_output_tokens=1500):
         models = await _gemini_ranked_models(key)
     except Exception as e:
         log.warning("gemini_generate gagal (models): %s", type(e).__name__)
+        _catat_galat_gemini("galat_lain", None)
         return None
     if not models:
         log.warning("gemini: daftar model kosong")
+        _catat_galat_gemini("galat_lain", None)
         return None
     n = len(models)
     order = [models[(_GEMINI_OK + i) % n] for i in range(n)]
@@ -802,6 +818,7 @@ async def gemini_generate(prompt, max_output_tokens=1500):
             for attempt in (1, 2):
                 if time.monotonic() > tenggat:
                     log.warning("gemini: tenggat internal tercapai, berhenti")
+                    _catat_galat_gemini("timeout", model)
                     return None
                 try:
                     # FIX 2026-11-08 (audit putaran 2, temuan lama #14):

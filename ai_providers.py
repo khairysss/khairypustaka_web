@@ -124,7 +124,7 @@ _MODEL_STATS = {}
 _MODEL_STATS_LOCK = threading.Lock()
 
 
-def catat_status_model(model_id, ok, lambat=False):
+def catat_status_model(model_id, ok, lambat=False, galat=None):
     try:
         mid = str(model_id or "").strip()
         if not mid:
@@ -134,24 +134,49 @@ def catat_status_model(model_id, ok, lambat=False):
             s = _MODEL_STATS.setdefault(mid, {"ok": 0, "gagal": 0,
                                               "terakhir_ok": 0,
                                               "terakhir_gagal": 0,
-                                              "terakhir_lama": 0})
+                                              "terakhir_lama": 0,
+                                              "galat": None,
+                                              "galat_waktu": 0})
             if ok:
                 s["ok"] += 1
                 s["terakhir_ok"] = now
             else:
                 s["gagal"] += 1
                 s["terakhir_gagal"] = now
+                if galat:
+                    s["galat"] = str(galat)[:40]
+                    s["galat_waktu"] = now
             if lambat:
                 s["terakhir_lama"] = now
         try:
             import model_stats as _ms
             threading.Thread(target=_ms.catat,
-                             args=(mid, bool(ok), bool(lambat)),
+                             args=(mid, bool(ok), bool(lambat), galat),
                              daemon=True).start()
         except Exception:
             pass
     except Exception:
         pass
+
+
+def _kategori_galat_http(e):
+    """Kategori galat dari exception request HTTP, untuk panel admin.
+
+    Fungsi murni (tanpa efek samping) supaya mudah diuji: timeout
+    dibedakan dari galat jaringan, dan galat status HTTP memakai
+    kodenya (http_400, http_403, ...). Tanpa kunci/prompt/isi respons.
+    """
+    import httpx
+    if isinstance(e, httpx.TimeoutException):
+        return "timeout"
+    if isinstance(e, httpx.HTTPStatusError):
+        sc = e.response.status_code if e.response is not None else 0
+        return ("http_%d" % sc) if sc else "http_galat"
+    if isinstance(e, httpx.RequestError):
+        return "jaringan"
+    if isinstance(e, asyncio.TimeoutError):
+        return "timeout"
+    return "galat_lain"
 
 
 def status_model():
@@ -192,12 +217,24 @@ def status_model():
             "terakhir_gagal": max(float(m.get("terakhir_gagal") or 0),
                                   float(t.get("gagal") or 0)),
             "terakhir_lama": max(float(m.get("terakhir_lama") or 0),
-                                 float(t.get("lama") or 0))}
+                                 float(t.get("lama") or 0)),
+            # Alasan gagal terakhir: pakai catatan yang cap waktunya
+            # lebih baru antara persisten dan memori.
+            "galat": None, "galat_waktu": 0}
+        gw_p = float(t.get("galat_waktu") or 0)
+        gw_m = float(m.get("galat_waktu") or 0)
+        if t.get("galat") and gw_p >= gw_m:
+            gabung[mid]["galat"] = t.get("galat")
+            gabung[mid]["galat_waktu"] = gw_p
+        elif m.get("galat"):
+            gabung[mid]["galat"] = m.get("galat")
+            gabung[mid]["galat_waktu"] = gw_m
     snap = gabung
-    # Kategori galat Gemini terakhir (diagnosis 2026-11-08): statistik
-    # di atas hanya menghitung ok/gagal, jadi penyebab kegagalan Gemini
-    # tidak pernah terlihat di panel. Ambil dari tanya secara lazy
-    # (pola impor silang kedua modul memang di dalam fungsi).
+    # Kategori galat Gemini terakhir (diagnosis 2026-11-08): dipakai
+    # sebagai cadangan bila catatan persistennya belum tertulis
+    # (utas pencatat model_stats berjalan latar). Sejak 2026-11-12
+    # kategori yang sama juga dipersistensikan oleh tanya, jadi
+    # cadangan ini hanya menutup jeda tulis yang singkat.
     gem_galat = {}
     try:
         import tanya as _tanya_mod
@@ -212,6 +249,12 @@ def status_model():
         tok = float(s.get("terakhir_ok") or 0)
         tg = float(s.get("terakhir_gagal") or 0)
         tl = float(s.get("terakhir_lama") or 0)
+        galat_v = s.get("galat")
+        galat_w = float(s.get("galat_waktu") or 0)
+        if e["id"] == "gemini-flash" and gem_galat.get("kategori"):
+            gw_d = float(gem_galat.get("waktu") or 0)
+            if gw_d >= galat_w:
+                galat_v, galat_w = gem_galat["kategori"], gw_d
         if not ok_n and not g_n:
             status = "belum ada data"
         elif tg > tok:
@@ -224,9 +267,9 @@ def status_model():
                  "provider": e["provider"], "status": status,
                  "ok": ok_n, "gagal": g_n,
                  "terakhir_ok": tok or None,
-                 "terakhir_gagal": tg or None}
-        if e["id"] == "gemini-flash" and gem_galat:
-            baris["galat_terakhir"] = gem_galat
+                 "terakhir_gagal": tg or None,
+                 "galat_terakhir": galat_v or None,
+                 "galat_waktu": galat_w or None}
         out.append(baris)
     return out
 
@@ -310,21 +353,21 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
                     headers={"Authorization": f"Bearer {key}"},
                     json=payload)
             if r.status_code == 404:
-                catat_status_model(model, False)
+                catat_status_model(model, False, galat="http_404")
                 raise RuntimeError("skip")
             if r.status_code == 429:
                 log.info("AI %s 429, ulangi (%d/2)", model, attempt)
                 if attempt < 2:
                     await asyncio.sleep(2 * attempt)
                     continue
-                catat_status_model(model, False)
+                catat_status_model(model, False, galat="http_429")
                 raise _KeyRateLimited(model)
             if r.status_code in (500, 502, 503):
                 log.info("AI %s %s, ulangi (%d/2)", model, r.status_code, attempt)
                 if attempt < 2:
                     await asyncio.sleep(2 * attempt)
                     continue
-                catat_status_model(model, False)
+                catat_status_model(model, False, galat="http_5xx")
                 return None
             r.raise_for_status()
             data = r.json()
@@ -358,13 +401,15 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
             text = (((data.get("choices") or [{}])[0].get("message") or {})
                     .get("content") or "").strip()
             catat_status_model(model, bool(text),
-                               lambat=(time.monotonic() - _t0) > 20)
+                               lambat=(time.monotonic() - _t0) > 20,
+                               galat=None if text else "tanpa_teks")
             return text or None
         except RuntimeError:
             raise
         except Exception as e:
             log.info("AI %s gagal: %s", model, e)
-            catat_status_model(model, False)
+            catat_status_model(model, False,
+                               galat=_kategori_galat_http(e))
             return None
     return None
 
@@ -465,7 +510,14 @@ async def generate(prompt, premium=False, search=False, budget=40.0,
                         timeout=sisa())
                 except Exception as e:
                     log.info("AI gemini gagal: %s", e)
-                    catat_status_model("gemini-flash", False)
+                    # Alasan spesifik sudah dicatat tanya saat gagal;
+                    # di sini hanya isi "timeout" bila budget wait_for
+                    # yang habis, selebihnya biarkan catatan tanya.
+                    catat_status_model(
+                        "gemini-flash", False,
+                        galat=("timeout"
+                               if isinstance(e, asyncio.TimeoutError)
+                               else None))
                     continue
                 catat_status_model("gemini-flash", bool(out))
                 if out:
@@ -605,7 +657,11 @@ async def _coba_eps(eps, prompt, max_tokens, sisa, batas=None):
                     timeout=jatah())
             except Exception as e:
                 log.info("AI pilihan gemini gagal: %s", e)
-                catat_status_model("gemini-flash", False)
+                catat_status_model(
+                    "gemini-flash", False,
+                    galat=("timeout"
+                           if isinstance(e, asyncio.TimeoutError)
+                           else None))
                 continue
             catat_status_model("gemini-flash", bool(out))
             if out:

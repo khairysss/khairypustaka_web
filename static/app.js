@@ -4656,6 +4656,27 @@ function admPill(teks, kelas) {
   return '<span class="pill ' + esc(kelas || "grey") + '">' + esc(teks) + "</span>";
 }
 
+// Label ramah untuk kategori gagal terakhir model AI (panel Sistem).
+// Kategori datang dari server apa adanya; yang tidak dikenal
+// ditampilkan mentah supaya tidak ada info yang disembunyikan.
+function labelGalat(k) {
+  if (!k) return "";
+  if (k.indexOf("http_") === 0) {
+    const kode = k.slice(5);
+    if (kode === "429") return "HTTP 429, batas kuota";
+    if (kode === "404") return "HTTP 404, model tidak ditemukan";
+    if (kode === "5xx") return "HTTP 5xx, galat server provider";
+    return "HTTP " + kode;
+  }
+  if (k === "timeout") return "Timeout";
+  if (k === "jaringan") return "Galat jaringan";
+  if (k === "tanpa_teks") return "Respons kosong";
+  if (k === "kunci_kosong") return "Kunci API kosong";
+  if (k === "galat_lain") return "Galat lain";
+  if (k.indexOf("galat_") === 0) return "Galat " + k.slice(6);
+  return k;
+}
+
 async function admMuatStatistik() {
   const box = $("#admStat");
   if (!box) return;
@@ -4921,7 +4942,11 @@ async function admMuatSistem() {
         mo.status === "lambat" ? "Lambat" : "Belum ada data";
       return '<div class="list-row"><div class="lr-main"><b>' + esc(mo.label) + "</b>" +
         '<div class="muted tiny">' + esc(mo.provider) + " · berhasil " + (mo.ok || 0) +
-        "x · gagal " + (mo.gagal || 0) + "x · tercatat permanen</div></div>" +
+        "x · gagal " + (mo.gagal || 0) + "x · tercatat permanen</div>" +
+        (mo.galat_terakhir ?
+          '<div class="muted tiny">Gagal terakhir: ' + esc(labelGalat(mo.galat_terakhir)) +
+          (mo.galat_waktu ? " · " + esc(fmtWita(mo.galat_waktu)) : "") + "</div>" : "") +
+        "</div>" +
         admPill(label, kelas) + "</div>";
     }).join("");
     box.innerHTML =

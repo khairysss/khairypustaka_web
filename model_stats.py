@@ -48,8 +48,16 @@ def _muat():
     return d
 
 
-def catat(model_id, ok, lambat=False):
-    """Catat satu hasil panggilan model. Fail-safe total."""
+def catat(model_id, ok, lambat=False, galat=None):
+    """Catat satu hasil panggilan model. Fail-safe total.
+
+    `galat`: kategori kegagalan terakhir (mis. "http_429", "timeout"),
+    dicatat di wadah "terakhir" per model supaya panel admin bisa
+    menunjukkan ALASAN gagal terakhir, bukan cuma hitungannya
+    (perbaikan 2026-11-12, pertanyaan Sul soal pill Error). Hanya
+    dicatat saat gagal; keberhasilan tidak menghapus alasan gagal
+    terakhir.
+    """
     try:
         mid = str(model_id or "").strip()
         if not mid:
@@ -77,6 +85,9 @@ def catat(model_id, ok, lambat=False):
                 t["gagal"] = kini
             if lambat:
                 t["lama"] = kini
+            if (not ok) and galat:
+                t["galat"] = str(galat)[:40]
+                t["galat_waktu"] = kini
             kunci_hari = sorted(d["hari"].keys())
             for lama in kunci_hari[:-_SIMAPAN_HARI]:
                 d["hari"].pop(lama, None)
@@ -85,11 +96,41 @@ def catat(model_id, ok, lambat=False):
         log.warning("model_stats: catat gagal: %s", e)
 
 
+def catat_galat(model_id, kategori):
+    """Catat HANYA alasan gagal terakhir, tanpa mengubah penghitung.
+
+    Dipakai jalur yang mencatat kategorinya sendiri di titik gagal
+    (mis. tanya._catat_galat_gemini, yang bisa terpanggil beberapa
+    kali dalam satu generate), sementara penghitung ok/gagal tetap
+    dicatat sekali oleh pemanggil di ai_providers. Fail-safe total.
+    """
+    try:
+        mid = str(model_id or "").strip()
+        kat = str(kategori or "").strip()
+        if not mid or not kat:
+            return
+        kini = time.time()
+        with _LOCK:
+            d = _muat()
+            t = d["terakhir"].get(mid)
+            if not isinstance(t, dict):
+                t = {"ok": 0, "gagal": 0, "lama": 0}
+                d["terakhir"][mid] = t
+            t["galat"] = kat[:40]
+            t["galat_waktu"] = kini
+            dbstore.save_json_best_effort(_PATH, d)
+    except Exception as e:
+        log.warning("model_stats: catat_galat gagal: %s", e)
+
+
 def ringkasan():
     """Total sepanjang pencatatan + cap waktu hasil terakhir per model.
 
     Bentuk: {"total": {model_id: {"ok": n, "gagal": n}},
-             "terakhir": {model_id: {"ok": ts, "gagal": ts, "lama": ts}}}
+             "terakhir": {model_id: {"ok": ts, "gagal": ts, "lama": ts,
+                                     "galat": kategori, "galat_waktu": ts}}}
+    Kunci "galat"/"galat_waktu" hanya ada bila model itu pernah gagal
+    dengan kategori tercatat (dokumen lama tidak punya kunci ini).
     """
     d = _muat()
     return {"total": copy.deepcopy(d["total"]),
