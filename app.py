@@ -4988,6 +4988,18 @@ _PANDUAN_PAGES = {
     "panduan/beda-sempro-dan-sidang": "panduan-sempro-sidang.html",
     "panduan/cara-membuat-daftar-pustaka-otomatis": "panduan-daftar-pustaka.html",
     "panduan/cek-plagiarisme": "panduan-cek-plagiarisme.html",
+    "panduan/cara-mencari-jurnal": "panduan-cari-jurnal.html",
+    "panduan/cari-jurnal-mendalam": "panduan-mendalam.html",
+    "panduan/ide-judul-dan-research-gap": "panduan-ide-judul.html",
+    "panduan/cara-membuat-matriks-literatur": "panduan-matriks.html",
+    "panduan/sitasi-dari-pdf-dan-paper-serupa": "panduan-sitasi-pdf.html",
+    "panduan/terjemah-abstrak": "panduan-terjemah.html",
+    "panduan/ai-studio-generator-naskah": "panduan-ai-studio.html",
+    "panduan/tanya-ai": "panduan-tanya-ai.html",
+    "panduan/simulasi-sidang": "panduan-simulasi-sidang.html",
+    "panduan/convert-file-dan-ekstrak-teks": "panduan-convert.html",
+    "panduan/template-dan-alat-pendukung": "panduan-alat-pendukung.html",
+    "panduan/akun-kuota-dan-topup": "panduan-akun.html",
 }
 
 
