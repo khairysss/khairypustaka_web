@@ -2859,22 +2859,52 @@ function labelModelHTML(d) {
   return '<div class="model-label">Dijawab oleh <b>' + esc(d.model_label) + '</b></div>';
 }
 function pageAI() {
-  view().innerHTML =
-    "<h2>"+tic("spark")+" AI Studio</h2>" +
-    '<p><span class="kuota" id="kuotaBadge">cek kuota...</span></p>' +
-    '<p class="muted tiny">' + (AUTH.login
-      ? 'Gratis <b>15x/hari</b> buat akun login. Pakai bijak ya! '
-      : 'Tamu dapat <b>5x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ') + '</p>' +
-    pickerHTML("ai") +
-    '<div class="ai-picker" id="aiPicker">' + AI_KINDS.map((k, i) =>
-      '<button type="button" class="ai-pick" data-aipick="' + i + '">' +
-      '<span class="ai-pick-ico">' + tic(k.ico) + "</span><b>" + esc(k.nama) + "</b><small>" + esc(k.desc) + "</small></button>"
-    ).join("") + "</div>" +
-    '<div id="aiStage"></div>';
-
-  ambilKuota().then(kuotaBadgeUpdate);
-  pickerPasang("ai");
-  ambilInfoKuota().then(() => pickerSegarkan("ai"));
+  /* Struktur anti-gagal: pemilih dan formulir TIDAK PERNAH ada bersamaan
+     di DOM. Pilih generator = render ulang seluruh halaman hanya dengan
+     formulirnya; tombol kembali = render ulang pemilihnya. Tidak ada
+     state sembunyi/tampil yang bisa gagal. (Perbaikan 2026-11-13: dua
+     mekanisme sembunyi sebelumnya, kelas .hidden dan inline display,
+     terbukti tidak mempan di verifikasi browser.) */
+  function aiHeaderHTML() {
+    return "<h2>"+tic("spark")+" AI Studio</h2>" +
+      '<p><span class="kuota" id="kuotaBadge">cek kuota...</span></p>' +
+      '<p class="muted tiny">' + (AUTH.login
+        ? 'Gratis <b>15x/hari</b> buat akun login. Pakai bijak ya! '
+        : 'Tamu dapat <b>5x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ') + '</p>' +
+      pickerHTML("ai");
+  }
+  function aiInitHeader() {
+    ambilKuota().then(kuotaBadgeUpdate);
+    pickerPasang("ai");
+    ambilInfoKuota().then(() => pickerSegarkan("ai"));
+  }
+  function tampilPicker() {
+    view().innerHTML = aiHeaderHTML() +
+      '<div class="ai-picker" id="aiPicker">' + AI_KINDS.map((k, i) =>
+        '<button type="button" class="ai-pick" data-aipick="' + i + '">' +
+        '<span class="ai-pick-ico">' + tic(k.ico) + "</span><b>" + esc(k.nama) + "</b><small>" + esc(k.desc) + "</small></button>"
+      ).join("") + "</div>";
+    aiInitHeader();
+    $$("#aiPicker [data-aipick]", view()).forEach(function(b) {
+      b.addEventListener("click", function() {
+        tampilGenerator(parseInt(b.dataset.aipick, 10));
+      });
+    });
+  }
+  function tampilGenerator(i) {
+    view().innerHTML = aiHeaderHTML() +
+      '<button type="button" class="btn btn-ghost" id="aiKembali" style="margin-bottom:12px">\u2190 Pilih generator lain</button>' +
+      kartuGeneratorHTML(i);
+    aiInitHeader();
+    $("#aiKembali").addEventListener("click", tampilPicker);
+    const inp = view().querySelector(".aiFile");
+    if (inp) inp.addEventListener("change", function() { aiFileChange(inp); });
+    const btn = view().querySelector("[data-aigen]");
+    if (btn) btn.addEventListener("click", function() {
+      kirimAI(parseInt(btn.dataset.aigen, 10), null, btn);
+    });
+    window.scrollTo(0, 0);
+  }
 
   function kartuGeneratorHTML(i) {
     const k = AI_KINDS[i];
@@ -2885,24 +2915,6 @@ function pageAI() {
       '<label class="muted tiny" style="display:block;margin-top:8px">Atau isi dari file draf (.docx/.pdf/.txt)<input type="file" class="aiFile" data-aii="' + i + '" accept="' + ACCEPT_DOK + '" style="margin-top:4px"></label>' +
       '<button class="btn btn-primary btn-block" data-aigen="' + i + '" style="margin-top:10px">' + tic("spark") + ' Generate</button>' +
       '<div id="aiOut' + i + '"></div></div>';
-  }
-
-  function tampilGenerator(i) {
-    const pk = $("#aiPicker");
-    if (pk) { pk.classList.add("hidden"); pk.style.display = "none"; }
-    const st = $("#aiStage");
-    st.innerHTML = '<button type="button" class="btn btn-ghost" id="aiKembali" style="margin-bottom:12px">← Pilih generator lain</button>' + kartuGeneratorHTML(i);
-    $("#aiKembali").addEventListener("click", function() {
-      st.innerHTML = "";
-      if (pk) { pk.classList.remove("hidden"); pk.style.display = ""; }
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    const inp = st.querySelector(".aiFile");
-    if (inp) inp.addEventListener("change", function() { aiFileChange(inp); });
-    const btn = st.querySelector("[data-aigen]");
-    if (btn) btn.addEventListener("click", function() {
-      kirimAI(parseInt(btn.dataset.aigen, 10), null, btn);
-    });
   }
 
   async function aiFileChange(inp) {
@@ -3014,11 +3026,7 @@ function pageAI() {
     toast("Jadi! Scroll dikit buat lihat hasilnya. ");
   };
 
-  $$("#aiPicker [data-aipick]", view()).forEach(function(b) {
-    b.addEventListener("click", function() {
-      tampilGenerator(parseInt(b.dataset.aipick, 10));
-    });
-  });
+  tampilPicker();
 }
 
 /* ----- Tanya AI (chat) ----- */
