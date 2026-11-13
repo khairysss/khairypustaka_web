@@ -2889,13 +2889,14 @@ function pageAI() {
 
   function tampilGenerator(i) {
     const pk = $("#aiPicker");
-    if (pk) pk.classList.add("hidden");
+    if (pk) { pk.classList.add("hidden"); pk.style.display = "none"; }
     const st = $("#aiStage");
     st.innerHTML = '<button type="button" class="btn btn-ghost" id="aiKembali" style="margin-bottom:12px">← Pilih generator lain</button>' + kartuGeneratorHTML(i);
     $("#aiKembali").addEventListener("click", function() {
       st.innerHTML = "";
-      if (pk) pk.classList.remove("hidden");
+      if (pk) { pk.classList.remove("hidden"); pk.style.display = ""; }
     });
+    window.scrollTo({ top: 0, behavior: "smooth" });
     const inp = st.querySelector(".aiFile");
     if (inp) inp.addEventListener("change", function() { aiFileChange(inp); });
     const btn = st.querySelector("[data-aigen]");
