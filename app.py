@@ -5009,7 +5009,13 @@ def _panduan(slug=None):
     key = "panduan" if not slug else "panduan/" + slug
     fname = _PANDUAN_PAGES.get(key)
     if not fname:
-        return send_file(os.path.join(_STATIC_DIR, "index.html"))
+        # Slug panduan tidak dikenal: 404 sungguhan dengan halaman gaya
+        # panduan (bukan fallback index.html — path aset relatifnya rusak
+        # di kedalaman /panduan/* dan menampilkan halaman tanpa gaya).
+        res = send_file(os.path.join(_STATIC_DIR, "panduan-404.html"))
+        res.status_code = 404
+        res.headers["Cache-Control"] = "no-cache"
+        return res
     res = send_file(os.path.join(_STATIC_DIR, fname))
     res.headers["Cache-Control"] = "public, max-age=86400"
     return res

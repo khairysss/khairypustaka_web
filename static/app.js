@@ -171,7 +171,7 @@ function tamuHarian() { return 5; }
 const AVATAR_PILIHAN = ["teal", "orange", "navy", "red", "purple"];
 function avatarURL(p) {
   p = AVATAR_PILIHAN.indexOf(p) >= 0 ? p : "teal";
-  return "avatar/avatar-" + p + ".svg";
+  return "/avatar/avatar-" + p + ".svg";
 }
 
 async function refreshAuth() {
@@ -633,7 +633,7 @@ function pageMasuk() {
     "<h2>"+tic("key")+" Masuk</h2>" +
     (errMsg ? '<div class="err-box">' + esc(errMsg) + "</div>" : "") +
     '<div class="card center">' +
-    '<div class="kp-brand-block"><img src="maskot.jpg" class="kp-brand-maskot" alt="Maskot KhairyPustaka">' +
+    '<div class="kp-brand-block"><img src="/maskot.jpg" class="kp-brand-maskot" alt="Maskot KhairyPustaka">' +
     '<div class="kp-brand-text"><h3 class="kp-brand-name">KhairyPustaka</h3>' +
     '<p class="kp-brand-tag">Asisten skripsi dan nugas, seratus persen gratis</p></div></div>' +
     '<p class="muted">Login biar saldomu aman & bisa dipakai di semua perangkat.</p>' +
@@ -872,24 +872,24 @@ function pageAkun() {
       }).join("") + '</div><p class="pf-msg" id="pfAvMsg"></p></div>'
       : "") +
     (isPw ?
-      '<div class="card"><h3>' + tic("pencil") + ' Ubah Username</h3>' +
+      '<details class="card akun-lipat"><summary>' + tic("pencil") + ' Ubah Username</summary>' +
       '<input type="text" id="pfUserBaru" placeholder="username baru (3–20 karakter)" maxlength="20" autocapitalize="off" autocomplete="off">' +
       '<p class="pf-msg" id="pfUserMsg"></p>' +
-      '<button class="btn btn-primary btn-block" id="btnUbahUser">Simpan Username</button></div>' +
-      '<div class="card"><h3>' + tic("key") + ' Ubah Password</h3>' +
+      '<button class="btn btn-primary btn-block" id="btnUbahUser">Simpan Username</button></details>' +
+      '<details class="card akun-lipat"><summary>' + tic("key") + ' Ubah Password</summary>' +
       '<div class="pw-wrap"><input type="password" id="pfPwLama" placeholder="password lama" autocomplete="current-password">' +
       '<button type="button" class="pw-eye" data-for="pfPwLama" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
       '<div class="pw-wrap"><input type="password" id="pfPwBaru" placeholder="password baru (min. 8 karakter)" autocomplete="new-password">' +
       '<button type="button" class="pw-eye" data-for="pfPwBaru" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
       '<p class="pf-msg" id="pfPwMsg"></p>' +
-      '<button class="btn btn-primary btn-block" id="btnUbahPw">Simpan Password</button></div>' +
-      '<div class="card"><h3>' + tic("mail") + ' Ubah Email</h3>' +
+      '<button class="btn btn-primary btn-block" id="btnUbahPw">Simpan Password</button></details>' +
+      '<details class="card akun-lipat"><summary>' + tic("mail") + ' Ubah Email</summary>' +
       '<p class="muted">Link verifikasi dikirim ke email barumu (berlaku 24 jam). Email lama tetap aktif sampai kamu klik link itu.</p>' +
       '<input type="email" id="pfMailBaru" placeholder="email baru" autocapitalize="off" autocomplete="off">' +
       '<div class="pw-wrap"><input type="password" id="pfMailPw" placeholder="konfirmasi password" autocomplete="current-password">' +
       '<button type="button" class="pw-eye" data-for="pfMailPw" aria-label="Tampilkan password">' + tic("eye") + '</button></div>' +
       '<p class="pf-msg" id="pfMailMsg"></p>' +
-      '<button class="btn btn-primary btn-block" id="btnUbahMail">Kirim Link Verifikasi</button></div>'
+      '<button class="btn btn-primary btn-block" id="btnUbahMail">Kirim Link Verifikasi</button></details>'
       : '<div class="card"><p class="muted">Akun ini login ' + esc(via || "via Google") +
         " — ubah username, password & email hanya tersedia untuk akun username+password.</p></div>");
   ikatTombolPasang();
@@ -1007,21 +1007,21 @@ function pageKonfirmasiEmail() {
    Kalau tidak ada gambar yang cocok, kosongkan img ("") — otomatis
    jadi kartu teks bergaya yang tetap bisa diklik. */
 const SHOWCASE_ITEMS = [
-  { platform: "Instagram", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://www.instagram.com/reel/DebEwzCj9St/", img: "showcase/cover-pilot.jpg" },
-  { platform: "Instagram", judul: "EP02: Salah jurusan?", url: "https://www.instagram.com/reel/DedeF0GkxT2/", img: "showcase/cover-ep02.jpg" },
-  { platform: "Instagram", judul: "EP03: Jurnal predator", url: "https://www.instagram.com/reel/DegC3j-j5Z6/", img: "showcase/cover-ep03.jpg" },
-  { platform: "Instagram", judul: "EP04: Sidang skripsi", url: "https://www.instagram.com/reel/DelMbxkE8hH/", img: "showcase/cover-ep04.jpg" },
-  { platform: "Threads", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://www.threads.com/@khairypustaka/post/DebFzE7jVfo", img: "showcase/cover-pilot.jpg" },
-  { platform: "Threads", judul: "EP02: Salah jurusan?", url: "https://www.threads.com/@khairypustaka/post/DedeBZDjWye", img: "showcase/cover-ep02.jpg" },
-  { platform: "Threads", judul: "EP03: Jurnal predator", url: "https://www.threads.com/@khairypustaka/post/DegC0mADRM7", img: "showcase/cover-ep03.jpg" },
-  { platform: "Threads", judul: "EP04: Sidang skripsi", url: "https://www.threads.com/@khairypustaka/post/DelMZiTjSZy", img: "showcase/cover-ep04.jpg" },
-  { platform: "Threads", judul: "Tips memilih uji statistik", url: "https://www.threads.com/@khairypustaka/post/Del9211Fi4W", img: "showcase/harian-threads-statistik.webp" },
-  { platform: "X", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://x.com/KhairyPustaka/status/2109883741069844871", img: "showcase/cover-pilot.jpg" },
-  { platform: "X", judul: "EP02: Salah jurusan?", url: "https://x.com/KhairyPustaka/status/2110218334688166193", img: "showcase/cover-ep02.jpg" },
-  { platform: "X", judul: "EP03: Jurnal predator", url: "https://x.com/KhairyPustaka/status/2110580638860583109", img: "showcase/cover-ep03.jpg" },
-  { platform: "X", judul: "EP04: Sidang skripsi", url: "https://x.com/KhairyPustaka/status/2111180868404629997", img: "showcase/cover-ep04.jpg" },
-  { platform: "X", judul: "EP05: Nyari jurnal jangan cuma Google", url: "https://x.com/KhairyPustaka/status/2111305714472014119", img: "showcase/cover-ep05.jpg" },
-  { platform: "X", judul: "Update KhairyPustaka minggu ini", url: "https://x.com/KhairyPustaka/status/2111308490987778428", img: "showcase/harian-x-update.webp" }
+  { platform: "Instagram", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://www.instagram.com/reel/DebEwzCj9St/", img: "/showcase/cover-pilot.jpg" },
+  { platform: "Instagram", judul: "EP02: Salah jurusan?", url: "https://www.instagram.com/reel/DedeF0GkxT2/", img: "/showcase/cover-ep02.jpg" },
+  { platform: "Instagram", judul: "EP03: Jurnal predator", url: "https://www.instagram.com/reel/DegC3j-j5Z6/", img: "/showcase/cover-ep03.jpg" },
+  { platform: "Instagram", judul: "EP04: Sidang skripsi", url: "https://www.instagram.com/reel/DelMbxkE8hH/", img: "/showcase/cover-ep04.jpg" },
+  { platform: "Threads", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://www.threads.com/@khairypustaka/post/DebFzE7jVfo", img: "/showcase/cover-pilot.jpg" },
+  { platform: "Threads", judul: "EP02: Salah jurusan?", url: "https://www.threads.com/@khairypustaka/post/DedeBZDjWye", img: "/showcase/cover-ep02.jpg" },
+  { platform: "Threads", judul: "EP03: Jurnal predator", url: "https://www.threads.com/@khairypustaka/post/DegC0mADRM7", img: "/showcase/cover-ep03.jpg" },
+  { platform: "Threads", judul: "EP04: Sidang skripsi", url: "https://www.threads.com/@khairypustaka/post/DelMZiTjSZy", img: "/showcase/cover-ep04.jpg" },
+  { platform: "Threads", judul: "Tips memilih uji statistik", url: "https://www.threads.com/@khairypustaka/post/Del9211Fi4W", img: "/showcase/harian-threads-statistik.webp" },
+  { platform: "X", judul: "Pilot: AI buat nugas, teman atau jebakan?", url: "https://x.com/KhairyPustaka/status/2109883741069844871", img: "/showcase/cover-pilot.jpg" },
+  { platform: "X", judul: "EP02: Salah jurusan?", url: "https://x.com/KhairyPustaka/status/2110218334688166193", img: "/showcase/cover-ep02.jpg" },
+  { platform: "X", judul: "EP03: Jurnal predator", url: "https://x.com/KhairyPustaka/status/2110580638860583109", img: "/showcase/cover-ep03.jpg" },
+  { platform: "X", judul: "EP04: Sidang skripsi", url: "https://x.com/KhairyPustaka/status/2111180868404629997", img: "/showcase/cover-ep04.jpg" },
+  { platform: "X", judul: "EP05: Nyari jurnal jangan cuma Google", url: "https://x.com/KhairyPustaka/status/2111305714472014119", img: "/showcase/cover-ep05.jpg" },
+  { platform: "X", judul: "Update KhairyPustaka minggu ini", url: "https://x.com/KhairyPustaka/status/2111308490987778428", img: "/showcase/harian-x-update.webp" }
 ];
 
 function showcaseHTML() {
@@ -1071,12 +1071,12 @@ function pageBeranda() {
     ]],
     ["convert", tic("doc")+" Convert", [
       ["#/convert?alat=word_pdf", "doc", "Word ke PDF", ""],
-      ["#/convert?alat=pdf_word", "doc", "PDF ke Word", ""],
-      ["#/convert?alat=gabung", "doc", "Gabung PDF", ""],
-      ["#/convert?alat=pisah", "doc", "Pisah PDF", ""],
-      ["#/convert?alat=kompres", "doc", "Kompres PDF", ""],
-      ["#/convert?alat=gambar_pdf", "doc", "Gambar ke PDF", ""],
-      ["#/convert?alat=pdf_gambar", "doc", "PDF ke Gambar", ""],
+      ["#/convert?alat=pdf_word", "doc", "PDF ke Word", "Ubah file PDF jadi Word"],
+      ["#/convert?alat=gabung", "doc", "Gabung PDF", "Gabung beberapa PDF jadi satu"],
+      ["#/convert?alat=pisah", "doc", "Pisah PDF", "Pisah halaman PDF jadi beberapa file"],
+      ["#/convert?alat=kompres", "doc", "Kompres PDF", "Perkecil ukuran file PDF"],
+      ["#/convert?alat=gambar_pdf", "doc", "Gambar ke PDF", "Ubah gambar jadi PDF"],
+      ["#/convert?alat=pdf_gambar", "doc", "PDF ke Gambar", "Ubah halaman PDF jadi gambar"],
       ["#/ekstrak-teks", "doc", "Ekstrak Teks", "Ambil teks dari PDF, Word, TXT"]
     ]],
     ["nulis", tic("pencil")+" Nulis", [
@@ -1146,7 +1146,7 @@ function pageBeranda() {
           '<a class="btn btn-ghost btn-hero" href="/panduan">Lihat Panduan</a>' +
         "</div>" +
       "</div>" +
-      '<div class="hero-mascot"><img src="maskot.jpg" alt="Maskot KhairyPustaka"></div>' +
+      '<div class="hero-mascot"><img src="/maskot.jpg" alt="Maskot KhairyPustaka"></div>' +
     "</section>" +
     '<section class="fakta-strip" aria-label="Fakta KhairyPustaka">' +
       '<div class="fakta"><b>24</b><span>Alat</span></div>' +
@@ -1271,6 +1271,15 @@ document.addEventListener("keydown", (e) => {
 let cariState = { tahun: 0, hasil: [] };
 const TAHUN_CHIPS = [[5, tic("clock")+" 5 thn terakhir"], [10, tic("calendar")+" 10 thn terakhir"], [0, tic("globe")+" Semua"]];
 
+/* Kartu tautan lanjutan: mengisi halaman pendek supaya tidak menyisakan
+   ruang kosong, sekaligus mengarahkan ke alat/panduan yang relevan. */
+function kartuLanjutan(judul, items) {
+  return '<div class="card kartu-lanjutan"><h3>' + esc(judul) + "</h3>" +
+    '<div class="kl-links">' + items.map(function(it) {
+      return '<a class="kl-link" href="' + it[0] + '">' + tic(it[1]) + " " + esc(it[2]) + "</a>";
+    }).join("") + "</div></div>";
+}
+
 function pageCari() {
   view().innerHTML =
     "<h2>"+tic("search")+" Cari Jurnal</h2>" +
@@ -1283,7 +1292,8 @@ function pageCari() {
     '<div class="card"><label for="q">Kata kunci</label>' +
     '<input type="text" id="q" placeholder="cth: stunting balita, employee performance, ..." autocomplete="off">' +
     '<button class="btn btn-primary btn-block" id="btnCari" style="margin-top:12px">' + tic("search") + ' Cari</button></div>' +
-    '<div id="hasilCari">' + (cariState.hasil.length ? "" : '<p class="empty">Ketik kata kunci terus tekan Cari. Jurnal dari OpenAlex, Crossref, Sinta &amp; Garuda siap membantu.</p>') + "</div>";
+    '<div id="hasilCari">' + (cariState.hasil.length ? "" : '<p class="empty">Ketik kata kunci terus tekan Cari. Jurnal dari OpenAlex, Crossref, Sinta &amp; Garuda siap membantu.</p>') + "</div>" +
+    kartuLanjutan("Lanjutkan ke", [["#/mendalam", "spark", "Cari Jurnal Mendalam"], ["/panduan/cara-mencari-jurnal", "doc", "Panduan mencari jurnal"], ["#/sitasi", "quote", "Buat Sitasi"]]);
 
   if (cariState.hasil.length) renderHasilCari();
 
@@ -2401,10 +2411,12 @@ function pageKemiripan() {
   view().innerHTML =
     "<h2>" + tic("check") + " Cek Plagiarisme</h2>" +
     '<div class="warn-box" style="border:2px solid #f0a832;background:rgba(232,147,12,.12);font-size:1rem;line-height:1.65">' +
-    "<b>" + tic("warn") + " Baca Dulu Sebelum Pakai, Penting Banget</b><br>" +
-    "Alat ini membandingkan naskahmu <b>hanya dengan teks sumber yang kamu tempel di halaman ini</b>. Alat ini tidak memindai internet, tidak terhubung ke database Turnitin mana pun, dan tidak bisa melihat skripsi atau tugas mahasiswa lain.<br><br>" +
-    "Kalau skormu rendah di sini, artinya naskahmu sudah cukup berbeda dari sumber yang kamu tempel itu. <b>Skor ini bukan jaminan lolos cek Turnitin di kampusmu</b>, karena hasil Turnitin juga dipengaruhi sumber lain yang tidak kamu tempel di sini.<br><br>" +
-    "Pakai alat ini buat memastikan hasil parafrasemu sudah aman dari sumber aslinya, dan jangan pernah lupa mencantumkan sitasi. Parafrase yang baik plus sitasi yang benar adalah cara paling aman menghindari plagiarisme.</div>" +
+    "<b>" + tic("warn") + " Baca Dulu Sebelum Pakai</b><br>" +
+    "Alat ini hanya membandingkan naskahmu dengan teks sumber yang kamu tempel di halaman ini, dan <b>skornya bukan jaminan lolos cek Turnitin di kampusmu</b>.</div>" +
+    '<details class="km-selengkapnya"><summary>Baca penjelasan lengkapnya</summary>' +
+    "<p>Alat ini membandingkan naskahmu <b>hanya dengan teks sumber yang kamu tempel di halaman ini</b>. Alat ini tidak memindai internet, tidak terhubung ke database Turnitin mana pun, dan tidak bisa melihat skripsi atau tugas mahasiswa lain.</p>" +
+    "<p>Kalau skormu rendah di sini, artinya naskahmu sudah cukup berbeda dari sumber yang kamu tempel itu. <b>Skor ini bukan jaminan lolos cek Turnitin di kampusmu</b>, karena hasil Turnitin juga dipengaruhi sumber lain yang tidak kamu tempel di sini.</p>" +
+    "<p>Pakai alat ini buat memastikan hasil parafrasemu sudah aman dari sumber aslinya, dan jangan pernah lupa mencantumkan sitasi. Parafrase yang baik plus sitasi yang benar adalah cara paling aman menghindari plagiarisme.</p></details>" +
     '<div class="card">' +
     '<label for="kmNaskah">Naskahmu</label>' +
     '<textarea id="kmNaskah" rows="7" placeholder="Tempel potongan naskahmu di sini (maks 10.000 karakter)..."></textarea>' +
@@ -2642,7 +2654,8 @@ function cvTampilMenu() {
     "Word ke PDF dikerjakan server iLovePDF, alat lainnya dikerjakan langsung di server kami. " +
     "Semua convert masuk antrean yang sama (maksimal 2 jalan bareng, sisanya menunggu giliran) dan statusnya kelihatan jelas. " +
     "File tidak disimpan permanen, hasil otomatis dibersihkan setelah 30 menit.</p></div>" +
-    '<div class="grid">' + kartu + "</div>";
+    '<div class="grid">' + kartu + "</div>" +
+    kartuLanjutan("Alat berkas lainnya", [["#/ekstrak-teks", "doc", "Ekstrak Teks"], ["/panduan/convert-file-dan-ekstrak-teks", "doc", "Panduan convert dan ekstrak teks"], ["#/template", "layout", "Template"]]);
   view().querySelectorAll("[data-cv-alat]").forEach(b =>
     b.addEventListener("click", () => cvBukaAlat(b.getAttribute("data-cv-alat"))));
 }
@@ -2853,21 +2866,45 @@ function pageAI() {
       ? 'Gratis <b>15x/hari</b> buat akun login. Pakai bijak ya! '
       : 'Tamu dapat <b>5x/hari</b> buat semua fitur (AI dan non-AI digabung). <a href="#/masuk">Login gratis</a> biar fitur non-AI sepuasnya! ') + '</p>' +
     pickerHTML("ai") +
-    '<div class="ai-grid">' + AI_KINDS.map((k, i) =>
-      '<div class="card ai-card"><h3>' + tic(k.ico) + " " + esc(k.nama) + "</h3>" +
-      '<p class="muted tiny">' + esc(k.desc) + "</p>" +
-      (k.kind === "abstrak" ? '<input type="text" id="aiJudul' + i + '" placeholder="Judul penelitian (opsional, buat abstrak)" autocomplete="off" style="margin-bottom:8px">' : "") +
-      '<textarea id="aiIn' + i + '" placeholder="' + esc(k.ph) + '"></textarea>' +
-      '<label class="muted tiny" style="display:block;margin-top:8px">Atau isi dari file draf (.docx/.pdf/.txt)<input type="file" class="aiFile" data-aii="' + i + '" accept="' + ACCEPT_DOK + '" style="margin-top:4px"></label>' +
-      '<button class="btn btn-primary btn-block" data-aigen="' + i + '" style="margin-top:10px">' + tic("spark") + ' Generate</button>' +
-      '<div id="aiOut' + i + '"></div></div>'
-    ).join("") + "</div>";
+    '<div class="ai-picker" id="aiPicker">' + AI_KINDS.map((k, i) =>
+      '<button type="button" class="ai-pick" data-aipick="' + i + '">' +
+      '<span class="ai-pick-ico">' + tic(k.ico) + "</span><b>" + esc(k.nama) + "</b><small>" + esc(k.desc) + "</small></button>"
+    ).join("") + "</div>" +
+    '<div id="aiStage"></div>';
 
   ambilKuota().then(kuotaBadgeUpdate);
   pickerPasang("ai");
   ambilInfoKuota().then(() => pickerSegarkan("ai"));
 
-  $$(".aiFile", view()).forEach(inp => inp.addEventListener("change", async () => {
+  function kartuGeneratorHTML(i) {
+    const k = AI_KINDS[i];
+    return '<div class="card ai-card"><h3>' + tic(k.ico) + " " + esc(k.nama) + "</h3>" +
+      '<p class="muted tiny">' + esc(k.desc) + "</p>" +
+      (k.kind === "abstrak" ? '<input type="text" id="aiJudul' + i + '" placeholder="Judul penelitian (opsional, buat abstrak)" autocomplete="off" style="margin-bottom:8px">' : "") +
+      '<textarea id="aiIn' + i + '" placeholder="' + esc(k.ph) + '"></textarea>' +
+      '<label class="muted tiny" style="display:block;margin-top:8px">Atau isi dari file draf (.docx/.pdf/.txt)<input type="file" class="aiFile" data-aii="' + i + '" accept="' + ACCEPT_DOK + '" style="margin-top:4px"></label>' +
+      '<button class="btn btn-primary btn-block" data-aigen="' + i + '" style="margin-top:10px">' + tic("spark") + ' Generate</button>' +
+      '<div id="aiOut' + i + '"></div></div>';
+  }
+
+  function tampilGenerator(i) {
+    const pk = $("#aiPicker");
+    if (pk) pk.classList.add("hidden");
+    const st = $("#aiStage");
+    st.innerHTML = '<button type="button" class="btn btn-ghost" id="aiKembali" style="margin-bottom:12px">← Pilih generator lain</button>' + kartuGeneratorHTML(i);
+    $("#aiKembali").addEventListener("click", function() {
+      st.innerHTML = "";
+      if (pk) pk.classList.remove("hidden");
+    });
+    const inp = st.querySelector(".aiFile");
+    if (inp) inp.addEventListener("change", function() { aiFileChange(inp); });
+    const btn = st.querySelector("[data-aigen]");
+    if (btn) btn.addEventListener("click", function() {
+      kirimAI(parseInt(btn.dataset.aigen, 10), null, btn);
+    });
+  }
+
+  async function aiFileChange(inp) {
     const i = parseInt(inp.dataset.aii, 10);
     const f = inp.files[0];
     if (!f) return;
@@ -2882,7 +2919,7 @@ function pageAI() {
     $("#aiIn" + i).value = teks;
     toast("Draf dari file sudah dimasukkan ke " + k.nama + potong + ". Cek dan edit dulu kalau perlu, baru klik Generate ");
     inp.value = "";
-  }));
+    }
 
   const kirimAI = async (i, modelKey, btn) => {
     const k = AI_KINDS[i];
@@ -2976,9 +3013,11 @@ function pageAI() {
     toast("Jadi! Scroll dikit buat lihat hasilnya. ");
   };
 
-  $$("[data-aigen]", view()).forEach(btn => btn.addEventListener("click", () => {
-    kirimAI(parseInt(btn.dataset.aigen, 10), null, btn);
-  }));
+  $$("#aiPicker [data-aipick]", view()).forEach(function(b) {
+    b.addEventListener("click", function() {
+      tampilGenerator(parseInt(b.dataset.aipick, 10));
+    });
+  });
 }
 
 /* ----- Tanya AI (chat) ----- */
@@ -2990,7 +3029,8 @@ function pageTanya() {
     '<div class="chat" id="chatBox"></div>' +
     pickerHTML("ty") +
     '<div class="chat-form"><input type="text" id="tanyaIn" placeholder="Ketik pertanyaanmu..." autocomplete="off">' +
-    '<button class="btn btn-primary" id="tanyaBtn">Kirim</button></div>';
+    '<button class="btn btn-primary" id="tanyaBtn">Kirim</button></div>' +
+    kartuLanjutan("Masih bingung?", [["#/ai", "spark", "AI Studio"], ["/panduan/tanya-ai", "doc", "Panduan Tanya AI"], ["#/bantuan", "help", "Bantuan"]]);
 
   const render = () => {
     const box = $("#chatBox");
@@ -3291,7 +3331,7 @@ function pageBantuan() {
   ];
   view().innerHTML =
     "<h2>"+tic("help")+" Bantuan</h2>" +
-    faq.map(f => '<div class="card"><h3>' + f[0] + "</h3><p>" + f[1] + "</p></div>").join("") +
+    faq.map(f => '<details class="card faq-item"><summary>' + f[0] + "</summary><p>" + f[1] + "</p></details>").join("") +
     '<div class="card center"><h3>Masih bingung? ' + tic("chat") + '</h3><p class="muted">Chat admin langsung, fast respon di jam kerja. ' + tic("spark") + '</p>' +
     '<a class="btn btn-primary" href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">' + tic("ig") + ' Hubungi Admin</a></div>';
 }
@@ -3302,7 +3342,7 @@ function pageBantuan() {
    maskot resmi yang sama dengan logo/hero (maskot.jpg). */
 function maskotSVG(ukuran) {
   const u = ukuran || 64;
-  return '<img src="maskot.jpg" alt="Maskot KhairyPustaka" width="' + u +
+  return '<img src="/maskot.jpg" alt="Maskot KhairyPustaka" width="' + u +
     '" height="' + u + '" style="border-radius:18px">';
 }
 
@@ -3674,7 +3714,7 @@ function pageMendalam() {
       <div class="card glass center">
         <p class="muted">Fitur ini khusus member. Masuk dulu untuk memakai Cari Jurnal Mendalam: pencarian jurnal mendalam dengan label akses tiap sumber, jawaban bersitasi, bedah terstruktur, dan Laporan Riset.</p>
         <button class="btn btn-primary" id="mdlLogin">Masuk / Daftar</button>
-      </div>`;
+      </div>` + kartuLanjutan("Sambil menunggu, lihat dulu", [["/panduan/cari-jurnal-mendalam", "doc", "Panduan Cari Jurnal Mendalam"], ["#/cari", "search", "Cari Jurnal biasa"], ["#/bantuan", "help", "Bantuan"]]);
     $("#mdlLogin").onclick = () => openAuth();
     return;
   }
@@ -3692,7 +3732,8 @@ function pageMendalam() {
 
     <div class="mdl-panel" id="mdlStage1">
       <div class="mdl-head"><h1>Cari Jurnal Mendalam</h1><span class="mdl-badge">Fitur Member</span></div>
-      <p class="muted" style="margin-top:6px">Ceritakan kebutuhan risetmu. Mesin pencari khusus riset akan mencarikan papernya, membaca isinya, lalu menyusun jawaban bersitasi. Tiap sumber diberi label akses, jadi kamu tahu mana yang bisa langsung dibaca penuh dan mana yang hanya abstrak, sebelum mengklik apa pun. Bedanya dari Cari Jurnal biasa: yang biasa mencari dari katalog jurnal pakai kata kunci, cepat dan bisa dipakai sepuasnya. Yang mendalam membaca ceritamu, memahami konteksnya, lalu membaca isi jurnalnya sekalian, jadi hasilnya lebih dalam, tapi kuotanya dibatasi tiap hari.</p>
+      <p class="muted" style="margin-top:6px">Ceritakan kebutuhan risetmu. Mesin pencari khusus riset akan mencarikan papernya, membaca isinya, lalu menyusun jawaban bersitasi.</p>
+      <details class="mdl-selengkapnya"><summary>Baca selengkapnya soal cara kerja dan bedanya</summary><p class="muted">Tiap sumber diberi label akses, jadi kamu tahu mana yang bisa langsung dibaca penuh dan mana yang hanya abstrak, sebelum mengklik apa pun. Bedanya dari Cari Jurnal biasa: yang biasa mencari dari katalog jurnal pakai kata kunci, cepat dan bisa dipakai sepuasnya. Yang mendalam membaca ceritamu, memahami konteksnya, lalu membaca isi jurnalnya sekalian, jadi hasilnya lebih dalam, tapi kuotanya dibatasi tiap hari.</p></details>
       <div class="mdl-chips" id="mdlInfoChips"><span class="mdl-chip">Memuat kuota dan kredit akunmu…</span></div>
 
       <div class="mdl-example-bar">
@@ -5464,7 +5505,7 @@ function pageAdmin() {
   }
   view().innerHTML =
     '<div class="adm-topbar">' +
-      '<img src="maskot.jpg" class="adm-mascot" alt="Maskot KhairyPustaka">' +
+      '<img src="/maskot.jpg" class="adm-mascot" alt="Maskot KhairyPustaka">' +
       '<div class="adm-brand"><h2>Panel Admin KhairyPustaka</h2>' +
       '<p class="muted">Kelola member, sistem, pengumuman, dan log</p></div>' +
       '<span class="badge-admin">ADMIN</span>' +

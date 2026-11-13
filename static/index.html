@@ -27,12 +27,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=35">
-<link rel="preload" as="image" href="intro-poster.jpg" fetchpriority="high">
-<link rel="icon" href="maskot.jpg">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="/style.css?v=36">
+<link rel="preload" as="image" href="/intro-poster.jpg" fetchpriority="high">
+<link rel="icon" href="/maskot.jpg">
+<link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#081826">
-<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -87,26 +87,30 @@
 </svg>
 
 <header class="topbar">
-  <a class="brand" href="#/beranda"><img src="maskot.jpg" class="maskot-badge" alt="Logo KhairyPustaka"> <span>KhairyPustaka</span></a>
+  <a class="brand" href="#/beranda"><img src="/maskot.jpg" class="maskot-badge" alt="Logo KhairyPustaka"> <span>KhairyPustaka</span></a>
   <button id="menuBtn" class="menu-btn" aria-label="Buka menu">☰</button>
   <nav id="mainNav" class="nav">
     <a href="#/beranda"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-home"></use></svg> Beranda</a>
+    <span class="nav-grup">Riset</span>
     <a href="#/cari"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-search"></use></svg> Cari Jurnal</a>
     <a href="#/mendalam"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-spark"></use></svg> Cari Jurnal Mendalam</a>
     <a href="#/carifile"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-doc"></use></svg> Cari dari Sitasi</a>
-    <a href="#/sitasi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-quote"></use></svg> Buat Sitasi</a>
-    <a href="#/koleksi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-books"></use></svg> Koleksiku</a>
-    <a href="#/riwayat"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-clock"></use></svg> Riwayat</a>
-    <a href="#/ai"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-spark"></use></svg> AI Studio</a>
-    <a href="#/tanya"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-chat"></use></svg> Tanya AI</a>
-    <a href="#/statistik"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-chart"></use></svg> Statistik</a>
-    <a href="#/template"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-pencil"></use></svg> Template</a>
-    <a href="#/topik"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-bulb"></use></svg> Ide Topik</a>
     <a href="#/rekomendasi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-target"></use></svg> Rekomendasi Jurnal</a>
     <a href="#/publisher"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-building"></use></svg> Publisher</a>
     <a href="#/penulis"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-person"></use></svg> Info Penulis</a>
-    <a href="#/parafrase"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-refresh"></use></svg> Parafrase</a>
     <a href="#/matriks"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-grid"></use></svg> Matriks</a>
+    <a href="#/koleksi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-books"></use></svg> Koleksiku</a>
+    <a href="#/riwayat"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-clock"></use></svg> Riwayat</a>
+    <span class="nav-grup">AI</span>
+    <a href="#/ai"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-spark"></use></svg> AI Studio</a>
+    <a href="#/tanya"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-chat"></use></svg> Tanya AI</a>
+    <a href="#/topik"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-bulb"></use></svg> Ide Topik</a>
+    <a href="#/parafrase"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-refresh"></use></svg> Parafrase</a>
+    <span class="nav-grup">Nulis</span>
+    <a href="#/sitasi"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-quote"></use></svg> Buat Sitasi</a>
+    <a href="#/statistik"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-chart"></use></svg> Statistik</a>
+    <a href="#/template"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-pencil"></use></svg> Template</a>
+    <span class="nav-grup">Akun</span>
     <a href="#/topup" id="navTopup"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-bolt"></use></svg> Jatah AI</a>
     <a href="#/bantuan"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-help"></use></svg> Bantuan</a>
     <a href="#/kritik-saran"><svg class="tic tic-nav" aria-hidden="true"><use href="#i-chat"></use></svg> Kritik dan Saran</a>
@@ -120,7 +124,7 @@
 <main id="view" class="container" aria-live="polite"></main>
 
 <footer class="footer">
-  <img src="maskot.jpg" class="footer-maskot" alt="Maskot KhairyPustaka">
+  <img src="/maskot.jpg" class="footer-maskot" alt="Maskot KhairyPustaka">
   <p><strong>KhairyPustaka</strong>, teman seperjuangan nugas dan skripsianmu.</p>
   <p>Ikuti kami buat konten skripsi dan nugas tiap hari: video, tips, dan jurnal pilihan:</p>
   <div class="sosmed"><a href="https://instagram.com/khairypustaka" target="_blank" rel="noopener">Instagram</a><a href="https://x.com/KhairyPustaka" target="_blank" rel="noopener">X</a><a href="https://www.threads.com/@khairypustaka" target="_blank" rel="noopener">Threads</a></div>
@@ -138,7 +142,7 @@
       <p class="intro-title">Kenalan dulu sama KhairyPustaka</p>
       <button class="intro-close" id="introClose" aria-label="Tutup video intro">✕</button>
     </div>
-    <video id="introVideo" width="720" height="1280" src="intro.mp4" poster="intro-poster.jpg" playsinline muted preload="metadata"></video>
+    <video id="introVideo" width="720" height="1280" src="/intro.mp4" poster="intro-poster.jpg" playsinline muted preload="metadata"></video>
     <button class="intro-skip" id="introSkip">Lewati — langsung ke beranda →</button>
   </div>
 </div>
@@ -241,7 +245,7 @@
 
 <div id="toast" class="toast hidden" role="status"></div>
 
-<script src="app.js?v=80"></script>
+<script src="/app.js?v=81"></script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "26aa047690c94767af2a5b82bcdb1915"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>

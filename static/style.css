@@ -288,8 +288,8 @@ details.abstrak summary{cursor:pointer;font-weight:700;color:var(--teal-deep);fo
 .kuota.habis{background:rgba(229,72,77,.14);color:var(--err)}
 
 /* AI cards */
-.ai-grid{display:grid;gap:12px;grid-template-columns:1fr}
-@media(min-width:700px){.ai-grid{grid-template-columns:1fr 1fr}}
+.ai-picker{display:grid;gap:12px;grid-template-columns:1fr}
+@media(min-width:700px){.ai-picker{grid-template-columns:1fr 1fr}}
 .ai-card .hasil-ai{background:#102c44;border:1px dashed var(--orange);border-radius:12px;padding:12px;margin-top:10px;white-space:pre-wrap;font-size:.93rem}
 .ai-card h3 .tic{color:var(--icon)}
 
@@ -726,7 +726,7 @@ body{
 /* Strip fakta di Beranda */
 .fakta-strip{
   display:grid;grid-template-columns:repeat(4,1fr);gap:10px;
-  padding:18px 16px;text-align:center;margin-bottom:18px;
+  padding:18px 16px;text-align:center;margin:16px 0 18px;
   background:linear-gradient(180deg, rgba(16,44,68,.66), rgba(13,36,56,.54));
   -webkit-backdrop-filter:blur(20px) saturate(145%);
   backdrop-filter:blur(20px) saturate(145%);
@@ -1339,3 +1339,47 @@ input:not([type]){ width:100%; padding:11px 12px; border-radius:12px; font-size:
 .sys-form{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px}
 .sys-form label{font-size:12.5px;font-weight:600}
 .sys-form-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+
+/* ---------- Perbaikan tampilan 1-10 (2026-11-13) ---------- */
+/* #6: jarak aman untuk header lengket saat melompat ke jangkar */
+html{scroll-padding-top:72px}
+/* #7: label kelompok di menu navigasi */
+.nav-grup{
+  display:block;padding:14px 18px 6px;font-size:11px;font-weight:800;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+}
+/* #2: pemilih generator AI Studio */
+.ai-pick{
+  display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;
+  background:rgba(238,247,249,.03);border:1px solid var(--line);border-radius:14px;
+  padding:14px;cursor:pointer;color:var(--ink);font:inherit;
+  transition:border-color .15s ease,background .15s ease;
+}
+.ai-pick:hover{border-color:var(--teal);background:rgba(45,212,216,.06)}
+.ai-pick-ico{display:flex;margin-bottom:6px}
+.ai-pick-ico .tic{width:26px;height:26px}
+.ai-pick b{font-size:15px}
+.ai-pick small{font-size:12.5px;color:var(--muted);line-height:1.5}
+/* #5: kartu tautan lanjutan di halaman pendek */
+.kartu-lanjutan{margin-top:16px}
+.kartu-lanjutan h3{margin-bottom:10px}
+.kl-links{display:flex;flex-wrap:wrap;gap:8px}
+.kl-link{
+  display:inline-flex;align-items:center;gap:7px;text-decoration:none;
+  border:1px solid var(--line);border-radius:999px;padding:8px 14px;
+  font-size:13.5px;font-weight:600;color:var(--ink);
+}
+.kl-link:hover{border-color:var(--teal);color:var(--teal)}
+.kl-link .tic{width:17px;height:17px}
+/* #3/#4/#8/#9: ringkasan lipatan yang konsisten */
+.mdl-selengkapnya,.km-selengkapnya{margin:4px 0 12px}
+.mdl-selengkapnya summary,.km-selengkapnya summary,
+.faq-item summary,.akun-lipat summary{
+  cursor:pointer;font-weight:700;font-size:14.5px;color:var(--teal-bright);
+}
+.mdl-selengkapnya summary:hover,.km-selengkapnya summary:hover,
+.faq-item summary:hover,.akun-lipat summary:hover{color:var(--teal)}
+.faq-item summary,.akun-lipat summary{color:var(--ink);font-size:16px}
+.faq-item p{margin-top:8px}
+.akun-lipat summary .tic{vertical-align:-3px}
+.km-selengkapnya p{font-size:14.5px;line-height:1.65;color:var(--muted);margin:8px 0}
