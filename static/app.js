@@ -5622,14 +5622,12 @@ function pageAdmin() {
       '<a class="btn btn-primary btn-block" href="#/beranda">Ke Beranda</a></div>';
     return;
   }
+  /* Judul admin bentuk lama (sebelum kartu adm-topbar Fase 6 glass 8 Nov
+     2026): judul polos + lencana ADMIN, langsung tab. Kartu maskot + tombol
+     Keluar dihapus atas permintaan Sul 13 Nov 2026 karena mendobeli brand
+     topbar; navigasi keluar panel sudah ditangani tombol Kembali global. */
   view().innerHTML =
-    '<div class="adm-topbar">' +
-      '<img src="/maskot.jpg" class="adm-mascot" alt="Maskot KhairyPustaka">' +
-      '<div class="adm-brand"><h2>Panel Admin KhairyPustaka</h2>' +
-      '<p class="muted">Kelola member, sistem, pengumuman, dan log</p></div>' +
-      '<span class="badge-admin">ADMIN</span>' +
-      '<a class="btn btn-ghost adm-keluar" href="#/beranda">Keluar</a>' +
-    "</div>" +
+    "<h2>" + tic('shield') + ' Panel Admin <span class="badge-admin">ADMIN</span></h2>' +
     '<div class="tabs adm-tabs" role="tablist">' +
       '<button class="tab active" data-atab="ringkasan" type="button">Ringkasan</button>' +
       '<button class="tab" data-atab="member" type="button">Member</button>' +
