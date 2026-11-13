@@ -27,7 +27,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/style.css?v=36">
+<link rel="stylesheet" href="/style.css?v=37">
 <link rel="preload" as="image" href="/intro-poster.jpg" fetchpriority="high">
 <link rel="icon" href="/maskot.jpg">
 <link rel="manifest" href="/manifest.webmanifest">
@@ -181,14 +181,10 @@
   // Klik area gelap di luar kotak video juga menutup.
   ov.addEventListener("click", function (e) { if (e.target === ov) tutup(); });
   vid.addEventListener("ended", tutup);
-  // Tombol melayang "Video Kenalan": nonton ulang kapan pun, seperti
-  // tombol Riwayat. Dibuat sebelum cek sudahLihat agar selalu tersedia.
-  var fab = document.createElement("button");
-  fab.type = "button";
-  fab.className = "fab-video";
-  fab.setAttribute("aria-label", "Tonton video kenalan KhairyPustaka");
-  fab.innerHTML = '<span class="fab-video-label">Video Kenalan</span><span class="fab-bulat">&#9654;</span>';
-  fab.addEventListener("click", function () {
+  // Video kenalan dibuka lewat Menu Cepat (app.js). Fungsinya
+  // didefinisikan di sini karena modal + elemen videonya dimiliki
+  // skrip ini; dibuat sebelum cek sudahLihat agar selalu tersedia.
+  window.__bukaVideoKenalan = function () {
     var sk = document.getElementById("introSkip");
     if (sk) sk.textContent = "Tutup";
     vid.controls = true; // mode manual: kontrol bawaan dikembalikan
@@ -196,8 +192,7 @@
     try { vid.currentTime = 0; } catch (e) {}
     vid.muted = false;
     var pr = vid.play(); if (pr && pr.catch) pr.catch(function () {});
-  });
-  document.body.appendChild(fab);
+  };
   // Penayangan otomatis: HANYA kunjungan pertama per browser.
   if (sudahLihat()) return;
   tandai();
@@ -245,7 +240,7 @@
 
 <div id="toast" class="toast hidden" role="status"></div>
 
-<script src="/app.js?v=84"></script>
+<script src="/app.js?v=85"></script>
 <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "26aa047690c94767af2a5b82bcdb1915"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>

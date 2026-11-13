@@ -451,7 +451,9 @@ function pageSitasi() {
     GAYA.map((g, i) => '<button class="chip' + (i === 0 ? " active" : "") + '" data-gaya="' + g[0] + '">' + g[1] + "</button>").join("") +
     "</div>" +
     '<button class="btn btn-primary btn-block" id="btnBuatSit">' + tic("doc") + ' Buatkan Sitasi</button></div>' +
-    '<div id="sitHasil"></div>';
+    '<div id="sitHasil"></div>' +
+    slotTerakhir("sitasi", "sitJudul", "Judul terakhir dibuat") +
+    kartuLanjutan("Lanjutkan ke", [["#/carifile", "doc", "Cari dari Sitasi"], ["#/matriks", "grid", "Matriks Literatur"], ["/panduan/cara-membuat-sitasi-apa-7", "doc", "Panduan sitasi APA 7"]]);
   let gaya = "harvard";
   $("#sitFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
@@ -1280,6 +1282,83 @@ function kartuLanjutan(judul, items) {
     }).join("") + "</div></div>";
 }
 
+/* Kartu contoh ketuk: pil contoh yang mengisi kolom formulir saat diketuk.
+   Klik ditangani SATU listener delegasi di boot (pasangChipGlobal),
+   jadi tahan terhadap render ulang halaman. Hanya mengisi, tidak
+   mengirim, supaya kuota tidak terpakai tanpa sengaja. */
+function kartuContoh(judul, contoh, inputId) {
+  return '<div class="card kartu-contoh"><h3>' + esc(judul) + "</h3>" +
+    '<div class="kl-links">' + contoh.map(function(c) {
+      return '<button type="button" class="chip-contoh" data-target="' + esc(inputId) +
+        '" data-contoh="' + esc(c) + '">' + esc(c) + "</button>";
+    }).join("") + "</div></div>";
+}
+
+/* Slot kartu riwayat terakhir: diisi muatKartuTerakhir() setelah halaman
+   dirender. Tamu membaca localStorage, member memakai /history (limit 8,
+   disaring jadi 3). Kosong = slot dihapus, tanpa kartu kosong. */
+function slotTerakhir(tipe, inputId, label, sumber) {
+  return '<div class="kartu-terakhir-slot" data-tipe="' + esc(tipe) +
+    '" data-input="' + esc(inputId) + '" data-label="' + esc(label) +
+    '" data-sumber="' + esc(sumber || "") + '"></div>';
+}
+let _terakhirCache = {}; // tipe -> {waktu, arr}
+function muatKartuTerakhir(bolehTunda) {
+  const slot = view().querySelector(".kartu-terakhir-slot");
+  if (!slot) return;
+  if (typeof AUTH_SIAP !== "undefined" && !AUTH_SIAP && bolehTunda) {
+    setTimeout(function() { muatKartuTerakhir(false); }, 600);
+    return;
+  }
+  const tipe = slot.dataset.tipe, inputId = slot.dataset.input,
+    label = slot.dataset.label, sumber = slot.dataset.sumber;
+  const tampil = function(daftar) {
+    if (!slot.isConnected) return; // sudah pindah halaman
+    const teks = [];
+    const lihat = {};
+    for (const e of daftar) {
+      if (!e || e.tipe !== tipe) continue;
+      if (sumber && (!e.data || e.data.sumber !== sumber)) continue;
+      let t = "";
+      if (sumber === "parafrase" && e.data && e.data.text) t = String(e.data.text);
+      else t = String(e.judul || "");
+      t = t.replace(/\s+/g, " ").trim();
+      if (!t || t === "(tanpa judul)" || lihat[t]) continue;
+      lihat[t] = 1; teks.push(t);
+      if (teks.length >= 3) break;
+    }
+    if (!teks.length) { slot.remove(); return; }
+    slot.outerHTML = '<div class="card kartu-terakhir"><h3>' + esc(label) + "</h3>" +
+      '<div class="kl-links">' + teks.map(function(t) {
+        return '<button type="button" class="chip-terakhir" data-target="' + esc(inputId) +
+          '" data-contoh="' + esc(t) + '">' + tic("clock") + "<span>" + esc(t) + "</span></button>";
+      }).join("") + "</div></div>";
+  };
+  if (!AUTH.login) { tampil(riwTamuGet()); return; }
+  const c = _terakhirCache[tipe];
+  if (c && Date.now() - c.waktu < 60000) { tampil(c.arr); return; }
+  apiJSON("/history?limit=8&type=" + encodeURIComponent(tipe)).then(function(res) {
+    const arr = (res && res.ok && res.data && res.data.riwayat) || [];
+    _terakhirCache[tipe] = { waktu: Date.now(), arr: arr };
+    tampil(arr);
+  }).catch(function() { if (slot.isConnected) slot.remove(); });
+}
+
+/* Satu listener delegasi untuk semua pil contoh + pil riwayat terakhir. */
+let _chipGlobalTerpasang = false;
+function pasangChipGlobal() {
+  if (_chipGlobalTerpasang) return; _chipGlobalTerpasang = true;
+  document.addEventListener("click", function(e) {
+    const b = e.target && e.target.closest ? e.target.closest(".chip-contoh, .chip-terakhir") : null;
+    if (!b) return;
+    const el = document.getElementById(b.dataset.target || "");
+    if (!el) return;
+    el.value = b.dataset.contoh || "";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.focus();
+  });
+}
+
 function pageCari() {
   view().innerHTML =
     "<h2>"+tic("search")+" Cari Jurnal</h2>" +
@@ -1292,6 +1371,8 @@ function pageCari() {
     '<div class="card"><label for="q">Kata kunci</label>' +
     '<input type="text" id="q" placeholder="cth: stunting balita, employee performance, ..." autocomplete="off">' +
     '<button class="btn btn-primary btn-block" id="btnCari" style="margin-top:12px">' + tic("search") + ' Cari</button></div>' +
+    kartuContoh("Coba contoh kata kunci", ["stunting balita", "employee performance", "media pembelajaran interaktif"], "q") +
+    slotTerakhir("jurnal", "q", "Terakhir dicari") +
     '<div id="hasilCari">' + (cariState.hasil.length ? "" : '<p class="empty">Ketik kata kunci terus tekan Cari. Jurnal dari OpenAlex, Crossref, Sinta &amp; Garuda siap membantu.</p>') + "</div>" +
     kartuLanjutan("Lanjutkan ke", [["#/mendalam", "spark", "Cari Jurnal Mendalam"], ["/panduan/cara-mencari-jurnal", "doc", "Panduan mencari jurnal"], ["#/sitasi", "quote", "Buat Sitasi"]]);
 
@@ -1434,7 +1515,9 @@ function pageCarifile() {
     '<input type="file" id="cfFile" accept="' + ACCEPT_DOK + '">' +
     '<p class="muted tiny">Teks dari file dimasukkan ke kotak di atas. Cek dulu isinya, baru klik Lacak File.</p>' +
     '<button class="btn btn-primary btn-block" id="btnCarifile" style="margin-top:12px">' + tic("search") + ' Lacak File</button></div>' +
-    '<div id="hasilCarifile"></div>';
+    kartuContoh("Coba contoh sitasi", ["Moleong, L. J. (2017). Metodologi Penelitian Kualitatif. Bandung: Remaja Rosdakarya.", "Arikunto, S. (2019). Prosedur Penelitian: Suatu Pendekatan Praktik. Jakarta: Rineka Cipta."], "teksSit") +
+    '<div id="hasilCarifile"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/sitasi", "quote", "Buat Sitasi"], ["#/cari", "search", "Cari Jurnal"], ["/panduan/sitasi-dari-pdf-dan-paper-serupa", "doc", "Panduan sitasi dari PDF"]]);
   $("#cfFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -1516,7 +1599,9 @@ function pageRekomendasi() {
     '<label for="topikRek">Topik / judul penelitian</label>' +
     '<input type="text" id="topikRek" placeholder="cth: pengaruh digital marketing terhadap UMKM">' +
     '<button class="btn btn-primary btn-block" id="btnRek" style="margin-top:12px">' + tic("target") + ' Carikan Jurnal</button></div>' +
-    '<div id="hasilRek"></div>';
+    kartuContoh("Coba contoh topik", ["kecerdasan buatan dalam pendidikan", "kesehatan mental remaja", "pemasaran digital UMKM"], "topikRek") +
+    '<div id="hasilRek"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/publisher", "building", "Publisher"], ["#/cari", "search", "Cari Jurnal"], ["/panduan/ide-judul-dan-research-gap", "doc", "Panduan ide judul"]]);
   $("#btnRek").addEventListener("click", async () => {
     const topik = ($("#topikRek").value || "").trim();
     if (!topik) { toast("Isi dulu topiknya "); return; }
@@ -1541,7 +1626,9 @@ function pagePublisher() {
     '<label for="bidangPub">Bidang *</label>' +
     '<input type="text" id="bidangPub" placeholder="cth: kesehatan, pendidikan, teknik">' +
     '<button class="btn btn-primary btn-block" id="btnPub" style="margin-top:12px">' + tic("building") + ' Tampilkan</button></div>' +
-    '<div id="hasilPub"></div>';
+    kartuContoh("Coba contoh bidang", ["kesehatan", "pendidikan", "teknik informatika"], "bidangPub") +
+    '<div id="hasilPub"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/rekomendasi", "target", "Rekomendasi Jurnal"], ["#/penulis", "person", "Info Penulis"], ["#/cari", "search", "Cari Jurnal"]]);
   $("#btnPub").addEventListener("click", async () => {
     const bidang = ($("#bidangPub").value || "").trim();
     if (!bidang) { toast("Isi dulu bidangnya "); return; }
@@ -1566,7 +1653,9 @@ function pagePenulis() {
     '<label for="namaPen">Nama penulis</label>' +
     '<input type="text" id="namaPen" placeholder="cth: Budi Santoso">' +
     '<button class="btn btn-primary btn-block" id="btnPen" style="margin-top:12px">' + tic("person") + ' Cari Penulis</button></div>' +
-    '<div id="hasilPen"></div>';
+    kartuContoh("Coba contoh penulis", ["Sugiyono", "Suharsimi Arikunto", "Lexy J. Moleong"], "namaPen") +
+    '<div id="hasilPen"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/cari", "search", "Cari Jurnal"], ["#/matriks", "grid", "Matriks Literatur"], ["#/koleksi", "books", "Koleksiku"]]);
   $("#btnPen").addEventListener("click", async () => {
     const nama = ($("#namaPen").value || "").trim();
     if (!nama) { toast("Isi dulu namanya "); return; }
@@ -1614,7 +1703,10 @@ function pageTopik() {
     '<input type="text" id="kwTopik" placeholder="cth: kecerdasan buatan pendidikan">' +
     pickerHTML("tp") +
     '<button class="btn btn-primary btn-block" id="btnTopik" style="margin-top:12px">' + tic("bulb") + ' Kasih Ide Dong</button></div>' +
-    '<div id="hasilTopik"></div>';
+    kartuContoh("Coba contoh keyword", ["media sosial dan prestasi belajar", "kepuasan kerja karyawan", "literasi digital siswa"], "kwTopik") +
+    slotTerakhir("topik", "kwTopik", "Terakhir dicari") +
+    '<div id="hasilTopik"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/ai", "spark", "AI Studio"], ["#/mendalam", "spark", "Cari Jurnal Mendalam"], ["/panduan/ide-judul-dan-research-gap", "doc", "Panduan ide judul"]]);
   pickerPasang("tp");
   ambilInfoKuota().then(() => pickerSegarkan("tp"));
   const kirimTopik = async (modelKey) => {
@@ -1705,7 +1797,8 @@ function pageKoleksi() {
         " | " + esc(it.tahun || "-") + " | " + esc(it.jurnal || "-") + "</div>" +
         '<div class="aksi-row"><button class="btn btn-danger" data-hapus="' + i + '">Hapus</button></div></div>'
       ).join("") : '<p class="empty">Koleksimu masih kosong. <br>Cari jurnal dulu, terus tekan <b>Simpan ke Koleksi</b> di tiap hasil. <a href="#/cari">Gas cari →</a></p>') +
-    "</div>";
+    "</div>" +
+    kartuLanjutan("Lanjutkan ke", [["#/matriks", "grid", "Matriks Literatur"], ["#/sitasi", "quote", "Buat Sitasi"], ["#/cari", "search", "Cari Jurnal"]]);
 
   $$("[data-hapus]", view()).forEach(b => b.addEventListener("click", () => {
     if (!confirm("Hapus dari koleksi? Tindakan ini permanen. ")) return;
@@ -2091,7 +2184,8 @@ function pageMatriks() {
     (arr.length
       ? '<button class="btn btn-primary btn-block" id="btnMatriks">' + tic("grid") + ' Buat Matriks (DOCX)</button>'
       : '<p class="empty">Koleksimu kosong. <a href="#/cari">Cari &amp; simpan jurnal dulu →</a></p>') +
-    "</div>";
+    "</div>" +
+    kartuLanjutan("Lanjutkan ke", [["#/koleksi", "books", "Koleksiku"], ["#/sitasi", "quote", "Buat Sitasi"], ["/panduan/cara-membuat-matriks-literatur", "doc", "Panduan matriks literatur"]]);
   const btn = $("#btnMatriks");
   if (btn) btn.addEventListener("click", async () => {
     setLoading(btn, true, "Lagi nyusun matriks...");
@@ -2126,7 +2220,8 @@ function pageStatistik() {
   view().innerHTML =
     "<h2>"+tic("chart")+" Panduan Uji Statistik</h2>" +
     '<p class="muted">Bingung pilih uji statistik? Jawab aja pertanyaannya, aku tunjukin yang cocok.</p>' +
-    '<div id="statBox"></div>';
+    '<div id="statBox"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/tanya", "chat", "Tanya AI"], ["#/ai", "spark", "AI Studio"], ["/panduan/cara-memilih-uji-statistik", "doc", "Panduan memilih uji statistik"]]);
   statLangkah({ restart: true });
 }
 function statTanya(d) {
@@ -2201,7 +2296,8 @@ function pageTemplate() {
     "<h2>"+tic("pencil")+" Template Skripsi</h2>" +
     '<div class="card"><p class="muted">Template proposal &amp; skripsi format DOCX, tinggal isi. Pilih jenis penelitianmu:</p>' +
     '<button class="btn btn-primary btn-block" data-tmpl="kuantitatif">' + tic("chart") + ' Template Kuantitatif</button>' +
-    '<button class="btn btn-primary btn-block" data-tmpl="kualitatif">' + tic("books") + ' Template Kualitatif</button></div>';
+    '<button class="btn btn-primary btn-block" data-tmpl="kualitatif">' + tic("books") + ' Template Kualitatif</button></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/sitasi", "quote", "Buat Sitasi"], ["#/ai", "spark", "AI Studio"], ["/panduan/template-dan-alat-pendukung", "doc", "Panduan template dan alat"]]);
   $$("[data-tmpl]", view()).forEach(b => b.addEventListener("click", async () => {
     const jenis = b.dataset.tmpl;
     setLoading(b, true, "Lagi nyiapin template...");
@@ -2222,7 +2318,9 @@ function pageTerjemah() {
     '<label for="tjFile" style="margin-top:8px">Atau unggah file jurnal (.pdf/.docx/.txt)</label>' +
     '<input type="file" id="tjFile" accept="' + ACCEPT_DOK + '">' +
     '<button class="btn btn-primary btn-block" id="btnTj" style="margin-top:12px">' + tic("globe") + ' Terjemahkan</button></div>' +
-    '<div id="hasilTj"></div>';
+    kartuContoh("Coba contoh abstrak", ["This study aims to examine the effect of work motivation on employee performance in small and medium enterprises.", "The results show that interactive learning media improve students' understanding of difficult concepts."], "tjTeks") +
+    '<div id="hasilTj"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/parafrase", "refresh", "Parafrase"], ["#/ai", "spark", "AI Studio"], ["/panduan/terjemah-abstrak", "doc", "Panduan terjemah abstrak"]]);
   const ta = $("#tjTeks");
   const hitung = () => { const el = $("#tjHitung"); if (el) el.textContent = ta.value.length; };
   ta.addEventListener("input", hitung);
@@ -2292,7 +2390,10 @@ function pageParafrase() {
     '<input type="file" id="pfFile" accept="' + ACCEPT_DOK + '">' +
     '<p class="muted tiny">Teks panjang (dari tempel atau file) otomatis diproses per potongan ±750 karakter secara berurutan. Tiap potongan dihitung 1x pemakaian parafrase.</p>' +
     '<button class="btn btn-primary btn-block" id="btnPf" style="margin-top:12px">' + tic("refresh") + ' Parafrase-kan!</button></div>' +
-    '<div id="hasilPf"></div>';
+    kartuContoh("Coba contoh teks", ["Penelitian ini bertujuan untuk mengetahui pengaruh motivasi kerja terhadap kinerja karyawan.", "Hasil penelitian menunjukkan bahwa penggunaan media pembelajaran interaktif meningkatkan pemahaman siswa."], "pfTeks") +
+    slotTerakhir("chat", "pfTeks", "Terakhir diparafrase", "parafrase") +
+    '<div id="hasilPf"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/ai", "spark", "AI Studio"], ["#/terjemah", "globe", "Terjemah Abstrak"], ["/panduan/cara-parafrase-yang-benar", "doc", "Panduan parafrase"]]);
   $("#pfFile").addEventListener("change", async (e) => {
     const f = e.target.files[0];
     if (!f) return;
@@ -2360,7 +2461,8 @@ function pageEkstrakTeks() {
     '<input type="file" id="etFile" accept="' + ACCEPT_DOK + '">' +
     '<button class="btn btn-primary btn-block" id="btnEt" style="margin-top:12px">' + tic("doc") + ' Ambil Teks dari File</button>' +
     '<p class="muted" style="margin-top:8px">PDF hasil pindai (scan gambar) tidak punya lapisan teks, jadi hasilnya bisa kosong. Teks ditampilkan maksimal 150.000 karakter pertama.</p></div>' +
-    '<div id="hasilEt"></div>';
+    '<div id="hasilEt"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/convert", "layout", "Convert File"], ["#/carifile", "doc", "Cari dari Sitasi"], ["/panduan/convert-file-dan-ekstrak-teks", "doc", "Panduan convert dan ekstrak teks"]]);
   let namaFile = "";
   $("#btnEt").addEventListener("click", async () => {
     const f = $("#etFile").files[0];
@@ -2429,7 +2531,8 @@ function pageKemiripan() {
     '<input type="file" id="kmFileSumber" accept=".docx,.txt,.pdf,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document">' +
     '<button class="btn btn-primary btn-block" id="btnKm" style="margin-top:12px">' + tic("search") + ' Cek Kemiripan</button>' +
     '<p class="muted" style="margin-top:8px">Teksmu diproses seketika dan tidak disimpan. Tips parafrase: <a href="/panduan/cara-parafrase-yang-benar">panduan parafrase yang benar</a>.</p></div>' +
-    '<div id="hasilKm"></div>';
+    '<div id="hasilKm"></div>' +
+    kartuLanjutan("Lanjutkan ke", [["#/parafrase", "refresh", "Parafrase"], ["#/ai", "spark", "AI Studio"], ["/panduan/cek-plagiarisme", "doc", "Panduan cek plagiarisme"]]);
   $("#btnKm").addEventListener("click", async () => {
     const naskah = ($("#kmNaskah").value || "").trim();
     const sumber = ($("#kmSumber").value || "").trim();
@@ -2681,6 +2784,7 @@ function cvBukaAlat(kode) {
   }
   h += '<button class="btn btn-primary btn-block" id="cvB" style="margin-top:12px">Proses</button>' +
     '<p class="tiny muted" id="cvCatatan" style="margin-top:6px"></p></div>';
+  h += kartuLanjutan("Alat berkas lainnya", [["#/ekstrak-teks", "doc", "Ekstrak Teks"], ["/panduan/convert-file-dan-ekstrak-teks", "doc", "Panduan convert dan ekstrak teks"], ["#/template", "layout", "Template"]]);
   view().innerHTML = h;
   const btn = $("#cvB");
   btn.addEventListener("click", () =>
@@ -2883,7 +2987,8 @@ function pageAI() {
       '<div class="ai-picker" id="aiPicker">' + AI_KINDS.map((k, i) =>
         '<button type="button" class="ai-pick" data-aipick="' + i + '">' +
         '<span class="ai-pick-ico">' + tic(k.ico) + "</span><b>" + esc(k.nama) + "</b><small>" + esc(k.desc) + "</small></button>"
-      ).join("") + "</div>";
+      ).join("") + "</div>" +
+      kartuLanjutan("Lanjutkan ke", [["#/tanya", "chat", "Tanya AI"], ["#/topik", "bulb", "Ide Topik"], ["/panduan/ai-studio-generator-naskah", "doc", "Panduan AI Studio"]]);
     aiInitHeader();
     $$("#aiPicker [data-aipick]", view()).forEach(function(b) {
       b.addEventListener("click", function() {
@@ -2894,7 +2999,8 @@ function pageAI() {
   function tampilGenerator(i) {
     view().innerHTML = aiHeaderHTML() +
       '<button type="button" class="btn btn-ghost" id="aiKembali" style="margin-bottom:12px">\u2190 Pilih generator lain</button>' +
-      kartuGeneratorHTML(i);
+      kartuGeneratorHTML(i) +
+      kartuLanjutan("Lanjutkan ke", [["#/tanya", "chat", "Tanya AI"], ["#/topik", "bulb", "Ide Topik"], ["/panduan/ai-studio-generator-naskah", "doc", "Panduan AI Studio"]]);
     aiInitHeader();
     $("#aiKembali").addEventListener("click", tampilPicker);
     const inp = view().querySelector(".aiFile");
@@ -3480,7 +3586,8 @@ function pageKritikSaran() {
     view().innerHTML =
       "<h2>" + tic("chat") + " Kritik dan Saran</h2>" +
       '<div class="card center"><p class="muted">Kirim kritik, saran, masukan, atau permintaan fitur buat KhairyPustaka. Biar tercatat rapi, kirimnya setelah login ya.</p>' +
-      '<a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk Dulu</a></div>';
+      '<a class="btn btn-primary btn-block" href="#/masuk">' + tic("key") + ' Masuk Dulu</a></div>' +
+      kartuLanjutan("Butuh jawaban cepat?", [["#/bantuan", "help", "Bantuan"], ["#/tanya", "chat", "Tanya AI"], ["/panduan", "doc", "Panduan Skripsi Gratis"]]);
     return;
   }
   if (AUTH.admin) {
@@ -3505,7 +3612,8 @@ function pageKritikSaran() {
       '<button class="btn btn-primary btn-block" id="ksKirim" type="button">Kirim</button>' +
       '<p class="pf-msg" id="ksMsg"></p>' +
       '<div id="ksThanks"></div>' +
-    "</div>";
+    "</div>" +
+    kartuLanjutan("Butuh jawaban cepat?", [["#/bantuan", "help", "Bantuan"], ["#/tanya", "chat", "Tanya AI"], ["/panduan", "doc", "Panduan Skripsi Gratis"]]);
   ikatKategori("ksKat", "kritik");
   ikatBintang("ks");
   $("#ksKirim").addEventListener("click", async function() {
@@ -5717,22 +5825,51 @@ function page404() {
     '<a class="btn btn-primary" href="#/beranda">Ke Beranda</a></div>';
 }
 
-/* ---------- FAB Riwayat (tombol melayang ala widget live chat) ---------- */
-function initFABRiwayat() {
-  if (document.getElementById("fabRiwayat")) return;
-  const b = document.createElement("button");
-  b.id = "fabRiwayat";
-  b.className = "fab-riwayat";
-  b.type = "button";
-  b.setAttribute("aria-label", "Buka Riwayat");
-  b.innerHTML = '<span class="fab-riwayat-label">Riwayat</span>' +
-    '<span class="fab-bulat">' + tic("clock") + "</span>";
-  b.addEventListener("click", () => { location.hash = "#/riwayat"; });
-  document.body.appendChild(b);
-  aturFABRiwayat((location.hash || "#/beranda").replace(/^#/, "").split("?")[0]);
+/* ---------- Menu cepat melayang (gabungan Riwayat + Video Kenalan) ----------
+   Satu tombol bulat yang mengembang ke atas saat diketuk; menggantikan
+   dua FAB bertumpuk yang menutupi isi kartu (2026-11-13). */
+function initFABMenu() {
+  if (document.getElementById("fabMenu")) return;
+  const wrap = document.createElement("div");
+  wrap.id = "fabMenu";
+  wrap.className = "fab-menu";
+  wrap.innerHTML =
+    '<div class="fab-menu-items" id="fabMenuItems" hidden>' +
+      '<button type="button" class="fab-menu-item" id="fabMenuRiwayat">' + tic("clock") + "Riwayat</button>" +
+      '<button type="button" class="fab-menu-item" id="fabMenuVideo"><span aria-hidden="true">&#9654;</span>Video Kenalan</button>' +
+    "</div>" +
+    '<button type="button" class="fab-menu-utama" id="fabMenuUtama" aria-label="Menu cepat" aria-expanded="false" aria-controls="fabMenuItems">' + tic("plus") + "</button>";
+  document.body.appendChild(wrap);
+  const utama = document.getElementById("fabMenuUtama");
+  const items = document.getElementById("fabMenuItems");
+  const tutup = function() {
+    wrap.classList.remove("buka");
+    items.hidden = true;
+    utama.setAttribute("aria-expanded", "false");
+  };
+  utama.addEventListener("click", function() {
+    const buka = items.hidden;
+    items.hidden = !buka;
+    wrap.classList.toggle("buka", buka);
+    utama.setAttribute("aria-expanded", String(buka));
+  });
+  document.getElementById("fabMenuRiwayat").addEventListener("click", function() {
+    tutup(); location.hash = "#/riwayat";
+  });
+  document.getElementById("fabMenuVideo").addEventListener("click", function() {
+    tutup();
+    if (typeof window.__bukaVideoKenalan === "function") window.__bukaVideoKenalan();
+  });
+  document.addEventListener("click", function(e) {
+    if (!wrap.contains(e.target)) tutup();
+  });
+  document.addEventListener("keydown", function(e) {
+    if (e.key === "Escape") tutup();
+  });
+  aturFABMenu((location.hash || "#/beranda").replace(/^#/, "").split("?")[0]);
 }
-function aturFABRiwayat(h) {
-  const b = document.getElementById("fabRiwayat");
+function aturFABMenu(h) {
+  const b = document.getElementById("fabMenuRiwayat");
   if (b) b.classList.toggle("hidden", h === "/riwayat");
 }
 
@@ -5770,6 +5907,10 @@ function aturTombolKembali(h) {
   if (bar) bar.classList.toggle("hidden", h === "/beranda");
 }
 
+/* Transisi berurutan (2026-11-13): halaman lama memudar dulu (110 ms),
+   baru halaman baru dirender dan masuk. Token navigasi membatalkan
+   render basi bila pengguna pindah lagi sebelum jeda selesai. */
+let _navToken = 0;
 function router() {
   clearPageTimers(); // hentikan polling halaman sebelumnya
   // Simpan posisi scroll Beranda sebelum pindah halaman, supaya tombol
@@ -5777,11 +5918,25 @@ function router() {
   if (RUTE_TERAKHIR === "/beranda") {
     try { sessionStorage.setItem("kp_scroll_home", String(window.scrollY || 0)); } catch (e) {}
   }
+  const token = ++_navToken;
+  const v = view();
+  const gerakBoleh = typeof window.matchMedia !== "function" ||
+    !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (v && v.innerHTML.trim() !== "" && gerakBoleh) {
+    v.classList.remove("page-in");
+    v.classList.add("page-out");
+    setTimeout(function() { if (token === _navToken) renderRute(); }, 110);
+  } else {
+    renderRute();
+  }
+}
+
+function renderRute() {
   const dariKembali = NAVBACK;
   let h = (location.hash || "#/beranda").replace(/^#/, "").split("?")[0];
   if (!h.startsWith("/")) h = "/beranda";
   const fn = ROUTES[h] || page404;
-  aturFABRiwayat(h); // sembunyikan FAB saat lagi di halaman Riwayat
+  aturFABMenu(h); // sembunyikan item Riwayat saat lagi di halaman Riwayat
   catatNav(h); // jejak navigasi buat tombol Kembali
   aturTombolKembali(h); // tombol Kembali tampil di semua halaman selain Beranda
   const nav = $("#mainNav");
@@ -5793,7 +5948,9 @@ function router() {
     view().innerHTML = '<div class="err-box">Yah, halamannya error. Coba refresh ya.</div>';
   }
   const v = view();
+  v.classList.remove("page-out");
   v.classList.remove("page-in"); void v.offsetWidth; v.classList.add("page-in");
+  muatKartuTerakhir(true); // isi slot riwayat terakhir bila halaman punya
   if (dariKembali && h === "/beranda") {
     let y = 0;
     try { y = parseInt(sessionStorage.getItem("kp_scroll_home") || "0", 10) || 0; } catch (e) {}
@@ -5889,7 +6046,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const bk = document.getElementById("btnBack");
   if (bk) bk.addEventListener("click", pergiKembali);
   window.addEventListener("hashchange", router);
-  initFABRiwayat(); // tombol melayang Riwayat ala live chat (sekali saat boot)
+  initFABMenu(); // menu cepat melayang (sekali saat boot)
+  pasangChipGlobal(); // delegasi klik pil contoh + pil riwayat terakhir
   document.addEventListener("click", admKlikGlobal); // tombol Salin/Tambah panel admin
 
   $("#modalSitClose").addEventListener("click", tutupModalSit);

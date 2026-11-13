@@ -59,17 +59,24 @@ a{color:var(--teal-deep);text-decoration:none}
 h1,h2,h3{line-height:1.3;margin:.6em 0 .4em;letter-spacing:-.01em}
 h1{font-size:1.7rem}h2{font-size:1.35rem}h3{font-size:1.1rem}
 .container{max-width:880px;margin:0 auto;padding:16px 16px 40px}
-/* Cadangkan tinggi area aplikasi sejak HTML pertama tampil agar footer tidak meloncat saat app.js selesai merender halaman. */
-#view{min-height:calc(100vh - 60px);min-height:calc(100svh - 60px)}
+/* Area aplikasi mengisi sisa tinggi layar (body flex kolom, lihat blok
+   "Isi halaman tool" di akhir file) supaya footer duduk di dasar layar
+   pada halaman pendek, bukan jauh di bawah ruang kosong. */
+#view{min-height:0}
 .tiny{font-size:.82rem}
 .muted{color:var(--muted)}
 .center{text-align:center}
 
-/* transisi antar halaman */
-.page-in{animation:pageIn .38s cubic-bezier(.22,.8,.32,1)}
+/* transisi antar halaman: keluar dulu (page-out), baru masuk (page-in),
+   supaya dua halaman tidak pernah tampil bertumpuk. */
+.page-in{animation:pageIn .26s cubic-bezier(.22,.8,.32,1)}
 @keyframes pageIn{
-  from{opacity:0;transform:translateY(14px)}
+  from{opacity:0;transform:translateY(10px)}
   to{opacity:1;transform:none}
+}
+.page-out{animation:pageOut .11s ease-in forwards}
+@keyframes pageOut{
+  to{opacity:0;transform:translateY(-6px)}
 }
 
 /* Topbar */
@@ -435,38 +442,28 @@ ol.langkah,ul.bersih{padding-left:20px}
 .riw-detail{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .riw-detail .card{margin:10px 0}
 
-/* ----- FAB Riwayat (tombol melayang ala widget live chat) ----- */
-.fab-riwayat{position:fixed;right:16px;bottom:92px;z-index:80;display:flex;align-items:center;gap:8px;
-  background:none;border:none;padding:0;cursor:pointer;opacity:.78;
-  transition:opacity .25s ease,transform .15s ease}
-.fab-riwayat:hover{opacity:1}
-.fab-riwayat:active{transform:scale(.94)}
-.fab-riwayat .fab-riwayat-label{background:var(--teal-dark);color:#fff;font-size:12px;font-weight:700;
-  padding:7px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:nowrap}
-.fab-riwayat .fab-bulat{width:52px;height:52px;border-radius:50%;flex:none;
+/* ----- Menu cepat melayang (gabungan Riwayat + Video Kenalan, 2026-11-13)
+   Satu tombol bulat yang mengembang ke atas saat diketuk. Menggantikan
+   dua FAB bertumpuk yang menutupi isi kartu di kanan bawah layar. ----- */
+.fab-menu{position:fixed;right:16px;bottom:92px;z-index:80;display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.fab-menu-items{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.fab-menu-items[hidden]{display:none}
+.fab-menu-item{display:inline-flex;align-items:center;gap:8px;background:var(--teal-dark);color:#fff;
+  font-size:13px;font-weight:700;padding:10px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.25);
+  box-shadow:0 8px 22px rgba(0,0,0,.4);cursor:pointer;white-space:nowrap}
+.fab-menu-item:hover{background:#0e4b52}
+.fab-menu-item:active{transform:scale(.96)}
+.fab-menu-item .tic{width:18px;height:18px}
+.fab-menu-utama{width:52px;height:52px;border-radius:50%;flex:none;
   background:linear-gradient(135deg,var(--teal-bright),var(--teal));color:#04262e;
-  display:flex;align-items:center;justify-content:center;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;
   box-shadow:0 8px 22px rgba(45,212,216,.35);border:2px solid rgba(255,255,255,.85)}
-.fab-riwayat .fab-bulat .tic{width:28px;height:28px}
-.fab-riwayat.hidden{display:none}
-.fab-video{position:fixed;right:16px;bottom:154px;z-index:80;display:flex;align-items:center;gap:8px;
-  background:none;border:none;padding:0;cursor:pointer;opacity:.78;
-  transition:opacity .25s ease,transform .15s ease}
-.fab-video:hover{opacity:1}
-.fab-video:active{transform:scale(.94)}
-.fab-video .fab-video-label{background:var(--teal-dark);color:#fff;font-size:12px;font-weight:700;
-  padding:7px 12px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.35);white-space:nowrap}
-.fab-video .fab-bulat{width:52px;height:52px;border-radius:50%;flex:none;
-  background:linear-gradient(135deg,var(--teal-bright),var(--teal));color:#04262e;
-  display:flex;align-items:center;justify-content:center;font-size:20px;padding-left:4px;
-  box-shadow:0 8px 22px rgba(45,212,216,.35);border:2px solid rgba(255,255,255,.85)}
-@media (max-width:480px){.fab-video{right:12px;bottom:146px}}
-/* Label tombol melayang cuma tampil ~4 detik lalu memudar pelan sampai
-   hilang — sisanya tinggal ikon bulatnya saja biar tidak menutupi konten. */
-.fab-riwayat-label,.fab-video-label{max-width:170px;overflow:hidden;white-space:nowrap;
-  animation:fabLabelFade .9s ease 4s forwards}
-@keyframes fabLabelFade{
-  to{opacity:0;max-width:0;padding-left:0;padding-right:0;visibility:hidden;pointer-events:none}}
+.fab-menu-utama:hover{filter:brightness(1.07)}
+.fab-menu-utama:active{transform:scale(.94)}
+.fab-menu-utama .tic{width:26px;height:26px;transition:transform .2s ease}
+.fab-menu.buka .fab-menu-utama .tic{transform:rotate(45deg)}
+.fab-menu-utama:focus-visible,.fab-menu-item:focus-visible{outline:2px solid #fff;outline-offset:2px}
+@media (max-width:480px){.fab-menu{right:12px;bottom:84px}}
 /* Tombol Kembali: tampil di semua halaman fitur (di atas judul), balik ke
    halaman sebelumnya di dalam web; Beranda tidak menampilkannya. */
 #backBar{padding-top:14px;margin-bottom:-6px}
@@ -475,7 +472,6 @@ ol.langkah,ul.bersih{padding-left:20px}
   padding:7px 14px;border-radius:999px;cursor:pointer;
   box-shadow:0 1px 4px rgba(0,0,0,.3)}
 .btn-back:active{transform:scale(.97)}
-@media (max-width:480px){.fab-riwayat{right:12px;bottom:84px}}
 
 /* Markdown AI yang dirender (mdRapi, 2026-10-13): code inline + list */
 .bubble.bot code, .hasil-ai code, .riw-detail code{background:#102c44;border:1px solid var(--line);border-radius:6px;padding:0 5px;font-size:.88em;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -1383,3 +1379,28 @@ html{scroll-padding-top:72px}
 .faq-item p{margin-top:8px}
 .akun-lipat summary .tic{vertical-align:-3px}
 .km-selengkapnya p{font-size:14.5px;line-height:1.65;color:var(--muted);margin:8px 0}
+
+/* Isi halaman tool + footer menempel (2026-11-13, dari rekaman HP Sul):
+   halaman tool yang formulirnya pendek menyisakan ruang kosong besar.
+   Diisi dengan kartu contoh ketuk + kartu riwayat terakhir + kartu
+   lanjutan yang sudah ada, dan footer ditempel ke dasar layar. */
+/* Footer menempel: body jadi kolom flex setinggi layar, #view mengembang
+   mengisi sisa ruang. Topbar sticky, bg-scene/modal/FAB (fixed) dan
+   sprite SVG (absolute) tidak terpengaruh. */
+body{display:flex;flex-direction:column;min-height:100vh;min-height:100svh}
+#view{flex:1 0 auto}
+/* Kartu contoh + kartu riwayat terakhir: pil ketuk yang mengisi kolom
+   formulir. Gaya pil mengikuti .kl-link supaya satu bahasa visual. */
+.kartu-contoh,.kartu-terakhir{margin-top:16px}
+.kartu-contoh h3,.kartu-terakhir h3{margin-bottom:10px}
+.chip-contoh,.chip-terakhir{
+  display:inline-flex;align-items:center;gap:7px;
+  border:1px solid var(--line);border-radius:999px;padding:8px 14px;
+  font-size:13.5px;font-weight:600;color:var(--ink);background:transparent;
+  cursor:pointer;font-family:inherit;text-align:left;max-width:100%;
+}
+.chip-contoh:hover,.chip-terakhir:hover{border-color:var(--teal);color:var(--teal)}
+.chip-contoh:active,.chip-terakhir:active{transform:scale(.97)}
+.chip-contoh:focus-visible,.chip-terakhir:focus-visible{outline:2px solid var(--teal);outline-offset:2px}
+.chip-terakhir .tic{width:16px;height:16px;flex:none;color:var(--teal)}
+.chip-terakhir span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
