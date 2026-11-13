@@ -3730,9 +3730,11 @@ function pageMendalam() {
   MDL = mdlBaruState();
   const F = MDL.saringan;
   const pill = (grup, val, label) => `<button type="button" class="mdl-pill ${F[grup] === val ? "on" : ""}" data-mgrup="${grup}" data-mval="${esc(String(val))}">${esc(label)}</button>`;
+  // Tanpa tombol Kembali internal: tombol Kembali global situs sudah
+  // tampil di semua halaman selain Beranda (temuan Sul 2026-11-13:
+  // tombol di dalam kartu Mendalam ini dobel dengan yang global).
   view().innerHTML = `
   <div class="mdl-wrap">
-    <div class="back-row"><button class="btn-back" type="button">${tic("back")} Kembali</button></div>
     <div class="mdl-stages">
       <span class="mdl-stage on" id="mdlPill1" data-label="1. Formulir">1. Formulir</span>
       <span class="mdl-stage" id="mdlPill2" data-label="2. Proses">2. Proses</span>
@@ -5886,14 +5888,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   $("#menuBtn").addEventListener("click", () => $("#mainNav").classList.toggle("open"));
   const bk = document.getElementById("btnBack");
   if (bk) bk.addEventListener("click", pergiKembali);
-  // Tombol Kembali di dalam konten halaman (kelas .btn-back selain
-  // tombol global #btnBack, mis. di halaman Mendalam): delegasi klik
-  // dokumen. Menggantikan atribut onclick inline lama yang diblokir
-  // CSP situs (script-src tanpa 'unsafe-inline').
-  document.addEventListener("click", e => {
-    const bb = e.target && e.target.closest ? e.target.closest(".btn-back") : null;
-    if (bb && bb.id !== "btnBack") pergiKembali();
-  });
   window.addEventListener("hashchange", router);
   initFABRiwayat(); // tombol melayang Riwayat ala live chat (sekali saat boot)
   document.addEventListener("click", admKlikGlobal); // tombol Salin/Tambah panel admin
