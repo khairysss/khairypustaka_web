@@ -1387,8 +1387,15 @@ html{scroll-padding-top:72px}
 /* Footer menempel: body jadi kolom flex setinggi layar, #view mengembang
    mengisi sisa ruang. Topbar sticky, bg-scene/modal/FAB (fixed) dan
    sprite SVG (absolute) tidak terpengaruh. */
+/* PERBAIKAN LEBAR HP 2026-11-13: #view WAJIB punya lebar pasti. Tanpa
+   width, #view sebagai item flex + margin auto (.container) diukur dari
+   lebar intrinsik isinya (rel marquee showcase dkk), sehingga viewport
+   layout HP mengembang ke ~880px dan semua konten terpotong di kanan
+   (kejadian di PWA iOS Sul, 13 Nov 2026). width:100% + max-width
+   .container menjaga perilaku lama: penuh di HP, 880px terpusat di
+   desktop; min-width:0 menahan ukuran minimum otomatis item flex. */
 body{display:flex;flex-direction:column;min-height:100vh;min-height:100svh}
-#view{flex:1 0 auto}
+#view{flex:1 0 auto;width:100%;min-width:0}
 /* Kartu contoh + kartu riwayat terakhir: pil ketuk yang mengisi kolom
    formulir. Gaya pil mengikuti .kl-link supaya satu bahasa visual. */
 .kartu-contoh,.kartu-terakhir{margin-top:16px}
