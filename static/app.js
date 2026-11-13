@@ -4794,203 +4794,244 @@ async function admMuatSistem() {
     const r = await apiJSON("/admin/sistem");
     if (!r.ok) throw 0;
     const d = r.data || {}, s = d.server || {}, an = d.antrean || {};
-    function barisAntre(nama, j) {
-      j = j || {};
-      let t = '<div class="list-row"><div class="lr-main"><b>' + esc(nama) + "</b>" +
-        '<div class="muted tiny">Jalan ' + (j.jalan || 0) + " · Antre " + (j.antre || 0) +
-        " · Gagal " + (j.gagal || 0) + " · Selesai " + (j.selesai || 0) + "</div>";
-      if (j.terakhir) {
-        t += '<div class="muted tiny">Hari ini selesai ' + (j.selesai_hari_ini || 0) +
-          " · gagal " + (j.gagal_hari_ini || 0) + " · aktivitas terakhir " +
-          esc(fmtWita(j.terakhir)) + "</div>";
-      }
-      t += "</div>" +
-        admPill(String((j.jalan || 0) + (j.antre || 0)) + " pekerjaan aktif",
-          (j.gagal_hari_ini || 0) > 0 ? "warn" : "grey") + "</div>";
-      return t;
-    }
     function fmtAngka(x) {
       try { return Number(x || 0).toLocaleString("id-ID", { maximumFractionDigits: 2 }); }
       catch (e) { return String(x || 0); }
-    }
-    const rd = d.render || {};
-    let renderPill = admPill("Belum terhubung", "warn");
-    let renderDetail = esc(rd.catatan || "");
-    if (rd.terhubung) {
-      renderPill = admPill("Terhubung", "ok");
-      renderDetail =
-        "Bandwidth bulan ini <b>" + fmtAngka(rd.bandwidth_gb) + " GB</b> · perkiraan jam instance <b>" +
-        fmtAngka(rd.jam_instance_perkiraan) + " jam</b>" +
-        '<div class="muted tiny">Periode data ' + esc(fmtWita(rd.periode_mulai)) + " s.d. " +
-        esc(fmtWita(rd.periode_selesai)) + " · diperbarui " + esc(fmtWita(rd.diperbarui)) + "</div>" +
-        '<div class="muted tiny">' + esc(rd.catatan || "") + "</div>";
-    }
-    const cb = d.cerebras || {};
-    let cerebrasPill = admPill("Belum terbaca", "warn");
-    let cerebrasDetail = esc(cb.catatan || "");
-    if (cb.tercatat) {
-      cerebrasPill = admPill("Tercatat", "ok");
-      const hi = cb.hari_ini || {}, bi = cb.bulan_ini || {};
-      let t = "Hari ini <b>" + (hi.panggilan || 0) + " panggilan</b> · " + fmtAngka(hi.token) + " token" +
-        '<div class="muted tiny">Bulan ini ' + (bi.panggilan || 0) + " panggilan · " +
-        fmtAngka(bi.token) + " token tercatat oleh situs</div>";
-      if (cb.acuan) {
-        t += '<div class="muted tiny">Saldo acuan <b>$' + fmtAngka(cb.acuan.saldo_usd) + "</b> per " +
-          esc(fmtWita(cb.acuan.waktu)) + " · perkiraan terpakai sejak acuan $" +
-          fmtAngka(cb.perkiraan_biaya_sejak_acuan_usd) + "</div>" +
-          "<div><b>Perkiraan sisa $" + fmtAngka(cb.perkiraan_sisa_usd) + "</b></div>";
-      }
-      t += '<div class="muted tiny">' + esc(cb.catatan || "") + "</div>";
-      cerebrasDetail = t;
     }
     function fmtUsd(x) {
       if (x === null || x === undefined) return "";
       try { return "$" + Number(x).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 4 }); }
       catch (e) { return "$" + String(x); }
     }
+    // Satu metrik: angka besar + label kecil. Nilai kosong dari server
+    // ditampilkan apa adanya sebagai tidak terbaca, bukan diisi nol.
+    function metrik(nilai, label) {
+      const v = (nilai === "" || nilai === null || nilai === undefined) ? "Tidak terbaca" : nilai;
+      return '<div class="sys-metric"><b>' + v + "</b><span>" + label + "</span></div>";
+    }
+    function foot(teks, kelas) {
+      return '<div class="sys-foot' + (kelas ? " " + kelas : "") + '">' + esc(teks) + "</div>";
+    }
+    const rd = d.render || {};
+    const cb = d.cerebras || {};
     const orr = d.openrouter || {};
-    let orPill = admPill("Belum terhubung", "warn");
-    let orDetail = esc(orr.catatan || "");
-    if (orr.terhubung) {
-      orPill = admPill("Terhubung", "ok");
-      let t = "";
-      const kh = orr.kuota_harian || null;
-      if (kh) {
-        t += "Kuota model gratis hari ini: terpakai <b>" + fmtAngka(kh.terpakai) +
-          " dari " + fmtAngka(kh.batas) + " request</b> · sisa <b>" + fmtAngka(kh.sisa) + " request</b>" +
-          '<div class="muted tiny">Kuota dihitung per hari UTC dan reset tengah malam UTC, pukul 08.00 WITA</div>';
-      }
-      t += '<div class="muted tiny">Pemakaian kunci: hari ini ' + fmtUsd(orr.usage_harian_usd) +
-        " · minggu ini " + fmtUsd(orr.usage_mingguan_usd) +
-        " · bulan ini " + fmtUsd(orr.usage_bulanan_usd) +
-        " · total " + fmtUsd(orr.usage_total_usd) + "</div>";
-      if (orr.tanpa_batas) {
-        t += '<div class="muted tiny">Batas belanja kunci: tanpa batas</div>';
-      } else {
-        t += '<div class="muted tiny">Batas belanja kunci ' + fmtUsd(orr.limit_usd) +
-          " · sisa " + fmtUsd(orr.limit_sisa_usd) + "</div>";
-      }
-      t += '<div class="muted tiny">Status tier: ' +
-        (orr.tier_gratis ? "gratis, belum pernah membeli kredit" : "berbayar, pernah membeli kredit") + "</div>";
-      const sa = orr.saldo_akun || {};
-      if (sa.tersedia) {
-        t += "<div>Saldo akun: total kredit <b>" + fmtUsd(sa.total_kredit_usd) + "</b> · terpakai " +
-          fmtUsd(sa.total_terpakai_usd) + " · <b>sisa " + fmtUsd(sa.sisa_usd) + "</b></div>";
-      } else if (sa.catatan) {
-        t += '<div class="muted tiny">' + esc(sa.catatan) + "</div>";
-      }
-      t += '<div class="muted tiny">Diperbarui ' + esc(fmtWita(orr.diperbarui)) + "</div>" +
-        '<div class="muted tiny">' + esc(orr.catatan || "") + "</div>";
-      orDetail = t;
-    }
     const md = d.mendalam || {};
-    let mdPill = admPill("Belum terbaca", "warn");
-    let mdDetail = esc(md.catatan || "");
-    if (md.aktif) {
-      mdPill = md.kunci_terpasang ? admPill("Kunci terpasang", "ok")
-        : admPill("Kunci belum terpasang", "warn");
-      const j = md.job_hari_ini || {};
-      const jSelesai = function(m) { return (j[m] || {}).selesai || 0; };
-      const lap = j.laporan || {};
-      const emb = md.ember || {};
-      const emberBaris = function(nama, label) {
-        const e = emb[nama] || {};
-        return "<div>" + label + ": hari ini <b>" +
-          fmtUsd(e.belanja_hari_ini_usd) + "</b> dari " +
-          fmtUsd(e.cap_harian_usd) + " · bulan ini <b>" +
-          fmtUsd(e.belanja_bulan_ini_usd) + "</b> dari " +
-          fmtUsd(e.cap_bulanan_usd) + " (" + (e.persen_bulanan || 0) +
-          "%)</div>";
-      };
-      const peringatan = (md.peringatan_ember || []).map(function(n) {
-        return n === "gratis" ? "ember gratis" : "ember berbayar";
-      });
-      const daftarKunci = ((md.kunci || {}).daftar || []).map(function(kk) {
-        return "<div>Kunci " + kk.nomor + (kk.aktif ? " (aktif)" : "") +
-          (kk.habis ? " · habis" : "") +
-          ": perkiraan sisa <b>" + fmtUsd(kk.perkiraan_sisa_usd) +
-          "</b> · terpakai " + fmtUsd(kk.belanja_usd) +
-          " dari " + fmtUsd(kk.saldo_awal_usd) + "</div>";
-      }).join("");
-      mdDetail =
-        '<div class="muted tiny">Status kunci: ' +
-          (md.kunci_terpasang ? "terpasang" : "belum terpasang") +
-          " · " + ((md.kunci || {}).jumlah || 0) + " kunci, aktif kunci " +
-          ((md.kunci || {}).aktif || "-") + "</div>" +
-        emberBaris("gratis", "Ember gratis") +
-        emberBaris("berbayar", "Ember berbayar") +
-        (peringatan.length ?
-          '<div class="muted tiny">Peringatan: belanja bulanan ' +
-          peringatan.join(" dan ") +
-          " sudah mencapai 70% plafonnya.</div>" : "") +
-        daftarKunci +
-        '<div class="muted tiny">Job hari ini: Cari Jurnal Mendalam ' + jSelesai("cari") +
-          " · Jawaban Cepat " + jSelesai("cepat") +
-          " · Bedah Mendalam " + jSelesai("bedah") +
-          " · Laporan Riset selesai " + (lap.selesai || 0) +
-          ", gagal " + (lap.gagal || 0) + "</div>" +
-        "<div>Total belanja <b>" + fmtUsd(md.total_belanja_usd) + "</b>" +
-          " · <b>Perkiraan sisa kredit semua kunci " + fmtUsd(md.perkiraan_sisa_kredit_usd) + "</b></div>" +
-        '<div class="muted tiny">Perkiraan sisa dihitung dari saldo awal ' +
-          "tiap kunci dikurangi belanja yang tercatat situs pada kunci " +
-          "itu sejak fitur berjalan.</div>";
-    }
-    const modelRows = (d.model || []).map(function(mo) {
+    // Strip status: dirangkum dari field yang sama, tanpa data baru.
+    const perhatian = [];
+    if (s.status && s.status !== "normal") perhatian.push("Server: " + s.status);
+    if (s.basis_data && s.basis_data !== "postgres") perhatian.push("Basis data mode file");
+    (d.model || []).forEach(function(mo) {
+      if (mo.status === "error") perhatian.push("Model " + mo.label + ": error");
+      else if (mo.status === "lambat") perhatian.push("Model " + mo.label + ": lambat");
+    });
+    if (!rd.terhubung) perhatian.push("Render belum terhubung");
+    if (!cb.tercatat) perhatian.push("Kredit Cerebras belum terbaca");
+    if (!orr.terhubung) perhatian.push("OpenRouter belum terhubung");
+    if (md.aktif && !md.kunci_terpasang) perhatian.push("Kunci Mendalam belum terpasang");
+    (md.peringatan_ember || []).forEach(function(n) {
+      perhatian.push("Ember " + (n === "gratis" ? "gratis" : "berbayar") + " mencapai 70% plafon bulanan");
+    });
+    [["AI Studio dan Tanya AI", an.ai], ["Sitasi dari PDF", an.sitasi], ["Convert File", an.convert]].forEach(function(p) {
+      if ((p[1] || {}).gagal_hari_ini > 0) perhatian.push("Antrean " + p[0] + ": " + p[1].gagal_hari_ini + " gagal hari ini");
+    });
+    const stripInfo = [];
+    const waktuCek = fmtWita(s.waktu);
+    if (waktuCek) stripInfo.push("Terakhir dicek " + waktuCek);
+    stripInfo.push(s.basis_data === "postgres" ? "Basis data Postgres (Neon)" : "Basis data mode file lokal");
+    let stripSub = stripInfo.map(esc).join(" · ");
+    if (perhatian.length) stripSub += "<br>" + perhatian.map(esc).join(" · ");
+    const stripHtml = '<div class="sys-strip' + (perhatian.length ? " warn" : "") + '">' +
+      '<div class="sys-strip-title">' + esc(perhatian.length ? perhatian.length + " hal perlu perhatian" : "Semua sistem normal") + "</div>" +
+      '<div class="sys-strip-sub">' + stripSub + "</div></div>";
+    // Kartu per model AI.
+    const modelCards = (d.model || []).map(function(mo) {
       const kelas = mo.status === "sehat" ? "ok" : mo.status === "error" ? "err" :
         mo.status === "lambat" ? "warn" : "grey";
       const label = mo.status === "sehat" ? "Sehat" : mo.status === "error" ? "Error" :
         mo.status === "lambat" ? "Lambat" : "Belum ada data";
-      return '<div class="list-row"><div class="lr-main"><b>' + esc(mo.label) + "</b>" +
-        '<div class="muted tiny">' + esc(mo.provider) + " · berhasil " + (mo.ok || 0) +
-        "x · gagal " + (mo.gagal || 0) + "x · tercatat permanen</div>" +
-        (mo.galat_terakhir ?
-          '<div class="muted tiny">Gagal terakhir: ' + esc(labelGalat(mo.galat_terakhir)) +
-          (mo.galat_waktu ? " · " + esc(fmtWita(mo.galat_waktu)) : "") + "</div>" : "") +
+      return '<div class="sys-card"><div class="sys-card-head"><div><div class="sys-card-title">' +
+        esc(mo.label) + '</div><div class="sys-sub">' + esc(mo.provider) + "</div></div>" +
+        admPill(label, kelas) + "</div>" +
+        '<div class="sys-metrics">' +
+        metrik(mo.ok || 0, "Berhasil") +
+        metrik(mo.gagal || 0, "Gagal") +
         "</div>" +
-        admPill(label, kelas) + "</div>";
+        (mo.galat_terakhir ?
+          '<div class="sys-gal">Gagal terakhir: ' + esc(labelGalat(mo.galat_terakhir)) +
+          (mo.galat_waktu ? " · " + esc(fmtWita(mo.galat_waktu)) : "") + "</div>" : "") +
+        "</div>";
     }).join("");
-    box.innerHTML =
-      "<h4>Kesehatan Sistem</h4>" +
-      '<div class="list-row"><div class="lr-main"><b>Server</b>' +
-      '<div class="muted tiny">Terakhir dicek ' + esc(fmtWita(s.waktu)) + "</div></div>" +
-      // FIX 2026-11-08 (audit putaran 2): pill membaca field status
-      // SEBENARNYA dari respons server, bukan hardcoded sehat.
-      (s.status === "normal" ? admPill("Berjalan normal", "ok")
-        : admPill("Perlu dicek: " + (s.status || "tidak diketahui"), "warn")) + "</div>" +
-      '<div class="list-row"><div class="lr-main"><b>Basis Data</b>' +
-      '<div class="muted tiny">' + (s.basis_data === "postgres" ? "Terhubung ke Postgres (Neon)" : "Mode file lokal") + "</div></div>" +
-      (s.basis_data === "postgres" ? admPill("Terhubung", "ok")
-        : admPill("Mode file", "warn")) + "</div>" +
-      "<h4>Model AI yang Dirotasi</h4>" +
-      (modelRows || '<p class="muted">Belum ada data model.</p>') +
-      "<h4>Sumber Daya</h4>" +
-      '<div class="list-row"><div class="lr-main"><b>Jam dan bandwidth Render</b>' +
-      "<div>" + renderDetail + "</div></div>" +
-      renderPill + "</div>" +
-      '<div class="list-row"><div class="lr-main"><b>Kredit Cerebras</b>' +
-      "<div>" + cerebrasDetail + "</div></div>" +
-      cerebrasPill + "</div>" +
-      '<div style="margin:10px 0 4px"><label for="admCbSaldo">Saldo acuan Cerebras (USD)</label>' +
-      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">' +
+    // Kartu Render.
+    let renderPill = admPill("Belum terhubung", "warn");
+    let renderBody = "";
+    if (rd.terhubung) {
+      renderPill = admPill("Terhubung", "ok");
+      const ket = [];
+      const pm = fmtWita(rd.periode_mulai), ps = fmtWita(rd.periode_selesai);
+      if (pm && ps) ket.push("Periode data " + pm + " s.d. " + ps);
+      const dp = fmtWita(rd.diperbarui);
+      if (dp) ket.push("Diperbarui " + dp);
+      if (rd.catatan) ket.push(rd.catatan);
+      renderBody = '<div class="sys-metrics">' +
+        metrik(fmtAngka(rd.bandwidth_gb) + " GB", "Bandwidth bulan ini") +
+        metrik("±" + fmtAngka(rd.jam_instance_perkiraan) + " jam", "Jam instance") +
+        "</div>" +
+        ket.map(function(k) { return foot(k); }).join("");
+    } else if (rd.catatan) {
+      renderBody = foot(rd.catatan);
+    }
+    // Kartu Cerebras + formulir saldo acuan (tetap di dalam kartunya).
+    let cerebrasPill = admPill("Belum terbaca", "warn");
+    let cerebrasBody = "";
+    if (cb.tercatat) {
+      cerebrasPill = admPill("Tercatat", "ok");
+      const hi = cb.hari_ini || {}, bi = cb.bulan_ini || {};
+      const ketCb = [];
+      ketCb.push("Bulan ini " + (bi.panggilan || 0) + " panggilan · " + fmtAngka(bi.token) + " token tercatat oleh situs");
+      if (cb.acuan) {
+        ketCb.push("Saldo acuan " + fmtUsd(cb.acuan.saldo_usd) + " per " + fmtWita(cb.acuan.waktu) +
+          " · perkiraan terpakai sejak acuan " + fmtUsd(cb.perkiraan_biaya_sejak_acuan_usd));
+      }
+      if (cb.catatan) ketCb.push(cb.catatan);
+      cerebrasBody = '<div class="sys-metrics">' +
+        metrik(fmtAngka(hi.panggilan), "Panggilan hari ini") +
+        metrik(fmtAngka(hi.token), "Token hari ini") +
+        (cb.acuan ? metrik(fmtUsd(cb.perkiraan_sisa_usd), "Perkiraan sisa") : "") +
+        "</div>" +
+        ketCb.map(function(k) { return foot(k); }).join("");
+    } else if (cb.catatan) {
+      cerebrasBody = foot(cb.catatan);
+    }
+    const cerebrasForm =
+      '<div class="sys-form"><label for="admCbSaldo">Saldo acuan Cerebras (USD)</label>' +
+      '<div class="sys-form-row">' +
       '<input type="number" id="admCbSaldo" min="0" step="0.01" inputmode="decimal" placeholder="contoh: 245.00" style="flex:1;min-width:140px">' +
       '<button class="btn btn-primary" id="admCbSimpan" type="button">Simpan Saldo Acuan</button></div>' +
-      '<p class="muted tiny" style="margin-top:6px">Lihat saldo terbaru di konsol Cerebras, lalu isi di sini. Total pemakaian tercatat saat disimpan menjadi titik nol perkiraan sisa.</p></div>' +
-      '<div class="list-row"><div class="lr-main"><b>OpenRouter</b>' +
-      "<div>" + orDetail + "</div></div>" +
-      orPill + "</div>" +
-      '<div class="list-row"><div class="lr-main"><b>Mesin Pencarian Mendalam</b>' +
-      "<div>" + mdDetail + "</div></div>" +
-      mdPill + "</div>" +
-      "<h4>Antrean Pekerjaan</h4>" +
+      '<p class="muted tiny" style="margin-top:6px">Lihat saldo terbaru di konsol Cerebras, lalu isi di sini. Total pemakaian tercatat saat disimpan menjadi titik nol perkiraan sisa.</p></div>';
+    // Kartu OpenRouter.
+    let orPill = admPill("Belum terhubung", "warn");
+    let orBody = "";
+    if (orr.terhubung) {
+      orPill = admPill("Terhubung", "ok");
+      const kh = orr.kuota_harian || null;
+      if (kh) {
+        const persenKuota = kh.batas ? Math.min(100, Math.round((kh.terpakai || 0) / kh.batas * 100)) : 0;
+        orBody += '<div class="sys-bar-block"><div class="sys-bar-label"><span>Kuota model gratis hari ini</span><span><b>' +
+          fmtAngka(kh.terpakai) + " dari " + fmtAngka(kh.batas) + " request</b> · sisa " + fmtAngka(kh.sisa) + "</span></div>" +
+          '<span class="track"><span class="fill" style="width:' + persenKuota + '%"></span></span>' +
+          foot("Kuota dihitung per hari UTC dan reset tengah malam UTC, pukul 08.00 WITA") + "</div>";
+      }
+      orBody += '<div class="sys-metrics">' +
+        metrik(fmtUsd(orr.usage_harian_usd), "Pemakaian hari ini") +
+        metrik(fmtUsd(orr.usage_mingguan_usd), "Pemakaian minggu ini") +
+        metrik(fmtUsd(orr.usage_bulanan_usd), "Pemakaian bulan ini") +
+        metrik(fmtUsd(orr.usage_total_usd), "Pemakaian total") +
+        "</div>";
+      const ketOr = [];
+      if (orr.tanpa_batas) ketOr.push("Batas belanja kunci: tanpa batas");
+      else ketOr.push("Batas belanja kunci " + fmtUsd(orr.limit_usd) + " · sisa " + fmtUsd(orr.limit_sisa_usd));
+      ketOr.push("Status tier: " + (orr.tier_gratis ? "gratis, belum pernah membeli kredit" : "berbayar, pernah membeli kredit"));
+      const sa = orr.saldo_akun || {};
+      if (sa.tersedia) {
+        ketOr.push("Saldo akun: total kredit " + fmtUsd(sa.total_kredit_usd) + " · terpakai " + fmtUsd(sa.total_terpakai_usd) + " · sisa " + fmtUsd(sa.sisa_usd));
+      } else if (sa.catatan) {
+        ketOr.push(sa.catatan);
+      }
+      const dpOr = fmtWita(orr.diperbarui);
+      if (dpOr) ketOr.push("Diperbarui " + dpOr);
+      if (orr.catatan) ketOr.push(orr.catatan);
+      orBody += ketOr.map(function(k) { return foot(k); }).join("");
+    } else if (orr.catatan) {
+      orBody = foot(orr.catatan);
+    }
+    // Kartu Mesin Pencarian Mendalam.
+    let mdPill = admPill("Belum terbaca", "warn");
+    let mdBody = "";
+    if (md.aktif) {
+      mdPill = md.kunci_terpasang ? admPill("Kunci terpasang", "ok")
+        : admPill("Kunci belum terpasang", "warn");
+      const emb = md.ember || {};
+      function emberBlok(nama, label) {
+        const e = emb[nama] || {};
+        const persen = Math.min(100, Math.max(0, e.persen_bulanan || 0));
+        const warnKelas = persen >= 70 ? " fill-warn" : "";
+        return '<div class="sys-bar-block"><div class="sys-bar-label"><span>' + label + "</span><span>Bulan ini <b>" +
+          fmtUsd(e.belanja_bulan_ini_usd) + "</b> dari " + fmtUsd(e.cap_bulanan_usd) + " (" + (e.persen_bulanan || 0) + "%)</span></div>" +
+          '<span class="track"><span class="fill' + warnKelas + '" style="width:' + persen + '%"></span></span>' +
+          foot("Hari ini " + fmtUsd(e.belanja_hari_ini_usd) + " dari " + fmtUsd(e.cap_harian_usd)) + "</div>";
+      }
+      mdBody += foot("Status kunci: " + (md.kunci_terpasang ? "terpasang" : "belum terpasang") +
+        " · " + ((md.kunci || {}).jumlah || 0) + " kunci, aktif kunci " + String(((md.kunci || {}).aktif === null || (md.kunci || {}).aktif === undefined) ? "-" : (md.kunci || {}).aktif));
+      mdBody += emberBlok("gratis", "Ember gratis") + emberBlok("berbayar", "Ember berbayar");
+      const peringatan = (md.peringatan_ember || []).map(function(n) {
+        return n === "gratis" ? "ember gratis" : "ember berbayar";
+      });
+      if (peringatan.length) {
+        mdBody += foot("Peringatan: belanja bulanan " + peringatan.join(" dan ") + " sudah mencapai 70% plafonnya.", "warn");
+      }
+      const daftarKunci = ((md.kunci || {}).daftar || []).map(function(kk) {
+        return '<div class="sys-key-row"><span>Kunci ' + kk.nomor + (kk.aktif ? " (aktif)" : "") + (kk.habis ? " · habis" : "") + "</span><span>Perkiraan sisa <b>" +
+          fmtUsd(kk.perkiraan_sisa_usd) + "</b> · terpakai " + fmtUsd(kk.belanja_usd) + " dari " + fmtUsd(kk.saldo_awal_usd) + "</span></div>";
+      }).join("");
+      if (daftarKunci) mdBody += '<div class="sys-keys">' + daftarKunci + "</div>";
+      const j = md.job_hari_ini || {};
+      const jSelesai = function(m) { return (j[m] || {}).selesai || 0; };
+      const lap = j.laporan || {};
+      mdBody += '<div class="sys-metrics">' +
+        metrik(jSelesai("cari"), "Cari Jurnal hari ini") +
+        metrik(jSelesai("cepat"), "Jawaban Cepat hari ini") +
+        metrik(jSelesai("bedah"), "Bedah Mendalam hari ini") +
+        metrik(lap.selesai || 0, "Laporan Riset selesai") +
+        metrik(lap.gagal || 0, "Laporan Riset gagal") +
+        "</div>";
+      mdBody += '<div class="sys-metrics">' +
+        metrik(fmtUsd(md.total_belanja_usd), "Total belanja") +
+        metrik(fmtUsd(md.perkiraan_sisa_kredit_usd), "Perkiraan sisa semua kunci") +
+        "</div>";
+      mdBody += foot("Perkiraan sisa dihitung dari saldo awal tiap kunci dikurangi belanja yang tercatat situs pada kunci itu sejak fitur berjalan.");
+    } else if (md.catatan) {
+      mdBody = foot(md.catatan);
+    }
+    // Kartu antrean.
+    function kartuAntre(nama, j) {
+      j = j || {};
+      const aktif = (j.jalan || 0) + (j.antre || 0);
+      let t = '<div class="sys-card"><div class="sys-card-title">' + esc(nama) + "</div>" +
+        '<div class="sys-metrics">' + metrik(aktif, "Pekerjaan aktif") + "</div>" +
+        foot("Jalan " + (j.jalan || 0) + " · Antre " + (j.antre || 0) +
+          " · Selesai " + (j.selesai || 0) + " · Gagal " + (j.gagal || 0));
+      if (j.terakhir) {
+        t += foot("Hari ini selesai " + (j.selesai_hari_ini || 0) +
+          " · gagal " + (j.gagal_hari_ini || 0) + " · aktivitas terakhir " +
+          fmtWita(j.terakhir), (j.gagal_hari_ini || 0) > 0 ? "warn" : "");
+      }
+      return t + "</div>";
+    }
+    box.innerHTML =
+      stripHtml +
+      "<h4>Model AI</h4>" +
+      (modelCards ? '<div class="sys-grid">' + modelCards + "</div>" : '<p class="muted">Belum ada data model.</p>') +
+      '<p class="muted tiny">Angka berhasil dan gagal tercatat permanen.</p>' +
+      "<h4>Sumber Daya</h4>" +
+      '<div class="sys-stack">' +
+      '<div class="sys-card"><div class="sys-card-head"><div class="sys-card-title">Jam dan bandwidth Render</div>' + renderPill + "</div>" + renderBody + "</div>" +
+      '<div class="sys-card"><div class="sys-card-head"><div class="sys-card-title">Kredit Cerebras</div>' + cerebrasPill + "</div>" + cerebrasBody + cerebrasForm + "</div>" +
+      '<div class="sys-card"><div class="sys-card-head"><div class="sys-card-title">OpenRouter</div>' + orPill + "</div>" + orBody + "</div>" +
+      '<div class="sys-card"><div class="sys-card-head"><div class="sys-card-title">Mesin Pencarian Mendalam</div>' + mdPill + "</div>" + mdBody + "</div>" +
+      "</div>" +
+      "<h4>Antrean</h4>" +
       '<p class="muted tiny">Yang jalan dan antre adalah kondisi saat panel dibuka; selesai dan gagal tercatat permanen di basis data.</p>' +
-      barisAntre("AI Studio dan Tanya AI", an.ai) +
-      barisAntre("Sitasi dari PDF", an.sitasi) +
-      barisAntre("Convert File", an.convert) +
-      "<h4>Pengaturan Kuota</h4>" +
-      '<p class="muted">Jatah tamu: <b>' + esc(String((d.kuota || {}).tamu_per_hari || 5)) +
-      'x per hari</b> untuk semua fitur. Jatah AI member: <b>' +
-      esc(String((d.kuota || {}).member_ai_per_hari || 15)) +
-      "x per hari</b>, reset pukul 00.00 WITA. Angka ini ketetapan sistem saat ini.</p>";
+      '<div class="sys-grid">' +
+      kartuAntre("AI Studio dan Tanya AI", an.ai) +
+      kartuAntre("Sitasi dari PDF", an.sitasi) +
+      kartuAntre("Convert File", an.convert) +
+      "</div>" +
+      "<h4>Kuota</h4>" +
+      '<div class="admin-grid">' +
+      admKartu((d.kuota || {}).tamu_per_hari || 5, "Jatah tamu per hari", "") +
+      admKartu((d.kuota || {}).member_ai_per_hari || 15, "Jatah AI member per hari", "") +
+      "</div>" +
+      '<p class="muted tiny">Jatah tamu berlaku untuk semua fitur. Reset pukul 00.00 WITA. Angka ini ketetapan sistem saat ini.</p>';
     const btnCb = $("#admCbSimpan");
     if (btnCb) btnCb.addEventListener("click", async function() {
       const inp = $("#admCbSaldo");

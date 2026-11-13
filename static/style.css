@@ -1297,3 +1297,45 @@ input:not([type]){ width:100%; padding:11px 12px; border-radius:12px; font-size:
 .mdl-fu-item .q{font-weight:800;color:var(--mteal)}
 @media (max-width:700px){.mdl-need-grid{grid-template-columns:1fr}.mdl-compare table,.mdl-compare thead,.mdl-compare tbody,.mdl-compare tr,.mdl-compare td{display:block}.mdl-compare thead{display:none}.mdl-compare td.rowhead{white-space:normal}}
 @media (max-width:620px){.mdl-mode-grid,.mdl-pv-inc,.mdl-legend-grid,.mdl-cap-grid,.mdl-fgrid{grid-template-columns:1fr}.mdl-wrap{padding:16px 12px 24px}.mdl-actionbar .lab{min-width:0;width:100%}}
+
+/* ---------- Redesign tab Sistem (2026-11-13): kartu + metrik, tanpa baris koran ---------- */
+#admSistem h4{
+  font-size:12px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);
+  margin:24px 0 10px;font-weight:700;
+}
+#admSistem h4:first-child{margin-top:6px}
+.sys-strip{
+  border:1px solid var(--line);border-left:3px solid var(--ok);
+  border-radius:12px;padding:12px 14px;background:rgba(238,247,249,.03);
+}
+.sys-strip.warn{border-left-color:#f5c26b}
+.sys-strip-title{font-size:15px;font-weight:700}
+.sys-strip-sub{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.6}
+.sys-grid{display:grid;gap:10px;grid-template-columns:1fr}
+@media (min-width:641px){.sys-grid{grid-template-columns:repeat(2,1fr)}}
+.sys-stack{display:grid;gap:10px}
+.sys-card{background:rgba(238,247,249,.03);border:1px solid var(--line);border-radius:12px;padding:12px}
+.sys-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.sys-card-title{font-weight:700;font-size:14.5px}
+.sys-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.sys-metrics{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:10px}
+.sys-metric{min-width:0}
+.sys-metric b{display:block;font-size:19px;line-height:1.2;color:var(--teal-bright);overflow-wrap:anywhere}
+.sys-metric span{font-size:11.5px;color:var(--muted)}
+.sys-foot{font-size:12.5px;color:var(--muted);margin-top:10px;line-height:1.6}
+.sys-foot.warn{color:#f5c26b}
+.sys-gal{font-size:12.5px;color:#f5c26b;margin-top:8px;line-height:1.5}
+.sys-bar-block{margin-top:12px}
+.sys-bar-label{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-bottom:6px}
+.sys-bar-label span:first-child{font-weight:600}
+.sys-bar-label span:last-child{color:var(--muted)}
+.sys-bar-label b{color:var(--ink)}
+.track .fill.fill-warn{background:linear-gradient(90deg,#d99a2b,#f5c26b)}
+.sys-keys{margin-top:4px}
+.sys-key-row{display:flex;justify-content:space-between;align-items:baseline;gap:4px 12px;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+.sys-keys .sys-key-row:last-child{border-bottom:none}
+.sys-key-row span:last-child{color:var(--muted)}
+.sys-key-row b{color:var(--ink)}
+.sys-form{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px}
+.sys-form label{font-size:12.5px;font-weight:600}
+.sys-form-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
