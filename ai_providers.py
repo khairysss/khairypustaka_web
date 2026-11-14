@@ -394,23 +394,17 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
             if is_openrouter:
                 payload["provider"] = {
                     "max_price": {"prompt": 0, "completion": 0}}
-                # Nemotron 3 adalah model hybrid reasoning: tanpa batas
-                # effort, model bisa menghabiskan seluruh jatah
-                # max_tokens untuk berpikir internal lalu mengembalikan
-                # isi kosong (kasus "Respons kosong" Nov 2026).
-                # effort "low" memangkas berpikirnya; OpenRouter
-                # mengabaikan parameter ini untuk model non-reasoning.
-                payload["reasoning"] = {"effort": "low"}
-                # Jatah output OpenRouter dinaikkan: token berpikir ikut
-                # memakan max_tokens (bukti publik: 1 kalimat jawaban
-                # Lightning menelan 750 token, 708 di antaranya berpikir;
-                # contoh NVIDIA sendiri memakai max_tokens=16000). Jatah
-                # 2000 membuat berpikir menghabiskan anggaran sebelum
-                # jawaban terlihat -> isi kosong. Model :free + jaring
-                # max_price 0/0, jadi tidak ada biaya; jawaban tetap
-                # dibatasi instruksi prompt. Batas waktu 30 dtk tetap
-                # menjadi penahan bila provider lambat.
-                payload["max_tokens"] = max(int(max_tokens), 8000)
+                # Nemotron 3 adalah model hybrid reasoning: token berpikir
+                # ikut memakan max_tokens (bukti publik: 1 kalimat jawaban
+                # Lightning menelan 750 token, 708 di antaranya berpikir),
+                # sehingga jatah 2000 habis sebelum jawaban terlihat ->
+                # isi kosong. reasoning effort low + max_tokens 8000
+                # sudah dicoba 15 Nov dan Lightning/Nano tetap gantung;
+                # matikan berpikirnya sekalian (kontrol resmi OpenRouter
+                # yang didukung ketiga model ini). Bila provider
+                # mengabaikannya, perilaku kembali ke baseline (gagal
+                # cepat, fallback jalan), bukan gantung.
+                payload["reasoning"] = {"enabled": False}
             async with httpx.AsyncClient(timeout=30) as cli:
                 r = await cli.post(
                     base + "/chat/completions",
