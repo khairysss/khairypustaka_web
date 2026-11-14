@@ -5106,6 +5106,10 @@ function labelGalat(k) {
   if (k === "timeout") return "Timeout";
   if (k === "jaringan") return "Galat jaringan";
   if (k === "tanpa_teks") return "Respons kosong";
+  if (k === "tanpa_teks_length") return "Respons kosong, token habis";
+  if (k === "tanpa_teks_filter") return "Respons kosong, filter konten";
+  if (k === "tanpa_teks_error") return "Respons kosong, galat provider";
+  if (k === "tanpa_teks_reasoning") return "Respons kosong, hanya penalaran";
   if (k === "kunci_kosong") return "Kunci API kosong";
   if (k === "galat_lain") return "Galat lain";
   if (k.indexOf("galat_") === 0) return "Galat " + k.slice(6);

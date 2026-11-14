@@ -179,6 +179,53 @@ def _kategori_galat_http(e):
     return "galat_lain"
 
 
+def _kategori_tanpa_teks(data):
+    """Kategori spesifik untuk respons 200 yang isinya kosong.
+
+    Fungsi murni (tanpa efek samping) supaya mudah diuji. Hanya membaca
+    bentuk respons (finish_reason, field error, ada/tidaknya reasoning),
+    TIDAK pernah membaca isi prompt atau isi respons.
+    """
+    if not isinstance(data, dict):
+        return "tanpa_teks"
+    if data.get("error"):
+        return "tanpa_teks_error"
+    choices = data.get("choices") or [{}]
+    choice = choices[0] if isinstance(choices, list) and choices else {}
+    if not isinstance(choice, dict):
+        return "tanpa_teks"
+    finish = choice.get("finish_reason")
+    if finish == "length":
+        return "tanpa_teks_length"
+    if finish == "content_filter":
+        return "tanpa_teks_filter"
+    msg = choice.get("message") or {}
+    if isinstance(msg, dict) and str(msg.get("reasoning") or "").strip():
+        return "tanpa_teks_reasoning"
+    return "tanpa_teks"
+
+
+def _log_tanpa_teks(model, data, kategori):
+    """Satu baris log diagnostik untuk respons kosong.
+
+    Hanya bentuk respons: finish_reason, ada/tidaknya field error dan
+    reasoning, dan jumlah token. TIDAK pernah prompt atau isi respons.
+    """
+    try:
+        choice = ((data or {}).get("choices") or [{}])[0] or {}
+        msg = choice.get("message") or {}
+        usage = (data or {}).get("usage") or {}
+        log.info("AI %s tanpa teks (%s): finish=%s error=%s reasoning=%s "
+                 "tokens=%s/%s",
+                 model, kategori, choice.get("finish_reason"),
+                 bool((data or {}).get("error")),
+                 bool(str(msg.get("reasoning") or "").strip()),
+                 usage.get("prompt_tokens"),
+                 usage.get("completion_tokens"))
+    except Exception:
+        pass
+
+
 def status_model():
     """Ringkasan status per model registry untuk panel admin.
 
@@ -347,6 +394,13 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
             if is_openrouter:
                 payload["provider"] = {
                     "max_price": {"prompt": 0, "completion": 0}}
+                # Nemotron 3 adalah model hybrid reasoning: tanpa batas
+                # effort, model bisa menghabiskan seluruh jatah
+                # max_tokens untuk berpikir internal lalu mengembalikan
+                # isi kosong (kasus "Respons kosong" Nov 2026).
+                # effort "low" memangkas berpikirnya; OpenRouter
+                # mengabaikan parameter ini untuk model non-reasoning.
+                payload["reasoning"] = {"effort": "low"}
             async with httpx.AsyncClient(timeout=30) as cli:
                 r = await cli.post(
                     base + "/chat/completions",
@@ -400,9 +454,17 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
                                 model, cost)
             text = (((data.get("choices") or [{}])[0].get("message") or {})
                     .get("content") or "").strip()
+            galat = None
+            if not text:
+                # Respons 200 tapi isi kosong (kasus Nemotron Nov 2026):
+                # bedakan penyebabnya dari finish_reason / field error /
+                # reasoning supaya panel admin menampilkan diagnosis
+                # yang spesifik, bukan sekadar "Respons kosong".
+                galat = _kategori_tanpa_teks(data)
+                _log_tanpa_teks(model, data, galat)
             catat_status_model(model, bool(text),
                                lambat=(time.monotonic() - _t0) > 20,
-                               galat=None if text else "tanpa_teks")
+                               galat=galat)
             return text or None
         except RuntimeError:
             raise
