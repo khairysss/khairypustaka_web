@@ -401,6 +401,16 @@ async def _openai_chat(base, key, model, prompt, max_tokens=2000):
                 # effort "low" memangkas berpikirnya; OpenRouter
                 # mengabaikan parameter ini untuk model non-reasoning.
                 payload["reasoning"] = {"effort": "low"}
+                # Jatah output OpenRouter dinaikkan: token berpikir ikut
+                # memakan max_tokens (bukti publik: 1 kalimat jawaban
+                # Lightning menelan 750 token, 708 di antaranya berpikir;
+                # contoh NVIDIA sendiri memakai max_tokens=16000). Jatah
+                # 2000 membuat berpikir menghabiskan anggaran sebelum
+                # jawaban terlihat -> isi kosong. Model :free + jaring
+                # max_price 0/0, jadi tidak ada biaya; jawaban tetap
+                # dibatasi instruksi prompt. Batas waktu 30 dtk tetap
+                # menjadi penahan bila provider lambat.
+                payload["max_tokens"] = max(int(max_tokens), 8000)
             async with httpx.AsyncClient(timeout=30) as cli:
                 r = await cli.post(
                     base + "/chat/completions",
