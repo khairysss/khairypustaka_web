@@ -1425,6 +1425,7 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:100svh}
 .fak-tombol .fak-kosong{color:var(--muted)}
 .fak-panah{opacity:.7;flex:none}
 .fak-panel{position:fixed;z-index:300;background:#0d2438;border:1px solid var(--gborder);border-radius:14px;box-shadow:0 18px 44px rgba(0,0,0,.5);overflow:hidden}
+.fak-cari-label{padding:10px 12px 2px;font-size:.82rem;font-weight:700;color:var(--muted)}
 input.fak-cari{width:100%;padding:11px 12px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:rgba(6,18,32,.7);font-size:.95rem;color:var(--ink)}
 .fak-daftar{max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .fak-opsi{padding:11px 12px;cursor:pointer;font-size:.95rem;color:var(--ink)}

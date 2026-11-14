@@ -270,7 +270,7 @@ function pasangPilihFakultas(idSel) {
     panel.setAttribute("role", "listbox");
     // panel menempel di body (bukan di dalam modal/kartu) supaya tidak
     // terpotong overflow + backdrop-filter leluhurnya
-    panel.innerHTML = '<input type="text" class="fak-cari" placeholder="cari fakultas..." autocomplete="off" autocapitalize="off" aria-label="Cari fakultas"><div class="fak-daftar"></div>';
+    panel.innerHTML = '<div class="fak-cari-label">🔍 Cari fakultas</div><input type="text" class="fak-cari" placeholder="cari fakultas..." autocomplete="off" autocapitalize="off" aria-label="Cari fakultas"><div class="fak-daftar"></div>';
     document.body.appendChild(panel);
     const r = btn.getBoundingClientRect();
     const ruangBawah = window.innerHeight - r.bottom,
@@ -280,10 +280,10 @@ function pasangPilihFakultas(idSel) {
     const daftar = panel.querySelector(".fak-daftar");
     if (ruangBawah < 220 && ruangAtas > ruangBawah) {
       panel.style.bottom = (window.innerHeight - r.top + 6) + "px";
-      daftar.style.maxHeight = Math.max(120, ruangAtas - 60) + "px";
+      daftar.style.maxHeight = Math.max(120, ruangAtas - 100) + "px";
     } else {
       panel.style.top = (r.bottom + 6) + "px";
-      daftar.style.maxHeight = Math.max(120, Math.min(240, ruangBawah - 60)) + "px";
+      daftar.style.maxHeight = Math.max(120, Math.min(240, ruangBawah - 100)) + "px";
     }
     tampilDaftar("");
     const cari = panel.querySelector(".fak-cari");
