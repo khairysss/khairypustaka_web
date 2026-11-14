@@ -1435,3 +1435,12 @@ input.fak-cari:focus{outline:none;border-color:var(--teal)}
 .fak-opsi.terpilih{font-weight:700;color:#a5f3f5}
 .fak-opsi.fak-lainnya{border-top:1px solid var(--line)}
 .fak-kosong-hasil{padding:11px 12px;font-size:.9rem;color:var(--muted)}
+
+/* Varian A (2026-11-14): hero tanpa maskot, subjudul rata kiri penuh di desktop */
+.hero p.hero-sub{margin-left:0;margin-right:0}
+
+/* Filter 2 baris di HP (2026-11-14): semua chip langsung kelihatan, tanpa geser */
+@media (max-width:560px){
+  .filter-row{ flex-wrap:wrap; overflow-x:visible; }
+  .filter-chip{ flex:1 1 calc(33.333% - 6px); display:inline-flex; align-items:center; justify-content:center; text-align:center; padding-left:8px; padding-right:8px; }
+}

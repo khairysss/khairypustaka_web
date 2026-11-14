@@ -1332,7 +1332,6 @@ function pageBeranda() {
           '<a class="btn btn-ghost btn-hero" href="/panduan">Lihat Panduan</a>' +
         "</div>" +
       "</div>" +
-      '<div class="hero-mascot"><img src="/maskot.jpg" alt="Maskot KhairyPustaka"></div>' +
     "</section>" +
     '<section class="fakta-strip" aria-label="Fakta KhairyPustaka">' +
       '<div class="fakta"><b>24</b><span>Alat</span></div>' +
