@@ -168,22 +168,135 @@ function aiHarian() { return 15; }
 function tamuHarian() { return 5; }
 
 /* ---------- Profil akademik: fakultas + jurusan (keputusan Sul
-   2026-11-14) ---------- */
-const FAKULTAS_PILIHAN = ["Kedokteran", "Kedokteran Gigi",
-  "Kesehatan Masyarakat", "Keperawatan", "Farmasi", "Hukum",
-  "Ekonomi dan Bisnis", "Ilmu Sosial dan Ilmu Politik", "Ilmu Budaya",
-  "Keguruan dan Ilmu Pendidikan", "Teknik",
-  "Matematika dan Ilmu Pengetahuan Alam", "Pertanian", "Psikologi",
-  "Ilmu Komputer", "Seni dan Desain", "Lainnya"];
+   2026-11-14; daftar fakultas LENGKAP se-Indonesia + kolom cari,
+   perintah Sul 2026-11-14 09:02) ---------- */
+/* Daftar alfabetis; "Lainnya" selalu terakhir dan selalu tampil walau
+   hasil cari kosong, supaya fakultas yang belum terdaftar tetap bisa
+   ditulis manual. */
+const FAKULTAS_PILIHAN = ["Adab dan Humaniora", "Agama Islam",
+  "Bahasa dan Seni", "Biologi", "Bisnis dan Manajemen",
+  "Dakwah dan Komunikasi", "Ekonomi", "Ekonomi dan Bisnis",
+  "Ekonomi dan Bisnis Islam", "Ekonomi dan Manajemen", "Farmasi",
+  "Filsafat", "Geografi", "Hukum", "Ilmu Administrasi",
+  "Ilmu Agama Islam", "Ilmu Budaya", "Ilmu dan Teknologi Hayati",
+  "Ilmu dan Teknologi Kebumian", "Ilmu Kelautan dan Perikanan",
+  "Ilmu Keolahragaan", "Ilmu Keperawatan", "Ilmu Kesehatan",
+  "Ilmu Komputer", "Ilmu Komunikasi", "Ilmu Lingkungan",
+  "Ilmu Pendidikan", "Ilmu Pengetahuan Budaya", "Ilmu Sosial",
+  "Ilmu Sosial dan Ilmu Politik", "Ilmu Tarbiyah dan Keguruan",
+  "Kedokteran", "Kedokteran dan Ilmu Kesehatan", "Kedokteran Gigi",
+  "Kedokteran Hewan", "Keguruan dan Ilmu Pendidikan", "Kehutanan",
+  "Kehutanan dan Lingkungan", "Keperawatan", "Kesehatan Masyarakat",
+  "Matematika dan Ilmu Pengetahuan Alam", "Pariwisata", "Pascasarjana",
+  "Perikanan dan Ilmu Kelautan", "Pertanian", "Peternakan", "Psikologi",
+  "Sains dan Matematika", "Sains dan Teknologi", "Seni dan Desain",
+  "Seni Pertunjukan", "Seni Rupa", "Seni Rupa dan Desain", "Syariah",
+  "Tarbiyah dan Keguruan", "Teknik", "Teknik Mesin dan Dirgantara",
+  "Teknik Pertambangan dan Perminyakan", "Teknik Sipil dan Lingkungan",
+  "Teknologi Industri", "Teknologi Informasi", "Teknologi Pertanian",
+  "Teologi", "Ushuluddin", "Vokasi", "Lainnya"];
+/* Pemilih fakultas kustom dengan kolom cari (pengganti <select> bawaan
+   yang tidak bisa dicari): nilai disimpan di input hidden ber-id idSel
+   supaya ikatFakultasLainnya/bacaFakultas tetap jalan tanpa diubah. */
 function fakultasSelectHTML(idSel, nilai) {
   const terpilih = FAKULTAS_PILIHAN.indexOf(nilai) >= 0 ? nilai
     : (nilai ? "Lainnya" : "");
-  let opts = '<option value="">Pilih fakultas</option>';
-  FAKULTAS_PILIHAN.forEach(function(f) {
-    opts += '<option value="' + esc(f) + '"' +
-      (terpilih === f ? " selected" : "") + ">" + esc(f) + "</option>";
-  });
-  return '<select id="' + idSel + '" aria-label="Fakultas">' + opts + "</select>";
+  return '<div class="fak-wrap">' +
+    '<input type="hidden" id="' + idSel + '" value="' + esc(terpilih) + '">' +
+    '<button type="button" class="fak-tombol" id="' + idSel + 'Btn" aria-haspopup="listbox" aria-expanded="false">' +
+    '<span id="' + idSel + 'Label" class="' + (terpilih ? "" : "fak-kosong") + '">' +
+    esc(terpilih || "Pilih fakultas") + "</span>" +
+    '<span class="fak-panah">▾</span></button></div>';
+}
+function pasangPilihFakultas(idSel) {
+  const btn = document.getElementById(idSel + "Btn"),
+        nilaiEl = document.getElementById(idSel),
+        labelEl = document.getElementById(idSel + "Label");
+  if (!btn || !nilaiEl || !labelEl) return;
+  let panel = null;
+  function tutup() {
+    if (panel) { panel.remove(); panel = null; }
+    btn.setAttribute("aria-expanded", "false");
+    document.removeEventListener("mousedown", klikLuar, true);
+    document.removeEventListener("touchstart", klikLuar, true);
+    document.removeEventListener("keydown", tekanTombol);
+    window.removeEventListener("resize", tutup);
+    window.removeEventListener("scroll", gulir, true);
+  }
+  function klikLuar(e) {
+    if (panel && !panel.contains(e.target) && !btn.contains(e.target)) tutup();
+  }
+  function tekanTombol(e) {
+    if (e.key === "Escape") { tutup(); btn.focus(); }
+  }
+  function gulir(e) {
+    // gulir di dalam daftar opsi sendiri jangan menutup panel
+    if (panel && e.target !== document && panel.contains(e.target)) return;
+    tutup();
+  }
+  function pilih(nama) {
+    nilaiEl.value = nama;
+    labelEl.textContent = nama;
+    labelEl.classList.remove("fak-kosong");
+    nilaiEl.dispatchEvent(new Event("change", { bubbles: true }));
+    tutup();
+  }
+  function tampilDaftar(kata) {
+    const q = (kata || "").trim().toLowerCase();
+    const daftar = panel.querySelector(".fak-daftar");
+    const cocok = FAKULTAS_PILIHAN.filter(function(f) {
+      return f !== "Lainnya" && (!q || f.toLowerCase().indexOf(q) >= 0);
+    });
+    let html = "";
+    cocok.forEach(function(f) {
+      html += '<div class="fak-opsi' + (nilaiEl.value === f ? " terpilih" : "") +
+        '" role="option" aria-selected="' + (nilaiEl.value === f) +
+        '" data-nama="' + esc(f) + '">' + esc(f) + "</div>";
+    });
+    if (!cocok.length) {
+      html += '<div class="fak-kosong-hasil">tidak ada yang cocok, pilih Lainnya lalu tulis sendiri</div>';
+    }
+    html += '<div class="fak-opsi fak-lainnya' + (nilaiEl.value === "Lainnya" ? " terpilih" : "") +
+      '" role="option" data-nama="Lainnya">Lainnya</div>';
+    daftar.innerHTML = html;
+    daftar.querySelectorAll(".fak-opsi").forEach(function(el) {
+      el.addEventListener("click", function() { pilih(el.getAttribute("data-nama")); });
+    });
+  }
+  function buka() {
+    if (panel) { tutup(); return; }
+    panel = document.createElement("div");
+    panel.className = "fak-panel";
+    panel.setAttribute("role", "listbox");
+    // panel menempel di body (bukan di dalam modal/kartu) supaya tidak
+    // terpotong overflow + backdrop-filter leluhurnya
+    panel.innerHTML = '<input type="text" class="fak-cari" placeholder="cari fakultas..." autocomplete="off" autocapitalize="off" aria-label="Cari fakultas"><div class="fak-daftar"></div>';
+    document.body.appendChild(panel);
+    const r = btn.getBoundingClientRect();
+    const ruangBawah = window.innerHeight - r.bottom,
+          ruangAtas = r.top;
+    panel.style.left = r.left + "px";
+    panel.style.width = r.width + "px";
+    const daftar = panel.querySelector(".fak-daftar");
+    if (ruangBawah < 220 && ruangAtas > ruangBawah) {
+      panel.style.bottom = (window.innerHeight - r.top + 6) + "px";
+      daftar.style.maxHeight = Math.max(120, ruangAtas - 60) + "px";
+    } else {
+      panel.style.top = (r.bottom + 6) + "px";
+      daftar.style.maxHeight = Math.max(120, Math.min(240, ruangBawah - 60)) + "px";
+    }
+    tampilDaftar("");
+    const cari = panel.querySelector(".fak-cari");
+    cari.addEventListener("input", function() { tampilDaftar(cari.value); });
+    btn.setAttribute("aria-expanded", "true");
+    document.addEventListener("mousedown", klikLuar, true);
+    document.addEventListener("touchstart", klikLuar, true);
+    document.addEventListener("keydown", tekanTombol);
+    window.addEventListener("resize", tutup);
+    window.addEventListener("scroll", gulir, true);
+    cari.focus();
+  }
+  btn.addEventListener("click", function(e) { e.preventDefault(); buka(); });
 }
 function ikatFakultasLainnya(idSel, idLain) {
   const sel = document.getElementById(idSel),
@@ -971,6 +1084,7 @@ function pageAkun() {
     pfLain.value = u.fakultas;
   }
   ikatFakultasLainnya("pfFakSel", "pfFakLain");
+  pasangPilihFakultas("pfFakSel");
   $("#btnSimpanAkad").addEventListener("click", async () => {
     const fak = bacaFakultas("pfFakSel", "pfFakLain");
     const jur = ($("#pfJur", view()).value || "").trim();
@@ -3852,6 +3966,7 @@ function tampilPopupProfilAkademik() {
     lainInp.value = AUTH.fakultas;
   }
   ikatFakultasLainnya("paFakSel", "paFakLain");
+  pasangPilihFakultas("paFakSel");
   function tutupLewati() {
     try { sessionStorage.setItem("kpProfilAkademikNanti", "1"); } catch (e) {}
     el.remove();
