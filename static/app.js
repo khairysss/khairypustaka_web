@@ -5783,6 +5783,30 @@ async function admMuatKode() {
   }
 }
 
+async function admMuatLeaderboard() {
+  const box = $("#admLeaderboard");
+  if (!box) return;
+  try {
+    const r = await apiJSON("/admin/leaderboard");
+    if (!r.ok) throw 0;
+    const rows = r.data.leaderboard || [];
+    if (!rows.length) {
+      box.innerHTML = '<p class="muted">Belum ada data pemakaian member. Hitungan mulai sejak fitur ini dipasang.</p>';
+      return;
+    }
+    box.innerHTML = rows.map(function(m, i) {
+      const prodi = [m.fakultas, m.jurusan].filter(Boolean).join(" · ");
+      return '<div class="kode-row"><span class="lb-rank">' + (i + 1) + "</span>" +
+        '<div style="flex:1;min-width:160px"><b>@' + esc(m.username || "?") + "</b>" +
+        (m.nama ? ' <span class="muted">' + esc(m.nama) + "</span>" : "") +
+        (prodi ? '<div class="muted">' + esc(prodi) + "</div>" : "") +
+        '<div class="muted">Hari ini: <b>' + esc(String(m.hari_ini)) + "</b> · Minggu ini: <b>" + esc(String(m.minggu_ini)) + "</b> · Total: <b>" + esc(String(m.total)) + "</b></div></div></div>";
+    }).join("");
+  } catch (e) {
+    box.innerHTML = '<p class="pf-msg">Gagal memuat leaderboard.</p>';
+  }
+}
+
 async function admCariMember() {
   const box = $("#admCariHasil"), msg = $("#admGrantMsg");
   if (!box) return;
@@ -5917,6 +5941,9 @@ function pageAdmin() {
     "</div>" +
 
     '<div class="adm-pane hidden" id="admPane-member">' +
+      '<div class="card"><h3>' + tic("star") + ' Leaderboard Member Teraktif</h3>' +
+      '<p class="muted">5 member paling rajin memakai KhairyPustaka. Peringkat diurutkan dari total pemakaian, dengan rincian hari ini dan 7 hari terakhir.</p>' +
+      '<div id="admLeaderboard"><p class="muted">Memuat...</p></div></div>' +
       '<div class="card"><h3>' + tic("ticket") + ' Kode Jatah AI</h3>' +
       '<p class="muted">Buat kode redeem buat dibagikan ke member. Satu kode dipakai satu member, sekali pakai.</p>' +
       '<label class="muted" for="admKodeJml">Jumlah kode</label>' +
@@ -6021,6 +6048,7 @@ function pageAdmin() {
   });
   admMuatStatistik();
   admMuatKode();
+  admMuatLeaderboard();
   admMuatPertanyaan(); // sekalian buat lencana hitung di tab Log
   // Fase 4: pratinjau + simpan pengumuman dan sakelar pemeliharaan
   ["#admPgJudul", "#admPgIsi", "#admPgAktif"].forEach(function(sel) {

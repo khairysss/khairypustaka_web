@@ -645,13 +645,16 @@ AI_TOOLS = {"topik", "tanya", "kerangka", "abstrak", "kuesioner",
             "idejudul", "bahasa", "sidanglanjut", "konsep"}
 
 
-def track_tool(name, chat_id=None):
+def track_tool(name, chat_id=None, hitung_member=True):
     """Catat pemakaian tool/command: hitungan total + per-hari (WITA).
 
     Struktur: d["tools"][name] = {"total": int, "days": {YYYY-MM-DD: int}}.
     Aktivitas admin TIDAK dicatat (stats khusus member/buyer).
     Entri hari >30 hari dipangkas agar file tidak membengkak.
     Ringan & fail-safe: kegagalan dicatat di log, tidak mengganggu bot.
+    hitung_member=False dipakai pemanggil yang request-nya SUDAH dihitung
+    lewat track_penggunaan di app.py (saat ini hanya /api/topik), supaya
+    satu pemakaian tidak terhitung dua kali di leaderboard member.
     """
     try:
         name = (name or "").strip().lower()
@@ -660,6 +663,8 @@ def track_tool(name, chat_id=None):
         admin = _admin_id()
         if admin and chat_id is not None and str(chat_id) == admin:
             return  # admin dikecualikan dari stats
+        if hitung_member:
+            track_member_usage(chat_id)
         d = _load()
         tools = d.setdefault("tools", {})
         t = tools.setdefault(name, {"total": 0, "days": {}})
@@ -674,6 +679,100 @@ def track_tool(name, chat_id=None):
         _save(d)
     except Exception as e:
         log.warning("track tool gagal: %s", e)
+
+
+# ------------------------------------------- pemakaian per member (leaderboard)
+# Perintah Sul 2026-11-14: leaderboard 5 member teratas di tab Member panel
+# admin (peringkat = total pemakaian terbanyak, rincian harian, mingguan,
+# dan total). Sebelum ini TIDAK ADA hitungan per member: yang ada hanya
+# total per alat (track_tool/track_penggunaan) + jatah AI hari ini saja.
+# Store terpisah supaya tidak mengganggu statistik yang sudah ada.
+_MEMBER_USAGE_PATH = "data/member_usage.json"
+_MEMBER_USAGE_LOCK = threading.Lock()
+
+
+def track_member_usage(uid):
+    """Catat 1x pemakaian alat oleh member login ke data/member_usage.json.
+
+    Bentuk: {uid: {"total": N, "days": {"YYYY-MM-DD": n}}}.
+    Tamu (uid "web_*") dilewati: leaderboard khusus member login.
+    Admin TIDAK dikecualikan di sini; penyaringan admin dilakukan saat
+    baca (leaderboard_member) lewat daftar ADMIN_USERNAMES di app.py,
+    karena modul ini tidak mengenal identitas admin web.
+    Fail-safe + best-effort: kehilangan satu sampel tidak merusak apa pun.
+    """
+    try:
+        uid = str(uid or "").strip()
+        if not uid or uid.startswith("web_"):
+            return
+        with _MEMBER_USAGE_LOCK:
+            d = dbstore.load_json(_MEMBER_USAGE_PATH, {})
+            if not isinstance(d, dict):
+                d = {}
+            u = d.get(uid)
+            if not isinstance(u, dict):
+                u = {"total": 0, "days": {}}
+            days = u.get("days")
+            if not isinstance(days, dict):
+                days = {}
+            today = _today()
+            days[today] = int(days.get(today, 0) or 0) + 1
+            u["total"] = int(u.get("total", 0) or 0) + 1
+            # Pangkas hari >30 hari (mingguan hanya butuh 7 hari terakhir;
+            # total disimpan terpisah jadi pemangkasan tidak mengubahnya).
+            cutoff = (datetime.now(_WITA).date()
+                      - timedelta(days=30)).isoformat()
+            for k in [k for k in days if k < cutoff]:
+                del days[k]
+            u["days"] = days
+            d[uid] = u
+            dbstore.save_json_best_effort(_MEMBER_USAGE_PATH, d)
+    except Exception as e:
+        log.warning("track member usage gagal: %s", e)
+
+
+def leaderboard_member(users, admin_pids, limit=5):
+    """5 member teratas dari store pemakaian per member.
+
+    users: dict {uid: record} dari auth.list_users(); admin_pids: set pid
+    admin (huruf kecil) yang dikecualikan. Peringkat = total terbanyak,
+    seri diputus minggu ini lalu hari ini lalu username (stabil).
+    Mengembalikan list dict siap JSON: uid, username, nama, fakultas,
+    jurusan, hari_ini, minggu_ini, total.
+    """
+    try:
+        d = dbstore.load_json(_MEMBER_USAGE_PATH, {})
+        if not isinstance(d, dict):
+            return []
+    except Exception:
+        return []
+    today = datetime.now(_WITA).date()
+    minggu = {(today - timedelta(days=i)).isoformat() for i in range(7)}
+    rows = []
+    for uid, u in d.items():
+        if not isinstance(u, dict):
+            continue
+        rec = (users or {}).get(uid)
+        if not isinstance(rec, dict):
+            continue  # akun sudah dihapus: jangan tampilkan yatim
+        pid = str(rec.get("pid") or "").strip().lower()
+        if pid and pid in (admin_pids or set()):
+            continue
+        days = u.get("days")
+        if not isinstance(days, dict):
+            days = {}
+        hari = int(days.get(today.isoformat(), 0) or 0)
+        mingguan = sum(int(days.get(k, 0) or 0) for k in minggu)
+        total = int(u.get("total", 0) or 0)
+        rows.append({"uid": uid, "username": rec.get("pid") or "",
+                     "nama": rec.get("nama") or "",
+                     "fakultas": rec.get("fakultas") or "",
+                     "jurusan": rec.get("jurusan") or "",
+                     "hari_ini": hari, "minggu_ini": mingguan,
+                     "total": total})
+    rows.sort(key=lambda r: (-r["total"], -r["minggu_ini"], -r["hari_ini"],
+                             (r["username"] or "").lower()))
+    return rows[:max(1, int(limit or 5))]
 
 
 def usage_stats():

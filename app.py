@@ -148,8 +148,14 @@ def track_penggunaan(tool):
 
     Bentuk: {tool: {"total": N, "days": {"YYYY-MM-DD": n}}}.
     Fail-safe: tidak pernah raise, tidak mengganggu request.
+    Sekalian mencatat pemakaian per member (leaderboard Sul 2026-11-14)
+    lewat sai.track_member_usage; tamu dilewati di sana.
     """
     try:
+        try:
+            sai.track_member_usage(getattr(g, "uid", None))
+        except Exception:
+            pass  # di luar konteks request: hitungan member dilewati saja
         name = (tool or "").strip().lower()
         if not name:
             return
@@ -916,7 +922,10 @@ def topik():
         if not ide:
             _ai_refund_uid(g.uid, pool)
         else:
-            sai.track_tool("topik", g.uid)
+            # hitung_member=False: request ini SUDAH dihitung 1x lewat
+            # track_penggunaan("topik") di atas; tanpa ini pemakaian AI
+            # topik terhitung dua kali di leaderboard member.
+            sai.track_tool("topik", g.uid, hitung_member=False)
     else:
         kuota_habis = True
     saran = [] if ide else topik_mod.topic_suggestions(keyword, top, gaps)
@@ -2732,6 +2741,9 @@ def mendalam_job():
         _MDL_POOL_LAPORAN.submit(_mdl_kerja_laporan, jid)
     else:
         _MDL_POOL_RINGAN.submit(_mdl_kerja_ringan, jid)
+    # Leaderboard member (Sul 2026-11-14): Mendalam tidak melewati
+    # track_penggunaan/track_tool, jadi dihitung di sini saat job dibuat.
+    sai.track_member_usage(g.uid)
     return jsonify(_mdl_job_json(job))
 
 
@@ -3354,6 +3366,20 @@ def admin_member_cari():
     return jsonify({"ok": True, "member": out, "total": len(out)})
 
 
+@app.get("/api/admin/leaderboard")
+@with_rl
+def admin_leaderboard():
+    """5 member teraktif (Sul 2026-11-14): peringkat = total pemakaian
+    terbanyak sejak pencatatan per member dipasang, rincian hari ini,
+    7 hari terakhir, dan total. Admin dikecualikan."""
+    err = _need_admin()
+    if err:
+        return err
+    users = authmod.list_users() or {}
+    rows = sai.leaderboard_member(users, _admin_usernames(), limit=5)
+    return jsonify({"ok": True, "leaderboard": rows, "total": len(rows)})
+
+
 @app.post("/api/admin/grant")
 @with_rl
 def admin_grant():
@@ -3382,6 +3408,7 @@ def admin_grant():
 
 # ------------------------------------------------- admin: backup & hapus
 _BACKUP_STORES = ("users.json", "tokens.json", "ai_quota.json", "usage.json",
+                  "member_usage.json",
                   "guest_usage.json", "koleksi.json", "riwayat.json",
                   "referral.json", "redeem.json", "favorit.json",
                   "pantau.json", "premium_pending.json", "deadline.json",

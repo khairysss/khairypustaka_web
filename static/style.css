@@ -551,6 +551,7 @@ ol.langkah,ul.bersih{padding-left:20px}
 .adm-tabel th,.adm-tabel td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
 .adm-tabel th{color:var(--muted);font-weight:600;font-size:12px}
 .kode-row{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0e6d2;flex-wrap:wrap}
+.lb-rank{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#0e7490;color:#fff;font-weight:800;flex:none}
 .kode-row code{font-weight:700;letter-spacing:1px;flex:1;min-width:140px}
 .chip-mini{font-size:12px;padding:2px 10px;border-radius:999px;white-space:nowrap}
 .chip-ok{background:rgba(46,204,143,.15);color:#4ade80}
