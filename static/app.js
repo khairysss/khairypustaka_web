@@ -167,6 +167,46 @@ let _riwAntre = [];    // R2: entri tamu yang dicatat sebelum status auth pasti
 function aiHarian() { return 15; }
 function tamuHarian() { return 5; }
 
+/* ---------- Profil akademik: fakultas + jurusan (keputusan Sul
+   2026-11-14) ---------- */
+const FAKULTAS_PILIHAN = ["Kedokteran", "Kedokteran Gigi",
+  "Kesehatan Masyarakat", "Keperawatan", "Farmasi", "Hukum",
+  "Ekonomi dan Bisnis", "Ilmu Sosial dan Ilmu Politik", "Ilmu Budaya",
+  "Keguruan dan Ilmu Pendidikan", "Teknik",
+  "Matematika dan Ilmu Pengetahuan Alam", "Pertanian", "Psikologi",
+  "Ilmu Komputer", "Seni dan Desain", "Lainnya"];
+function fakultasSelectHTML(idSel, nilai) {
+  const terpilih = FAKULTAS_PILIHAN.indexOf(nilai) >= 0 ? nilai
+    : (nilai ? "Lainnya" : "");
+  let opts = '<option value="">Pilih fakultas</option>';
+  FAKULTAS_PILIHAN.forEach(function(f) {
+    opts += '<option value="' + esc(f) + '"' +
+      (terpilih === f ? " selected" : "") + ">" + esc(f) + "</option>";
+  });
+  return '<select id="' + idSel + '" aria-label="Fakultas">' + opts + "</select>";
+}
+function ikatFakultasLainnya(idSel, idLain) {
+  const sel = document.getElementById(idSel),
+        lain = document.getElementById(idLain);
+  if (!sel || !lain) return;
+  const atur = function() {
+    const custom = sel.value === "Lainnya";
+    lain.classList.toggle("hidden", !custom);
+    if (!custom) lain.value = "";
+  };
+  sel.addEventListener("change", atur);
+  atur();
+}
+function bacaFakultas(idSel, idLain) {
+  const sel = document.getElementById(idSel);
+  if (!sel) return "";
+  if (sel.value === "Lainnya") {
+    const lain = document.getElementById(idLain);
+    return lain ? lain.value.trim() : "";
+  }
+  return sel.value;
+}
+
 /* ---------- Avatar maskot ---------- */
 const AVATAR_PILIHAN = ["teal", "orange", "navy", "red", "purple"];
 function avatarURL(p) {
@@ -873,6 +913,15 @@ function pageAkun() {
           '" data-av="' + p + '" aria-label="Avatar ' + p + '"><img src="' + avatarURL(p) + '" alt="avatar ' + p + '"></button>';
       }).join("") + '</div><p class="pf-msg" id="pfAvMsg"></p></div>'
       : "") +
+    '<div class="card"><h3>' + tic("books") + ' Fakultas dan Jurusan</h3>' +
+    '<p class="muted">Bisa diubah kapan saja.</p>' +
+    "<label>Fakultas</label>" +
+    fakultasSelectHTML("pfFakSel", u.fakultas || "") +
+    '<input type="text" id="pfFakLain" class="hidden" maxlength="80" autocapitalize="off" autocomplete="off" placeholder="tulis nama fakultasmu">' +
+    '<label for="pfJur">Jurusan / program studi</label>' +
+    '<input type="text" id="pfJur" maxlength="80" autocapitalize="off" autocomplete="off" placeholder="contoh: Teknik Informatika" value="' + esc(u.jurusan || "") + '">' +
+    '<p class="pf-msg" id="pfAkadMsg"></p>' +
+    '<button class="btn btn-primary btn-block" id="btnSimpanAkad">Simpan Fakultas dan Jurusan</button></div>' +
     (isPw ?
       '<details class="card akun-lipat"><summary>' + tic("pencil") + ' Ubah Username</summary>' +
       '<input type="text" id="pfUserBaru" placeholder="username baru (3–20 karakter)" maxlength="20" autocapitalize="off" autocomplete="off">' +
@@ -915,6 +964,27 @@ function pageAkun() {
         pfMsg("pfAvMsg", false, " " + ((res.data && res.data.error) || "gagal, coba lagi ya"));
       }
     });
+  });
+  // simpan fakultas + jurusan (semua akun, termasuk login Google)
+  const pfLain = $("#pfFakLain", view());
+  if (u.fakultas && FAKULTAS_PILIHAN.indexOf(u.fakultas) < 0 && pfLain) {
+    pfLain.value = u.fakultas;
+  }
+  ikatFakultasLainnya("pfFakSel", "pfFakLain");
+  $("#btnSimpanAkad").addEventListener("click", async () => {
+    const fak = bacaFakultas("pfFakSel", "pfFakLain");
+    const jur = ($("#pfJur", view()).value || "").trim();
+    if (!fak && !jur) { pfMsg("pfAkadMsg", false, "isi fakultas atau jurusannya dulu ya"); return; }
+    const btn = $("#btnSimpanAkad"); setLoading(btn, true, "Nyimpen...");
+    const res = await apiPOST("/auth/profil-akademik", { fakultas: fak, jurusan: jur });
+    setLoading(btn, false);
+    if (res.ok) {
+      await refreshAuth();
+      pageAkun();
+      toast("Fakultas dan jurusan tersimpan");
+    } else {
+      pfMsg("pfAkadMsg", false, " " + ((res.data && res.data.error) || "gagal"));
+    }
   });
   if (!isPw) return;
 
@@ -3726,6 +3796,77 @@ function tampilPopupFeedback() {
   });
 }
 
+/* Popup konfirmasi fakultas + jurusan (keputusan Sul 2026-11-14):
+   form daftar tetap username/email/password; setelah member punya akun
+   dan login, popup ini muncul SEBELUM mereka memakai fitur dan WAJIB
+   diisi (tanpa tombol tutup atau lewati) sampai tersimpan. Isi
+   fakultas saja atau jurusan saja sudah cukup; setelah salah satunya
+   terisi, popup tidak pernah muncul lagi. */
+let _popupPaTampil = false;
+function cekPopupProfilAkademik() {
+  if (_popupPaTampil || !AUTH.login || AUTH.admin) return;
+  if (AUTH.fakultas || AUTH.jurusan) return; // sudah pernah isi: tidak muncul lagi
+  if (document.getElementById("kpPopupPa") ||
+      document.getElementById("kpPopupFb")) return;
+  const h = location.hash || "";
+  if (h.indexOf("#/masuk") === 0 || h.indexOf("#/daftar") === 0 ||
+      h.indexOf("#/lupa") === 0) return;
+  tampilPopupProfilAkademik();
+}
+
+function tampilPopupProfilAkademik() {
+  if (_popupPaTampil || document.getElementById("kpPopupPa")) return;
+  _popupPaTampil = true;
+  const el = document.createElement("div");
+  el.className = "modal";
+  el.id = "kpPopupPa";
+  el.style.alignItems = "center";
+  el.style.padding = "16px";
+  el.innerHTML =
+    '<div class="modal-box" style="border-radius:20px;max-width:520px">' +
+      "<h3>Sebelum mulai...</h3>" +
+      '<p class="muted">Boleh sharing kamu dari fakultas atau jurusan apa? Isi salah satunya saja sudah cukup, biar KhairyPustaka bisa membantumu lebih pas. Cuma sekali isi, bisa diubah kapan saja di halaman Akun.</p>' +
+      "<label>Fakultas</label>" +
+      fakultasSelectHTML("paFakSel", AUTH.fakultas || "") +
+      '<input type="text" id="paFakLain" class="hidden" maxlength="80" autocapitalize="off" autocomplete="off" placeholder="tulis nama fakultasmu">' +
+      '<label for="paJur">Jurusan / program studi</label>' +
+      '<input type="text" id="paJur" maxlength="80" autocapitalize="off" autocomplete="off" placeholder="contoh: Teknik Informatika" value="' + esc(AUTH.jurusan || "") + '">' +
+      '<p class="pf-msg" id="paMsg"></p>' +
+      '<button class="btn btn-primary btn-block" id="paSimpan" type="button">Simpan dan Lanjut</button>' +
+    "</div>";
+  document.body.appendChild(el);
+  const lainInp = el.querySelector("#paFakLain");
+  if (AUTH.fakultas && FAKULTAS_PILIHAN.indexOf(AUTH.fakultas) < 0) {
+    lainInp.value = AUTH.fakultas;
+  }
+  ikatFakultasLainnya("paFakSel", "paFakLain");
+  el.querySelector("#paSimpan").addEventListener("click", async function() {
+    const btn = this;
+    if (btn.disabled) return;
+    const fak = bacaFakultas("paFakSel", "paFakLain");
+    const jur = (el.querySelector("#paJur").value || "").trim();
+    const msgEl = el.querySelector("#paMsg");
+    const gagal = function(teks) {
+      msgEl.textContent = teks;
+      msgEl.style.color = "#ff6b6f";
+    };
+    if (!fak && !jur) { gagal("isi fakultas atau jurusannya dulu ya"); return; }
+    btn.disabled = true;
+    setLoading(btn, true, "Nyimpen...");
+    const res = await apiPOST("/auth/profil-akademik", { fakultas: fak, jurusan: jur });
+    setLoading(btn, false);
+    btn.disabled = false;
+    if (res.ok) {
+      await refreshAuth();
+      el.remove();
+      _popupPaTampil = false;
+      toast("Profil akademik tersimpan");
+    } else {
+      gagal(" " + ((res.data && res.data.error) || "gagal, coba lagi ya"));
+    }
+  });
+}
+
 /* ================= Cari Jurnal Mendalam (Exa) =================
    Menyali struktur demo final demo-cari-jurnal-mendalam, dengan mesin
    live: /api/mendalam/*. Penegakan kuota (3x/hari gabungan, 5x/hari
@@ -5525,6 +5666,7 @@ async function admCariMember() {
       const nama = m.nama || m.username || "member";
       return '<div class="kode-row"><div style="flex:1;min-width:160px"><b>@' + esc(m.username || "?") + "</b>" +
         '<div class="muted">' + esc(m.nama || "") + (m.email ? " · " + esc(m.email) : "") + "</div>" +
+        ((m.fakultas || m.jurusan) ? '<div class="muted">' + esc(m.fakultas || "") + ((m.fakultas && m.jurusan) ? " · " : "") + esc(m.jurusan || "") + "</div>" : "") +
         '<div class="muted">Saldo AI: <b>' + esc(String(m.saldo)) + "</b> · sisa harian: " + esc(String(m.sisa_harian)) + "</div>" +
         '<div class="muted">Aktif terakhir: ' + esc(fmtWita(m.terakhir_login)) + "</div></div>" +
         '<input type="number" class="adm-jml" data-uid="' + esc(m.uid) + '" value="25" min="1" max="100000" aria-label="jumlah jatah AI">' +
@@ -5958,6 +6100,7 @@ function renderRute() {
   refreshAuth();
   muatInfoSitus();
   setTimeout(cekPopupFeedback, 800);
+  setTimeout(cekPopupProfilAkademik, 800);
 }
 
 /* K-1 (audit 2026-10-17): referral HANYA dihitung untuk akun yang login

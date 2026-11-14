@@ -514,6 +514,27 @@ def register_password(username, password, email, ref_code=None):
     return uid, None
 
 
+def set_profil_akademik(uid, fakultas, jurusan):
+    """Simpan fakultas + jurusan member (popup konfirmasi pasca-login,
+    keputusan Sul 2026-11-14: form daftar tetap, data akademik diminta
+    lewat popup setelah member punya akun). Isi fakultas saja atau
+    jurusan saja sudah cukup; popup tidak muncul lagi setelah salah
+    satunya terisi. Return pesan error atau None bila sukses."""
+    fak = fakultas.strip()[:80] if isinstance(fakultas, str) else ""
+    jur = jurusan.strip()[:80] if isinstance(jurusan, str) else ""
+    if not fak and not jur:
+        return "isi fakultas atau jurusannya dulu ya"
+    with _LOCK:
+        d = _load_users()
+        u = d.get(uid)
+        if not u:
+            return "akun tidak ditemukan, login ulang ya"
+        u["fakultas"] = fak
+        u["jurusan"] = jur
+        _save_users(d)
+    return None
+
+
 def delete_user(uid):
     """Hapus akun dari users.json (dipakai panel admin, mis. akun uji).
     Return True bila ada yang terhapus."""

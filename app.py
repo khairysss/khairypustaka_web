@@ -3336,11 +3336,15 @@ def admin_member_cari():
             continue
         if q and q not in str(u.get("pid") or "").lower() \
                 and q not in str(u.get("nama") or "").lower() \
-                and q not in str(u.get("email") or "").lower():
+                and q not in str(u.get("email") or "").lower() \
+                and q not in str(u.get("fakultas") or "").lower() \
+                and q not in str(u.get("jurusan") or "").lower():
             continue
         out.append({"uid": uid, "username": u.get("pid") or "",
                     "nama": u.get("nama") or "", "email": u.get("email") or "",
                     "provider": u.get("provider") or "",
+                    "fakultas": u.get("fakultas") or "",
+                    "jurusan": u.get("jurusan") or "",
                     "bergabung": u.get("created") or 0,
                     "terakhir_login": u.get("last_login") or u.get("created") or 0,
                     "saldo": sai.ai_balance(uid),
@@ -4152,6 +4156,8 @@ def _auth_status_payload():
                 "provider": prov, "foto": g.user.get("foto") or "",
                 "username": g.user.get("pid") if prov == "password" else "",
                 "email": g.user.get("email") or "",
+                "fakultas": g.user.get("fakultas") or "",
+                "jurusan": g.user.get("jurusan") or "",
                 "avatar": authmod.user_avatar(g.user),
                 "tg_linked": bool(authmod.linked_tg_id(g.user)),
                 "admin": is_admin_user(g.user)}
@@ -4480,6 +4486,24 @@ def auth_ubah_username():
     g.user = authmod.get_user(g.uid)
     return jsonify({"ok": True, **_auth_status_payload(),
                     "msg": "username berhasil diganti "})
+
+
+@app.post("/api/auth/profil-akademik")
+@with_rl  # R-2 (audit 2026-10-17)
+def auth_profil_akademik():
+    """Simpan fakultas + jurusan member (popup konfirmasi pasca-login,
+    keputusan Sul 2026-11-14)."""
+    err = _need_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    msg = authmod.set_profil_akademik(g.uid, body.get("fakultas") or "",
+                                      body.get("jurusan") or "")
+    if msg:
+        return _err(msg, 400)
+    g.user = authmod.get_user(g.uid)
+    return jsonify({"ok": True, **_auth_status_payload(),
+                    "msg": "profil akademik tersimpan "})
 
 
 @app.post("/api/auth/ubah-email")
