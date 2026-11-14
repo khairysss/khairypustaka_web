@@ -1424,9 +1424,11 @@ body{display:flex;flex-direction:column;min-height:100vh;min-height:100svh}
 .fak-tombol{width:100%;padding:12px;border:2px solid var(--line);border-radius:12px;font-size:1rem;font-family:inherit;background:rgba(6,18,32,.55);color:var(--ink);display:flex;justify-content:space-between;align-items:center;gap:8px;cursor:pointer;text-align:left}
 .fak-tombol .fak-kosong{color:var(--muted)}
 .fak-panah{opacity:.7;flex:none}
-.fak-panel{position:fixed;z-index:300;background:#0d2438;border:1px solid var(--gborder);border-radius:14px;box-shadow:0 18px 44px rgba(0,0,0,.5);overflow:hidden}
-.fak-cari-label{padding:10px 12px 2px;font-size:.82rem;font-weight:700;color:var(--muted)}
-input.fak-cari{width:100%;padding:11px 12px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:rgba(6,18,32,.7);font-size:.95rem;color:var(--ink)}
+.fak-panel{position:fixed;z-index:300;background:#102c44;border:1.5px solid var(--gborder-bright);border-radius:14px;box-shadow:0 24px 56px rgba(0,0,0,.65);overflow:hidden}
+.fak-cari-label{padding:12px 12px 4px;font-size:.9rem;font-weight:700;color:var(--ink)}
+.fak-cari-bungkus{padding:4px 12px 10px}
+input.fak-cari{width:100%;padding:10px 12px;border:1.5px solid rgba(169,195,207,.4);border-radius:10px;background:rgba(6,18,32,.7);font-size:.95rem;color:var(--ink);box-sizing:border-box}
+input.fak-cari:focus{outline:none;border-color:var(--teal)}
 .fak-daftar{max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .fak-opsi{padding:11px 12px;cursor:pointer;font-size:.95rem;color:var(--ink)}
 .fak-opsi:hover{background:rgba(45,212,216,.14)}

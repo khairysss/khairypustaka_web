@@ -270,7 +270,7 @@ function pasangPilihFakultas(idSel) {
     panel.setAttribute("role", "listbox");
     // panel menempel di body (bukan di dalam modal/kartu) supaya tidak
     // terpotong overflow + backdrop-filter leluhurnya
-    panel.innerHTML = '<div class="fak-cari-label">🔍 Cari fakultas</div><input type="text" class="fak-cari" placeholder="cari fakultas..." autocomplete="off" autocapitalize="off" aria-label="Cari fakultas"><div class="fak-daftar"></div>';
+    panel.innerHTML = '<div class="fak-cari-label">Cari fakultas</div><div class="fak-cari-bungkus"><input type="text" class="fak-cari" placeholder="Contoh: Kedokteran" autocomplete="off" autocapitalize="off" aria-label="Cari fakultas"></div><div class="fak-daftar"></div>';
     document.body.appendChild(panel);
     const r = btn.getBoundingClientRect();
     const ruangBawah = window.innerHeight - r.bottom,
