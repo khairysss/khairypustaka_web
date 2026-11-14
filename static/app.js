@@ -3797,20 +3797,30 @@ function tampilPopupFeedback() {
 }
 
 /* Popup konfirmasi fakultas + jurusan (keputusan Sul 2026-11-14):
-   form daftar tetap username/email/password; setelah member punya akun
-   dan login, popup ini muncul SEBELUM mereka memakai fitur dan WAJIB
-   diisi (tanpa tombol tutup atau lewati) sampai tersimpan. Isi
-   fakultas saja atau jurusan saja sudah cukup; setelah salah satunya
-   terisi, popup tidak pernah muncul lagi. */
+   form daftar tetap username/email/password. Setelah member punya akun
+   dan login, popup muncul saat mereka membuka ALAT/FITUR (bukan saat
+   membuka beranda), dan BOLEH DILEWATI lewat tombol "Lewati dulu".
+   Sekali dilewati, popup tidak muncul lagi di sesi browser itu walau
+   member membuka alat lain; di sesi browser baru muncul lagi saat
+   membuka alat, sampai formulirnya diisi. Isi fakultas saja atau
+   jurusan saja sudah cukup; setelah salah satunya terisi, popup tidak
+   pernah muncul lagi. */
+/* Rute alat/fitur: tambah ke daftar ini bila ada alat baru. */
+const RUTE_FITUR = ["/cari", "/mendalam", "/carifile", "/sitasi",
+  "/rekomendasi", "/publisher", "/penulis", "/topik", "/matriks",
+  "/statistik", "/template", "/parafrase", "/terjemah", "/kemiripan",
+  "/ekstrak-teks", "/convert", "/ai", "/tanya"];
 let _popupPaTampil = false;
 function cekPopupProfilAkademik() {
   if (_popupPaTampil || !AUTH.login || AUTH.admin) return;
   if (AUTH.fakultas || AUTH.jurusan) return; // sudah pernah isi: tidak muncul lagi
   if (document.getElementById("kpPopupPa") ||
       document.getElementById("kpPopupFb")) return;
-  const h = location.hash || "";
-  if (h.indexOf("#/masuk") === 0 || h.indexOf("#/daftar") === 0 ||
-      h.indexOf("#/lupa") === 0) return;
+  const h = (location.hash || "#/beranda").replace(/^#/, "").split("?")[0];
+  if (RUTE_FITUR.indexOf(h) < 0) return; // hanya saat membuka alat/fitur
+  try {
+    if (sessionStorage.getItem("kpProfilAkademikNanti")) return; // sudah dilewati sesi ini
+  } catch (e) {}
   tampilPopupProfilAkademik();
 }
 
@@ -3824,7 +3834,8 @@ function tampilPopupProfilAkademik() {
   el.style.padding = "16px";
   el.innerHTML =
     '<div class="modal-box" style="border-radius:20px;max-width:520px">' +
-      "<h3>Sebelum mulai...</h3>" +
+      '<div class="modal-head"><h3>Sebelum mulai...</h3>' +
+      '<button class="x" id="paTutup" type="button" aria-label="Tutup">✕</button></div>' +
       '<p class="muted">Boleh sharing kamu dari fakultas atau jurusan apa? Isi salah satunya saja sudah cukup, biar KhairyPustaka bisa membantumu lebih pas. Cuma sekali isi, bisa diubah kapan saja di halaman Akun.</p>' +
       "<label>Fakultas</label>" +
       fakultasSelectHTML("paFakSel", AUTH.fakultas || "") +
@@ -3833,6 +3844,7 @@ function tampilPopupProfilAkademik() {
       '<input type="text" id="paJur" maxlength="80" autocapitalize="off" autocomplete="off" placeholder="contoh: Teknik Informatika" value="' + esc(AUTH.jurusan || "") + '">' +
       '<p class="pf-msg" id="paMsg"></p>' +
       '<button class="btn btn-primary btn-block" id="paSimpan" type="button">Simpan dan Lanjut</button>' +
+      '<button class="btn btn-ghost btn-block" id="paNanti" type="button" style="margin-top:8px">Lewati dulu</button>' +
     "</div>";
   document.body.appendChild(el);
   const lainInp = el.querySelector("#paFakLain");
@@ -3840,6 +3852,14 @@ function tampilPopupProfilAkademik() {
     lainInp.value = AUTH.fakultas;
   }
   ikatFakultasLainnya("paFakSel", "paFakLain");
+  function tutupLewati() {
+    try { sessionStorage.setItem("kpProfilAkademikNanti", "1"); } catch (e) {}
+    el.remove();
+    _popupPaTampil = false;
+  }
+  el.querySelector("#paTutup").addEventListener("click", tutupLewati);
+  el.querySelector("#paNanti").addEventListener("click", tutupLewati);
+  el.addEventListener("click", function(e) { if (e.target === el) tutupLewati(); });
   el.querySelector("#paSimpan").addEventListener("click", async function() {
     const btn = this;
     if (btn.disabled) return;
